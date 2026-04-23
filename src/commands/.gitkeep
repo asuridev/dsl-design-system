@@ -1,4 +1,0 @@
-# Commands
-
-Each command is implemented in its own file.
-Export a function that registers the command on the `program` instance.
