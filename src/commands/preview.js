@@ -141,6 +141,210 @@ function buildChannelCard(channelName, channelDef, messages, schemas) {
     </div>`;
 }
 
+// ─── Diagram classification ─────────────────────────────────────────────────────
+// Groups .mmd files by type using deterministic suffix matching.
+// Returns: { overview, domainModel, states: [{title,content}], sequences: [{title,content}] }
+
+function humanizeDiagramName(filename, bcName) {
+  // Strip bc prefix and extension: "catalog-diagram-product-activated-seq" → "Product Activated"
+  const base = filename.replace(/\.mmd$/, '');
+  const withoutBc = base.replace(new RegExp(`^${bcName}-diagram-?`), '');
+  if (!withoutBc || withoutBc === base) return base;
+  return withoutBc
+    .replace(/-seq$/, '')
+    .replace(/-states$/, ' States')
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+async function classifyDiagrams(bcDir, bcName) {
+  const diagramsDir = path.join(bcDir, 'diagrams');
+  const result = { overview: null, domainModel: null, states: [], sequences: [] };
+
+  if (!(await fs.pathExists(diagramsDir))) return result;
+
+  const files = (await fs.readdir(diagramsDir)).filter((f) => f.endsWith('.mmd')).sort();
+
+  for (const file of files) {
+    // Replace literal \n sequences with a space.
+    // In .mmd files \n is used inside node labels (e.g. `["UC-CAT-001\nCreateCategory"]`)
+    // and as state description suffixes (e.g. `ACTIVE : ACTIVE\nVisible...`).
+    // Inserting a real newline breaks stateDiagram-v2 parsing; stripping too aggressively
+    // removes closing brackets. A space keeps labels readable and valid across all diagram types.
+    const raw = await fs.readFile(path.join(diagramsDir, file), 'utf8');
+    const content = raw.replace(/\\n/g, ' ');
+    const base = file.replace(/\.mmd$/, '');
+
+    if (base === `${bcName}-diagram`) {
+      result.overview = content;
+    } else if (base.endsWith('-domain-model')) {
+      result.domainModel = content;
+    } else if (base.endsWith('-states')) {
+      result.states.push({ title: humanizeDiagramName(file, bcName), content });
+    } else if (base.endsWith('-seq')) {
+      result.sequences.push({ title: humanizeDiagramName(file, bcName), content });
+    }
+  }
+
+  return result;
+}
+
+// ─── Design page (diagrams) ───────────────────────────────────────────────────
+
+function buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile) {
+  const tabs = [];
+  const panes = [];
+  const diagramSources = []; // collected in order: { id, source, isSeq }
+
+  let diagIdx = 0;
+
+  function addTab(id, label, html) {
+    const isFirst = tabs.length === 0;
+    tabs.push(
+      `<li class="nav-item" role="presentation">
+        <button class="nav-link${isFirst ? ' active' : ''}" id="tab-${id}" data-bs-toggle="tab"
+          data-bs-target="#pane-${id}" type="button" role="tab">${label}</button>
+      </li>`
+    );
+    panes.push(
+      `<div class="tab-pane fade${isFirst ? ' show active' : ''}" id="pane-${id}" role="tabpanel">
+        ${html}
+      </div>`
+    );
+  }
+
+  function diagramPlaceholder(source, isSeq) {
+    const id = `diag-${diagIdx++}`;
+    diagramSources.push({ id, source, isSeq });
+    const wrapClass = isSeq ? 'diagram-wrap seq-wrap' : 'diagram-wrap';
+    return `<div class="${wrapClass}"><div id="${id}" class="diag-target"></div></div>`;
+  }
+
+  if (diagramGroups.overview) {
+    addTab('overview', 'Overview', diagramPlaceholder(diagramGroups.overview, false));
+  }
+  if (diagramGroups.domainModel) {
+    addTab('domain', 'Domain Model', diagramPlaceholder(diagramGroups.domainModel, false));
+  }
+  if (diagramGroups.states.length) {
+    const html = diagramGroups.states
+      .map((d) => `<h6 class="diagram-title">${escapeHtml(d.title)}</h6>${diagramPlaceholder(d.content, false)}`)
+      .join('');
+    addTab('states', `States <span class="badge bg-secondary ms-1">${diagramGroups.states.length}</span>`, html);
+  }
+  if (diagramGroups.sequences.length) {
+    const html = diagramGroups.sequences
+      .map((d) => `<h6 class="diagram-title">${escapeHtml(d.title)}</h6>${diagramPlaceholder(d.content, true)}`)
+      .join('');
+    addTab('seq', `Sequences <span class="badge bg-secondary ms-1">${diagramGroups.sequences.length}</span>`, html);
+  }
+
+  if (!tabs.length) {
+    return null;
+  }
+
+  const apiLinks = [
+    openApiFile ? `<a href="${escapeHtml(openApiFile)}" class="btn btn-sm btn-outline-success">REST API</a>` : '',
+    asyncApiFile ? `<a href="${escapeHtml(asyncApiFile)}" class="btn btn-sm btn-outline-primary">Events</a>` : '',
+  ].filter(Boolean).join('');
+
+  // Diagram sources as a JS literal — JSON.stringify handles all escaping
+  const diagramsJs = `const DIAGRAMS = ${JSON.stringify(diagramSources)};`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(bcName)} — Design</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
+  <style>
+    body { background: #f5f6f8; }
+    .diagram-wrap {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: .5rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .seq-wrap { overflow-x: auto; text-align: left; }
+    .diag-target { display: inline-block; max-width: 100%; }
+    .seq-wrap .diag-target { display: block; min-width: 600px; }
+    .diag-error pre {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: .4rem;
+      padding: 1rem; font-size: .78rem; text-align: left; white-space: pre-wrap; margin: 0;
+    }
+    .diagram-title { color: #495057; font-size: .85rem; font-weight: 600; margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
+    .nav-tabs .nav-link { font-size: .9rem; }
+    .loading-spinner { color: #adb5bd; font-size: .85rem; padding: 2rem; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; Dashboard</a>
+        <span class="navbar-brand fw-bold mb-0">${escapeHtml(bcName)} — Design</span>
+      </div>
+      <div class="d-flex gap-2">${apiLinks}</div>
+    </div>
+  </nav>
+
+  <div class="container-xl pb-5">
+    <ul class="nav nav-tabs mb-4" role="tablist">
+      ${tabs.join('\n      ')}
+    </ul>
+    <div class="tab-content">
+      ${panes.join('\n      ')}
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"><\/script>
+  <script>
+    ${diagramsJs}
+    mermaid.initialize({ theme: 'default' });
+
+    const rendered = new Set();
+
+    async function renderDiagram({ id, source }) {
+      if (rendered.has(id)) return;
+      rendered.add(id);
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = '<span class="loading-spinner">Rendering\u2026</span>';
+      try {
+        const { svg } = await mermaid.render('svg-' + id, source);
+        el.innerHTML = svg;
+      } catch (err) {
+        el.className = 'diag-error';
+        el.innerHTML =
+          '<div class="text-warning small mb-2 fw-semibold">&#9888; Diagram syntax error \u2014 raw source:</div>' +
+          '<pre>' + source.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
+      }
+    }
+
+    // Render all diagrams in visible tab pane on load
+    async function renderVisible() {
+      for (const d of DIAGRAMS) {
+        const el = document.getElementById(d.id);
+        if (el && el.offsetParent !== null) await renderDiagram(d);
+      }
+    }
+
+    // Re-render when a tab becomes active
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', () => renderVisible());
+    });
+
+    window.addEventListener('load', renderVisible);
+  <\/script>
+</body>
+</html>`;
+}
+
 // ─── HTML builders ────────────────────────────────────────────────────────────
 
 function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt) {
@@ -158,6 +362,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt) {
     let footer;
     if (bc.hasDesign) {
       const links = [
+        bc.designFile ? `<a href="${escapeHtml(bc.designFile)}" class="btn btn-sm btn-outline-dark">Diagrams</a>` : '',
         bc.openApiFile ? `<a href="${escapeHtml(bc.openApiFile)}" class="btn btn-sm btn-outline-success">REST API</a>` : '',
         bc.asyncApiFile ? `<a href="${escapeHtml(bc.asyncApiFile)}" class="btn btn-sm btn-outline-primary">Events</a>` : '',
       ].filter(Boolean);
@@ -393,6 +598,7 @@ function registerPreview(program) {
         const hasDesign = await fs.pathExists(path.join(bcDir, `${bcName}.yaml`));
         let openApiFile = null;
         let asyncApiFile = null;
+        let designFile = null;
 
         if (hasDesign) {
           const openApiPath = path.join(bcDir, `${bcName}-open-api.yaml`);
@@ -408,6 +614,13 @@ function registerPreview(program) {
             asyncApiFile = `${bcName}-asyncapi.html`;
             await fs.writeFile(path.join(reviewDir, asyncApiFile), buildAsyncApiHtml(bcName, spec), 'utf8');
           }
+
+          const diagramGroups = await classifyDiagrams(bcDir, bcName);
+          const designHtml = buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile);
+          if (designHtml) {
+            designFile = `${bcName}-design.html`;
+            await fs.writeFile(path.join(reviewDir, designFile), designHtml, 'utf8');
+          }
         }
 
         bcCards.push({
@@ -418,6 +631,7 @@ function registerPreview(program) {
           hasDesign,
           openApiFile,
           asyncApiFile,
+          designFile,
         });
       }
 
