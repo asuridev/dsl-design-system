@@ -1,0 +1,33 @@
+{
+  "name": "@dsl/design-system",
+  "version": "0.1.0",
+  "description": "CLI for DSL Design System",
+  "main": "bin/dsl.js",
+  "bin": {
+    "dsl": "./bin/dsl.js"
+  },
+  "scripts": {
+    "start": "node bin/dsl.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cli",
+    "design-system",
+    "dsl"
+  ],
+  "author": "",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1"
+  }
+}
