@@ -141,6 +141,7 @@ con preguntas agrupadas en una sola llamada.
 > Las secciones `useCases`, `repositories` y `errors` se agregan en la **Etapa C** (Fase 9).
 
 > Leer `references/bc-yaml-schema.md` para el schema completo antes de escribir.
+> Leer `references/bc-yaml-guide.md` para ejemplos anotados de cada sección, distinción `condition` vs `rules`, flags de agregado (`auditable`, `softDelete`, `readModel`), convenciones de naming y relación con los demás artefactos del Paso 2.
 > Leer `references/canonical-types.md` para la tabla de tipos.
 > Leer `references/relationship-types.md` para las reglas de relaciones.
 

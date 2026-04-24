@@ -83,6 +83,9 @@ AGENTS.md                     ← contexto del sistema
 Leer todos en paralelo. Si algún artefacto del BC no existe, notificarlo inmediatamente
 y preguntar si el usuario quiere ejecutar el Paso 2 primero o si el archivo fue omitido.
 
+Si necesitas validar estructura o convenciones del `{bc-name}.yaml`, leer:
+→ `../ddd-step2-tactical-design/references/bc-yaml-guide.md` — ejemplos anotados, distinción `condition` vs `rules`, flags de agregado, convenciones de naming y relación con los demás artefactos
+
 ---
 
 ## Fase 1B: Validación Profunda

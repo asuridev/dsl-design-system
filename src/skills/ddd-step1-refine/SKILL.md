@@ -78,6 +78,9 @@ AGENTS.md                      → contexto consolidado del sistema
 Leer los cuatro en paralelo. Si alguno no existe, notificarlo inmediatamente — no continuar
 con un diseño parcialmente leído porque los cambios quedarían inconsistentes.
 
+Si necesitas validar estructura o convenciones del `system.yaml`, leer:
+→ `../ddd-step1-strategic-design/references/system-yaml-guide.md` — ejemplos anotados, señales de sobre/sub-diseño, árbol de decisión de integraciones y checklist de validación
+
 ---
 
 ## Fase 1B: Diagnóstico Profundo de Consistencia e Integridad

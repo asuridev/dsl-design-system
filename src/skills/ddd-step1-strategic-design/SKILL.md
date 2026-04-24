@@ -548,8 +548,9 @@ Al terminar los pasos A-G, `integrations[]` debe contener:
 
 ## Fase 3: Generación de Artefactos
 
-Genera los tres artefactos en orden. Lee la referencia del schema antes de escribir:
+Genera los tres artefactos en orden. Lee las referencias antes de escribir:
 → Lee `references/system-yaml-schema.md` para el schema completo de system.yaml
+→ Lee `references/system-yaml-guide.md` para ejemplos anotados, señales de diseño (sobre/sub-diseño), patrones de integración con árbol de decisión y checklist de validación
 
 ### 3.1 system.yaml
 
