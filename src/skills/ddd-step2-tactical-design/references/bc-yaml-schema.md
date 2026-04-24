@@ -488,7 +488,11 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 
 **Flags de visibilidad:**
 - [ ] `id` tiene `readOnly: true` + `defaultValue: generated`
+      (en agregados `readModel: true`: verificar además que el ID del BC fuente esté
+      como campo separado `{sourceEntity}Id` con `unique: true`, NO fusionado en `id`)
 - [ ] Propiedades de estado iniciales tienen `readOnly: true` + `defaultValue: <estado-inicial>`
+- [ ] Ningún tipo usa sintaxis Java genérica: buscar `<[A-Z]` en el YAML
+      — `Page<X>` → `Page[X]`, `List<X>` → `List[X]`, `Enum<X>` → nombre del enum directamente
 - [ ] Campos inyectados del contexto de auth tienen `readOnly: true` + `source: authContext`
 - [ ] Campos write-only (passwords, tokens) tienen `hidden: true`
 - [ ] Campos puramente internos tienen `internal: true`

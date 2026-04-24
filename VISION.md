@@ -37,7 +37,7 @@ Los artefactos de diseño declaran **qué** y **para qué**. Nunca **cómo**.
 | `auditable: true` | columnas `created_at`/`updated_at`, anotaciones JPA, triggers SQL |
 | `readOnly: true` + `defaultValue: generated` | UUID v4 en factory, autoincrement, secuencia |
 | `derived_from: name` | función Slugify, evento de dominio, columna generada |
-| `source: auth-context` | inyección desde `SecurityContext`, JWT claim, middleware |
+| `source: authContext` | inyección desde `SecurityContext`, JWT claim, middleware |
 | `hidden: true` | exclusión del serializador, bcrypt, campo sin getter en DTO |
 | `indexed: true` | índice B-Tree, índice compuesto, anotación `@Index` |
 | `type: uniqueness` en domain_rule | constraint UNIQUE en DB + `findBy{Campo}` en repositorio |

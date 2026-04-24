@@ -179,6 +179,13 @@ channels:
 
 ## Impacto en el BC Consumidor
 
+> **Anti-patrón: fusión de `id` con el ID espejado del BC fuente.**
+> Nunca usar `id` directamente como campo espejo (sin `defaultValue: generated`).
+> Hacerlo crea una contradicción irresoluble: el generador espera que `readOnly: true`
+> sin `defaultValue` signifique que el campo **sí** aparece en el constructor, pero la
+> convención de `id` lo excluye. El patrón correcto es **siempre dos campos separados**:
+> `id` (generated, PK interno) + `{sourceEntity}Id` (unique, ID del BC fuente).
+
 ### 1. `{bc-consumidor}.yaml` — Nuevo agregado con `readModel: true`
 
 ```yaml
@@ -203,10 +210,10 @@ aggregates:
         readOnly: true
         defaultValue: generated
         description: Internal identifier of this snapshot record.
-      - name: productId
+      - name: productId             # ← ID espejado del BC fuente: campo SEPARADO de id
         type: Uuid
         required: true
-        unique: true
+        unique: true                 # genera findByProductId() para upsert idempotente
         description: The catalog Product ID this snapshot represents.
       - name: name
         type: String(200)

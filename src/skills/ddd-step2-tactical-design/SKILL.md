@@ -189,6 +189,43 @@ Propiedades de un VO siempre tienen tipos canónicos — nunca referencian otros
 Enums de forma anidada excepto si es genuinamente un tipo compuesto (`Money` contiene
 `Decimal` y `String(3)`).
 
+### 3.3.1 Resolución de tipos — Regla de cierre del vocabulario de tipos
+
+Todo valor en el campo `type` de cualquier propiedad del YAML **debe estar declarado**
+en este mismo archivo antes de usarse. El generador de código interpreta el YAML como
+la fuente de verdad completa del BC: si un tipo aparece referenciado pero no declarado,
+el generador falla sin poder inferirlo.
+
+**Vocabulario de tipos válidos en `{bc-name}.yaml`:**
+
+| Categoría | Cómo verificar |
+|---|---|
+| Tipo canónico | Existe en `references/canonical-types.md` (`Uuid`, `String`, `Money`, `DateTime`, etc.) |
+| Enum propio | Existe en `enums[]` de este mismo archivo |
+| Value Object propio | Existe en `valueObjects[]` de este mismo archivo |
+| Agregado o Entidad (solo para `references:`) | Existe en `aggregates[]` o en `entities[]` del mismo BC |
+
+**Esta regla aplica sin excepción a:**
+- `aggregates[].properties[].type`
+- `aggregates[].entities[].properties[].type`
+- `valueObjects[].properties[].type`
+- `domainEvents.published[].payload[].type`
+- `domainEvents.consumed[].payload[].type`
+- `repositories[].methods[].params[].type`
+- `repositories[].methods[].returns` (tipo base, sin `?`, `[]` ni `Page[...]`)
+
+**Antes de escribir cualquier `type:` que no sea un primitivo canónico, verifica:**
+1. ¿Está declarado en `enums[]`? Si no → declararlo primero.
+2. ¿Está declarado en `valueObjects[]`? Si no → declararlo primero.
+3. ¿Es un tipo compuesto de payload que agrupa campos del mismo agregado (ej: `OrderLineSummary`)?
+   → Declararlo en `valueObjects[]` con sus propiedades antes de usarlo en el payload.
+
+> **Patrón frecuente de omisión en payloads de eventos:** los eventos suelen necesitar
+> resumir una colección de líneas (ej: `OrderLineSummary`, `CartItemSnapshot`). Es fácil
+> escribir `type: OrderLineSummary` en el payload sin haber declarado ese VO. Siempre
+> declarar el VO en `valueObjects[]` primero, con las propiedades exactas que el
+> consumidor del evento necesita — ni más ni menos.
+
 ### 3.4 Reglas de diseño de Agregados
 
 **Root del agregado:**
@@ -217,6 +254,12 @@ Enums de forma anidada excepto si es genuinamente un tipo compuesto (`Money` con
 
 **Entidades internas:**
 - Siempre tienen `id: Uuid` con `readOnly: true` y `defaultValue: generated` — igual que el root. El `id` de una entidad subordinada nunca viene del request: lo genera el servidor. Omitir estos flags hace que el generador exponga el campo en el request body.
+
+**Estructura de propiedades obligatoria en agregados `readModel: true`:**
+- `id` → `readOnly: true` + `defaultValue: generated` (PK interno, generado localmente)
+- `{sourceEntity}Id` → `unique: true` (ID espejado del BC fuente, viene del evento)
+  El repositorio generará `findBy{SourceEntity}Id()` automáticamente por `unique: true`,
+  lo que permite al event handler implementar upsert idempotente sin método extra.
 - Los campos calculados por el servidor dentro de entidades (e.g. `slug`) también deben llevar `readOnly: true`. El mismo criterio del root aplica a las entidades.
 - Declaran `relationship: composition` y `cardinality`
 - No tienen `createdAt`/`updatedAt` a menos que el negocio lo requiera explícitamente
@@ -244,6 +287,12 @@ Cada propiedad puede tener uno de estos flags mutuamente excluyentes:
 
 Reglas de aplicación:
 - `id` → siempre `readOnly: true` + `defaultValue: generated`
+  > **Excepción — agregados `readModel: true`:** El `id` del registro de proyección
+  > **sí** lleva `defaultValue: generated` (es el PK interno del BC consumidor).
+  > El ID espejado del BC fuente se declara como campo **separado** `{sourceEntity}Id`
+  > con `unique: true`. **Nunca fusionar** ambos roles en un solo campo `id`:
+  > hacerlo crea una contradicción entre `defaultValue: generated` (auto-generado
+  > en factory) y la firma del UC que recibe el ID desde el evento externo.
 - Propiedades de estado inicial → `readOnly: true` + `defaultValue: <ESTADO_INICIAL>`
   (el estado solo cambia vía métodos de dominio, no por request directo)
 - Campos calculados por el servidor (slug, etc.) → `readOnly: true` + `description` explicando la lógica de cálculo
@@ -900,6 +949,9 @@ Por cada agregado, derivar métodos del repositorio desde **4 fuentes**:
 - Métodos de listado paginado: usar `list` como nombre (no `findAll`). Si filtra por un solo parámetro obligatorio, se puede usar `listBy{Param}`.
 - Params opcionales (filtros de query): agregar `required: false`. Params obligatorios (id, page): omitir `required` o poner `required: true`.
 - Conteos: `returns: Int`. Nunca `int` en minúscula.
+- Paginación: `returns: Page[{Aggregate}]`. **Nunca** `Page<{Aggregate}>` — el generador comprueba `startsWith('Page[')` y la sintaxis Java `<>` lo rompe.
+- Enums en `params[].type`: usar el nombre del enum directamente (ej: `CustomerStatus`). **Nunca** `Enum<CustomerStatus>` — es sintaxis Java sin equivalente en el DSL.
+- Listas: `returns: List[{Type}]`. **Nunca** `List<{Type}>`.
 
 Nombrar el campo `derivedFrom` con:
 - `implicit` — para findById y save

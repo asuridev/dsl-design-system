@@ -24,6 +24,7 @@ Nunca usar tipos de lenguajes de programación (`String`, `int`, `number` de TS,
 | `Url` | URL absoluta válida | `java.net.URI` | `string` | `text` |
 | `Money` | Monto monetario (VO compuesto) | VO class | VO interface | `numeric(19,4)` + `varchar(3)` |
 | `List[T]` | Lista ordenada de elementos tipo T | `List<T>` | `T[]` | `json` o tabla relacional |
+| `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | `Page<T>` | `Page<T>` | N/A |
 | `Map[K,V]` | Mapa clave-valor con tipos K y V | `Map<K,V>` | `Record<K,V>` | `jsonb` |
 
 ---
@@ -81,12 +82,17 @@ Si es una colección de entidades con identidad propia, modelar como entidad con
 
 Estos tipos están prohibidos — siempre usar el equivalente canónico:
 
-| Prohibido | Usar en su lugar |
-|-----------|-----------------|
-| `string` | `String` o `String(n)` |
-| `int`, `number`, `float` | `Integer`, `Long`, `Decimal` |
-| `bool` | `Boolean` |
-| `date`, `timestamp` | `Date`, `DateTime` |
-| `any`, `object`, `{}` | Definir un VO específico |
-| `varchar(n)` | `String(n)` |
-| `bigint` | `Long` |
+| Prohibido | Usar en su lugar | Por qué |
+|-----------|-----------------|--------|
+| `string` | `String` o `String(n)` | minúscula es TypeScript/Java primitivo |
+| `int`, `number`, `float` | `Integer`, `Long`, `Decimal` | primitivos de lenguaje |
+| `bool` | `Boolean` | primitivo de lenguaje |
+| `date`, `timestamp` | `Date`, `DateTime` | primitivos SQL/lenguaje |
+| `any`, `object`, `{}` | Definir un VO específico | no tipado |
+| `varchar(n)` | `String(n)` | SQL puro |
+| `bigint` | `Long` | SQL puro |
+| `Page<X>`, `List<X>`, `Map<K,V>` (con `<>`) | `Page[X]`, `List[X]`, `Map[K,V]` (con `[]`) | sintaxis Java genérica — el generador comprueba `startsWith('Page[')` |
+| `Enum<X>` | el nombre del enum directamente (ej: `CustomerStatus`) | wrapper Java — en el DSL los enums se referencian por nombre |
+
+> **Regla mnemotécnica:** El DSL usa **corchetes** `[T]` para genéricos, nunca ángulos `<T>`.
+> `Enum<X>` no existe en el DSL — se usa el nombre del tipo directamente.

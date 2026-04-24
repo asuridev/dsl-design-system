@@ -227,6 +227,11 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
 **B11 — Properties: flags readOnly/hidden/internal**
 - `id` en cada agregado y entidad, ¿tiene `readOnly: true` y `defaultValue: generated`?
   - id sin readOnly → 🔴 ERROR
+  - **Excepción `readModel: true`:** El `id` del agregado de proyección sí lleva
+    `defaultValue: generated` (es el PK interno). Verificar además que exista un campo
+    separado `{sourceEntity}Id` con `unique: true` para el ID espejado del BC fuente.
+    Si el diseño fusionó ambos en `id` sin `defaultValue: generated` → 🔴 ERROR:
+    reestructurar con el patrón de dos campos (`id` generated + `{sourceEntity}Id` unique).
 - Propiedades de estado inicial (enumerados), ¿tienen `readOnly: true`?
   - Estado inicial sin readOnly → 🟡 ALERTA
 - Campos calculados por el servidor (`slug`, totales derivados), ¿tienen `readOnly: true`?
@@ -263,6 +268,41 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
     `{bc-name}-diagram-{readmodel-kebab}-sync-seq.mmd`
   - Archivo en diagrams/ que no está en el inventario → 🔵 SUGERENCIA
   - Archivo del inventario ausente en diagrams/ → 🟡 ALERTA
+
+**B16 — Resolución de tipos: todo tipo referenciado debe estar declarado**
+
+Este es el error más silencioso del diseño táctico: un tipo aparece como `type:` en
+propiedades o payloads pero nunca fue declarado en el YAML. El generador no puede
+resolver el tipo y falla en tiempo de generación de código.
+
+Recopilar todos los valores `type:` que NO sean tipos canónicos (ver `../ddd-step2-tactical-design/references/canonical-types.md`).
+Para cada uno verificar:
+
+| Lugar de referencia | Qué verificar |
+|---|---|
+| `aggregates[].properties[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
+| `aggregates[].entities[].properties[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
+| `valueObjects[].properties[].type` | ¿Es tipo canónico? (los VOs no pueden referenciar otros VOs salvo composición real) |
+| `domainEvents.published[].payload[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
+| `domainEvents.consumed[].payload[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
+| `repositories[].methods[].params[].type` | ¿Existe en `enums[]`, `valueObjects[]` o agregados del BC? |
+| `repositories[].methods[].returns` | ¿El tipo base (sin `?`, `[]` o `Page[...]`) está declarado? |
+
+- Tipo referenciado que no existe en `enums[]` ni `valueObjects[]` ni es canónico → 🔴 ERROR: bloquea la generación de código. Declarar el VO/enum faltante con sus propiedades.
+
+**B17 — Sintaxis Java genérica prohibida**
+
+El generador parsea los tipos literalmente. Cualquier uso de sintaxis Java con ángulos (`<>`) produce fallos silenciosos en generación:
+
+| Patrón prohibido | Corrección | Error que produce |
+|---|---|---|
+| `returns: Page<X>` | `returns: Page[X]` | `startsWith('Page[')` falla → no genera `@Query`, Spring Data no puede derivar `list...` → error en runtime |
+| `returns: List<X>` | `returns: List[X]` | tipo no reconocido → campo generado como `Object` |
+| `type: Enum<X>` | `type: X` (nombre del enum directamente) | tipo no resuelto → compilación falla |
+| `type: List<X>` | `type: List[X]` | ídem List<X> |
+
+Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). Cada ocurrencia → 🔴 ERROR: corregir antes de pasar al generador.
+- Patrón típico: `OrderLineSummary`, `CartItemSnapshot`, `ProductRef` en payloads de eventos — son VOs implícitos que deben declararse explícitamente.
 
 ---
 
