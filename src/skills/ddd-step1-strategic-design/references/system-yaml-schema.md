@@ -82,15 +82,16 @@ infrastructure:
     notes: >            # explicar si es default o decisión explícita
       ...
 
-  messageBroker:        # OMITIR si no hay integraciones con channel: message-broker
-    technology: ""      # rabbitmq | kafka | aws-sqs-sns | azure-service-bus | temporal
-                        # DEFAULT: rabbitmq
-    notes: >
-      ...
+  messageBroker: true   # INCLUIR (como true) cuando el diseño tenga integraciones
+                        # con channel: message-broker. OMITIR si no hay ninguna.
+                        # La tecnología concreta (RabbitMQ, Kafka, etc.) es decisión
+                        # del generador de código (Fase 2), no del diseño.
 
   database:
-    technology: ""      # postgresql | mysql | mongodb | sqlserver
-                        # DEFAULT: postgresql
+    type: relational    # relational | document | key-value | graph
+                        # DEFAULT: relational
+                        # La tecnología concreta (PostgreSQL, MySQL, etc.) es decisión
+                        # del generador de código (Fase 2), no del diseño.
     isolationStrategy: ""   # schema-per-bc | db-per-bc | prefix-per-bc
                             # DEFAULT: schema-per-bc
                             # RECOMENDADO: schema-per-bc para monolito modular
@@ -116,7 +117,7 @@ infrastructure:
 
 ### Consistencia
 - Todo `from` y `to` en `integrations` debe ser un `name` de `boundedContexts` o `externalSystems`
-- Si un `channel` es `message-broker`, debe existir `infrastructure.messageBroker`
+- Si un `channel` es `message-broker`, debe existir `infrastructure.messageBroker: true`
 - Si `deployment.strategy` es `modular-monolith`, `database.isolationStrategy` debe ser `schema-per-bc` (recomendado) o `db-per-bc`
 - Si `channel` es `message-broker`, cada elemento de `contracts[]` DEBE ser un objeto con `name` y `channel`. Si `channel` es `http | grpc | websocket`, cada elemento DEBE ser un string camelCase.
 

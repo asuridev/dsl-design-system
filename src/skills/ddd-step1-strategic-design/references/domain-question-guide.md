@@ -141,6 +141,6 @@ Estos elementos casi siempre existen y pueden asumirse salvo contradicción:
 - `Clientes/Usuarios` como BC supporting si hay registro de usuarios
 - ACL en toda integración con sistema externo
 - `schema-per-bc` como estrategia de aislamiento de DB en monolito modular
-- `postgresql` como DB por defecto
-- `rabbitmq` como broker por defecto si hay eventos
+- `database.type: relational` como tipo de BD por defecto (tecnología concreta → generador Fase 2)
+- `messageBroker: true` si hay canales de eventos (tecnología concreta → generador Fase 2)
 - `hexagonal` como estilo arquitectónico (es una restricción del framework)

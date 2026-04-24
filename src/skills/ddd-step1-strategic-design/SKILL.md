@@ -93,7 +93,7 @@ Dimensiones que SIEMPRE requieren respuesta explícita del usuario (no inferir):
 - **Funcionalidades core del lanzamiento**: evita modelar BCs para features que no van en V1
 
 Dimensiones que SÍ puedes inferir y documentar como supuesto en `notes`:
-- Tecnología de infraestructura (broker, DB) — aplicar defaults
+- Tipo de infraestructura (tipo de broker y tipo de BD) — aplicar defaults (`messageBroker: true` si hay async, `database.type: relational`)
 - Sistemas externos genéricos (ej: pasarela de pago) cuando el dominio los implica claramente
 - Actores secundarios obvios del dominio (ej: administrador interno)
 
@@ -111,7 +111,8 @@ Para sistemas de venta/ecommerce/tickets/seguros/etc., las dimensiones críticas
 5. **Inventario**: ¿Propio centralizado, distribuido, sin inventario?
 6. **Funcionalidades core del lanzamiento**: (multiselect — evita sobre-ingeniería)
 7. **Sistemas externos ya definidos**: ¿ERP, pasarela de pago, operador logístico?
-8. **Restricciones tecnológicas conocidas**: broker, DB, cloud — o asumir defaults
+8. **Tipo de base de datos**: ¿relacional, documental, clave-valor, grafos? (o asumir `relational` por default)
+   — La tecnología concreta (PostgreSQL, MySQL, etc.) se decide en el generador de código, no aquí.
 
 Usa opciones cerradas con `allowFreeformInput: true` para agilizar. Agrupa en una sola
 llamada `vscode_askQuestions` con todas las preguntas pendientes.
@@ -583,12 +584,13 @@ infrastructure:   → technology decisions from Step 1
 |-------|---------|-----------------|
 | `deployment.strategy` | `modular-monolith` | modular-monolith \| microservices \| serverless |
 | `deployment.architectureStyle` | `hexagonal` | hexagonal \| layered \| clean |
-| `database.technology` | `postgresql` | postgresql \| mysql \| mongodb \| sqlserver |
+| `database.type` | `relational` | relational \| document \| key-value \| graph |
 | `database.isolationStrategy` | `schema-per-bc` | schema-per-bc \| db-per-bc \| prefix-per-bc |
-| `messageBroker.technology` | `rabbitmq` | rabbitmq \| kafka \| aws-sqs-sns \| azure-service-bus \| temporal |
+| `messageBroker` | `true` (si hay canales async) | true \| omitir si no hay message-broker |
 
 Cuando apliques un default, docuéntalo en el campo `notes` de esa sección.
 Si el diseño no tiene integraciones por eventos, omite `messageBroker`.
+La tecnología concreta del broker y la base de datos (RabbitMQ, Kafka, PostgreSQL…) es decisión del generador de código (Fase 2) — no se declara en el Paso 1.
 
 **Patrones de integración válidos:**
 
@@ -765,8 +767,8 @@ aparecen en múltiples BCs o que podrían ser ambiguos fuera de contexto]
 ## Decisiones de Infraestructura (Paso 1)
 - **Estrategia de deployment**: [valor]
 - **Estilo arquitectónico**: [valor]
-- **Base de datos**: [tecnología] — [estrategia de aislamiento]
-- **Message broker**: [tecnología o "No aplica"]
+- **Base de datos**: [tipo: relational | document | key-value | graph] — [estrategia de aislamiento]
+- **Message broker**: [requerido (true) / No aplica]
 
 ## Estado del Diseño
 - **Paso completado**: Paso 1 — Diseño Estratégico

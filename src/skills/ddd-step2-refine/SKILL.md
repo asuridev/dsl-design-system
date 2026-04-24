@@ -140,9 +140,9 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
 
 **A3 — Eventos de dominio ↔ contratos de system.yaml**
 - Para cada evento en `domainEvents.published[]`, ¿existe un contrato en system.yaml con ese
-  `name` PascalCase en la integración `from: este-bc, channel: messageBroker`?
+  `name` PascalCase en la integración `from: este-bc, channel: message-broker`?
 - Para cada evento en `domainEvents.consumed[]`, ¿existe un contrato en system.yaml con ese
-  `name` en la integración `to: este-bc, channel: messageBroker`?
+  `name` en la integración `to: este-bc, channel: message-broker`?
 - El `channel` del evento en el AsyncAPI, ¿coincide exactamente con el `channel` del
   contrato en system.yaml?
   - Evento sin contrato declarado → 🔴 ERROR

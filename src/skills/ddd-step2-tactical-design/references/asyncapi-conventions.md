@@ -3,8 +3,8 @@
 Estándar: **AsyncAPI Specification 2.6.0**
 Referencia oficial: https://www.asyncapi.com/docs/reference/specification/v2.6.0
 
-Broker: **RabbitMQ** (protocolo AMQP 0-9-1)
-Patrón de mensajería: Publish/Subscribe via topic exchange
+Broker: **agnóstico** — tecnología definida en Fase 2 (generador de código)
+Patrón de mensajería: Publish/Subscribe
 
 ---
 
@@ -21,10 +21,9 @@ info:
 defaultContentType: application/json
 
 servers:
-  rabbitmq:
-    url: amqp://rabbitmq:5672
-    protocol: amqp
-    description: RabbitMQ message broker (modular-monolith deployment)
+  message-broker:
+    url: "/"
+    description: Message broker — technology defined in Fase 2
 ```
 
 ---
@@ -246,9 +245,9 @@ info:
 defaultContentType: application/json
 
 servers:
-  rabbitmq:
-    url: amqp://rabbitmq:5672
-    protocol: amqp
+  message-broker:
+    url: "/"
+    description: Message broker — technology defined in Fase 2
 
 channels:
   # ── Eventos publicados ─────────────────────────────────────────────────────

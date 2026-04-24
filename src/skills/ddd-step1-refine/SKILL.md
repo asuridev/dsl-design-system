@@ -381,7 +381,7 @@ ejecutar el test de las tres preguntas:
 
 **F1 — Message broker declarado si existen eventos**
 - Si hay al menos una integración con `channel: message-broker`, ¿está declarado
-  `infrastructure.messageBroker.technology`?
+  `infrastructure.messageBroker: true`?
   - Eventos sin broker declarado → 🔴 ERROR
 
 **F2 — Broker declarado innecesariamente**

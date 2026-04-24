@@ -659,9 +659,10 @@ info:
   version: "1.0.0"
 defaultContentType: application/json
 servers:
-  rabbitmq:
-    url: amqp://rabbitmq:5672
+  message-broker:
+    url: "/"
     protocol: amqp
+    description: Message broker — technology defined in Fase 2
 ```
 
 ### 8.2 Convención de canales
