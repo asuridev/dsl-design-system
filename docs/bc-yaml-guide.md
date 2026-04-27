@@ -764,11 +764,13 @@ Campos de cada evento consumido:
 | `name` | PascalCase en tiempo pasado. Nombre del evento tal como lo publica el BC emisor. Debe coincidir con el `name` en `contracts` de `system.yaml` para las integraciones `channel: message-broker` donde este BC es el `to`. |
 | `sourceBc` | kebab-case. BC que publica este evento. Debe existir en `system.yaml`. |
 | `description` | Qué efecto produce este evento en este BC — qué agregado se actualiza o qué use case se dispara. |
-| `payload` | Campos que llegan con el evento. Deben reflejar exactamente el payload del evento en el BC emisor. |
+| `payload` | Campos que llegan con el evento. Deben reflejar exactamente el payload del evento en el BC emisor. Obligatorio salvo que `acknowledgeOnly: true`. |
+| `acknowledgeOnly` | `true` (opcional). El BC suscribe al canal pero no ejecuta lógica de dominio — no hay UC asociado. El generador solo produce el canal `subscribe` en el AsyncAPI. Usar para acuses de compensación de saga o señales de fin de paso donde el BC no cambia ningún agregado. Si está ausente se asume `false`. |
 
 ```yaml
   consumed:
 
+    # Evento con UC — el BC ejecuta lógica de dominio al recibirlo
     - name: StockUpdated
       sourceBc: inventory       # inventory es quien publica este evento
       description: >
@@ -784,6 +786,14 @@ Campos de cada evento consumido:
         - name: occurredAt
           type: DateTime
           required: true
+
+    # Evento sin UC — el BC solo necesita suscribirse, sin lógica de dominio
+    - name: StockReleased
+      sourceBc: inventory
+      acknowledgeOnly: true     # acuse de compensación — saga solo necesita saber que ocurrió
+      description: >
+        Inventory confirms stock was released after order cancellation.
+        No domain logic executed — orders has already emitted OrderCancelled.
 ```
 
 ---

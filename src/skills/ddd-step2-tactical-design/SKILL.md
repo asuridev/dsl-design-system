@@ -170,6 +170,7 @@ Para enums que representan **ciclos de vida** (estados de un agregado):
 - Expandir cada valor con `transitions[]`
 - Cada transición declara: `to`, `triggeredBy`, `condition`, `rules[]`, `emits`
 - `emits: null` si la transición no genera evento
+- **`triggeredBy` usa siempre el formato largo**: `UC-{ABREV}-{NNN} NombreUC` (ej: `UC-PRD-004 ActivateProduct`). El formato corto (solo el UC-ID sin nombre) dificulta la trazabilidad y el checker B1 del refinamiento lo señalará como sugerencia de normalización.
 - **`condition` debe ser siempre un RULE-ID o la literal `none`** — NUNCA texto libre descriptivo.
   - Correcto: `condition: CAT-RULE-003` ó `condition: none`
   - Incorrecto: `condition: "Product's category must be in ACTIVE status"`
@@ -397,6 +398,35 @@ Cuando un BC tiene integraciones outbound hacia sistemas externos (ej: `payments
 - Registrar en `integrations.outbound` del `{bc}.yaml` con `type: externalSystem` y `pattern: acl`
 - **No** crear rutas ni schemas en ninguno de los archivos OpenAPI para esas llamadas salientes
 - El mapeo de errores del sistema externo → errores de dominio es responsabilidad del ACL adapter en implementación, no del diseño táctico
+
+---
+
+### 3.7 Reglas de diseño de `domainEvents`
+
+#### `published` — payload obligatorio
+
+Todo evento publicado debe incluir `payload[]` no vacío con al menos:
+- El ID del agregado raíz que generó el evento (`{aggregate}Id: Uuid`)
+- El timestamp `occurredAt: DateTime` — permite al consumidor ordenar eventos y detectar mensajes fuera de orden
+
+Un evento sin payload es un contrato vacío: el consumidor no puede actuar sobre él sin hacer un lookup adicional al BC emisor, lo que crea acoplamiento sincrónico encubierto.
+
+> **Mínimo siempre presente:** `{aggregate}Id` + `occurredAt`. Añadir todos los campos que el consumidor necesita para actuar sin consultar de vuelta al BC emisor (ver reglas del payload en `references/bc-yaml-guide.md`).
+
+#### `consumed` — UC o `acknowledgeOnly: true`
+
+Todo evento en `domainEvents.consumed[]` pertenece a exactamente una de estas dos categorías:
+
+| Categoría | Cuándo aplica | Qué genera el generador |
+|---|---|---|
+| **Con UC** (`trigger.kind: event`) | El BC ejecuta lógica de dominio al recibir el evento: actualiza un agregado, transiciona un estado o emite otro evento | UC con `actor: system` y el handler correspondiente |
+| **`acknowledgeOnly: true`** | El BC solo necesita suscribirse al canal — sin lógica de dominio. El evento llega, el sistema lo registra, no ocurre nada más. | Solo el canal `subscribe` en el AsyncAPI, sin UC |
+
+**Candidatos típicos a `acknowledgeOnly: true`:**
+- Confirmaciones de compensación completada en una saga (ej: `StockReleased`, `PaymentRefunded`) cuando el BC ya emitió su evento de cancelación y la compensación ocurre en otro BC
+- Señales de cierre de saga que el BC solo necesita para desbloquear un estado futuro, sin cambiar ningún agregado en el momento
+
+Un evento consumido sin UC **y** sin `acknowledgeOnly: true` es un gap de diseño: la intención es ambigua y el generador no puede crear el handler.
 
 ---
 

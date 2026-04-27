@@ -178,6 +178,8 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
 - Cada `transitions[].triggeredBy` en los enums, ¿referencia un UC-ID que exista
   en `useCases[]`?
   - triggeredBy sin UC-ID correspondiente → 🔴 ERROR
+- El formato de `triggeredBy`, ¿usa la forma larga `UC-{ABREV}-{NNN} NombreUC`?
+  - Formato corto (solo UC-ID sin nombre, ej: `UC-CST-005`) → 🔵 SUGERENCIA: normalizar al formato largo para facilitar trazabilidad (ej: `UC-CST-005 DeactivateCustomer`)
 
 **B2 — domainRules: type asignado y errorCode → OpenAPI 4xx**
 - ¿Cada domainRule tiene `type` asignado?
@@ -303,6 +305,20 @@ El generador parsea los tipos literalmente. Cualquier uso de sintaxis Java con �
 
 Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). Cada ocurrencia → 🔴 ERROR: corregir antes de pasar al generador.
 - Patrón típico: `OrderLineSummary`, `CartItemSnapshot`, `ProductRef` en payloads de eventos — son VOs implícitos que deben declararse explícitamente.
+
+**B18 — domainEvents.published: payload obligatorio**
+- Para cada evento en `domainEvents.published[]`:
+  - ¿Tiene `payload[]` con al menos un campo?
+  - ¿Incluye el ID del agregado raíz (`{aggregate}Id: Uuid`)?
+  - ¿Incluye `occurredAt: DateTime`?
+  - Evento sin `payload` (campo ausente o lista vacía) → 🔴 ERROR: el consumidor no puede actuar sin datos — rompe el contrato del evento
+  - Evento con payload pero sin `occurredAt` → 🟡 ALERTA: sin timestamp el consumidor no puede ordenar eventos ni detectar llegadas fuera de orden
+
+**B19 — domainEvents.consumed: UC o `acknowledgeOnly: true`**
+- Para cada evento en `domainEvents.consumed[]`:
+  - ¿Existe un UC en `useCases[]` con `trigger.kind: event` y `trigger.event` igual al `name` de este evento?
+  - Si no hay UC: ¿tiene `acknowledgeOnly: true`?
+  - Evento consumido sin UC **y** sin `acknowledgeOnly: true` → 🟠 ALERTA: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Opciones: (a) añadir un UC con la lógica de dominio correspondiente, o (b) marcar `acknowledgeOnly: true` si el BC solo necesita suscribirse sin ejecutar lógica (típico en acuses de compensación de saga)
 
 ---
 
