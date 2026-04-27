@@ -299,6 +299,27 @@ Reglas de aplicación:
 - Campos calculados por el servidor (slug, etc.) → `readOnly: true` + `description` explicando la lógica de cálculo
 - Campos inyectados del contexto de autenticación → `readOnly: true` + `source: authContext`
   (el generador inyecta desde el contexto de autenticación, nunca del request)
+
+  **Cuándo declarar `source: authContext`:**
+  Usar este flag cuando el campo cumple las **tres condiciones** simultáneamente:
+  1. El valor proviene del usuario autenticado que ejecuta la acción (no del request body ni de ningún parámetro de ruta/query)
+  2. El campo es inmutable después de la creación — nunca se actualiza desde ningún UC posterior
+  3. El campo identifica **quién** realizó la acción (auditoría de responsabilidad)
+
+  | Campo | Aplica `source: authContext` | Por qué |
+  |---|---|---|
+  | `createdBy: String` | ✅ | Identidad del usuario que creó el registro — viene del JWT |
+  | `customerId: Uuid` en Cart | ✅ | ID del cliente autenticado — nunca del request body |
+  | `operatorId: Uuid` en una acción de backoffice | ✅ | ID del operador autenticado |
+  | `assignedTo: Uuid` (un campo asignable vía request) | ❌ | El valor lo elige el actor — no viene del contexto |
+  | `status: OrderStatus` | ❌ | Valor inicial de dominio — usar `defaultValue:` en su lugar |
+  | `updatedAt: DateTime` | ❌ | Timestamp del servidor — inyectado por `auditable: true`, no declarar manualmente |
+
+  > **Consecuencia en el generador:** un campo con `source: authContext` nunca aparece en el
+  > request body del OpenAPI. El generador lo inyecta desde el `SecurityContext` en el
+  > application service. **No agregar `fkValidations` sobre estos campos** — ver regla de la
+  > sección de useCases sobre `fkValidations` con `source: authContext`.
+
 - Campos write-only → `hidden: true` (ej: password, refresh token)
 - Campos puramente internos al dominio → `internal: true` (ej: attemptCount)
 
@@ -427,6 +448,29 @@ Todo evento en `domainEvents.consumed[]` pertenece a exactamente una de estas do
 - Señales de cierre de saga que el BC solo necesita para desbloquear un estado futuro, sin cambiar ningún agregado en el momento
 
 Un evento consumido sin UC **y** sin `acknowledgeOnly: true` es un gap de diseño: la intención es ambigua y el generador no puede crear el handler.
+
+#### `consumed` — payload obligatorio cuando hay UC
+
+Todo evento en `domainEvents.consumed[]` que tiene un UC asociado **debe declarar `payload[]`** con los campos que ese UC necesita para ejecutar su lógica de dominio.
+
+**Por qué el generador falla sin payload:** el generador construye el message handler a partir del payload declarado. Sin payload, no sabe qué campos leer del mensaje entrante para: (1) localizar el agregado a cargar del repositorio, (2) pasar los datos al método de dominio. El resultado es un handler vacío que no compila o que falla silenciosamente en runtime.
+
+**Mínimo requerido para el payload de un evento consumido con UC:**
+
+| Tipo de UC | Campos mínimos obligatorios |
+|---|---|
+| **Saga handler** (UC con `sagaStep`) | ID del agregado que el handler debe cargar (ej: `orderId: Uuid`) + `occurredAt: DateTime` |
+| **LRM handler** (UC sobre agregado `readModel: true`) | **Todos los campos** que la proyección necesita replicar — el handler usa el evento como única fuente de verdad, sin llamar al BC fuente |
+| **Otros event-triggered UCs** | ID del agregado afectado + campos que la lógica del UC necesita + `occurredAt: DateTime` |
+
+> **Regla práctica para LRM handlers:** el `payload[]` del evento consumido en este BC debe ser
+> idéntico (o subconjunto) al `payload[]` del evento correspondiente en `domainEvents.published[]`
+> del BC fuente — si `CustomerAddressAdded` en `customers.yaml` publica 11 campos, el handler
+> en `orders.yaml` los necesita todos para mantener `CustomerAddressSnapshot` actualizado.
+
+> **Excepción:** eventos con `acknowledgeOnly: true` **no deben tener payload** — no hay handler
+> que los procese. Si se declara payload en un `acknowledgeOnly`, el generador lo ignora y produce
+> confusión en el lector del diseño.
 
 ---
 

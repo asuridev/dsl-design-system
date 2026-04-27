@@ -238,8 +238,14 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
   - Estado inicial sin readOnly → 🟡 ALERTA
 - Campos calculados por el servidor (`slug`, totales derivados), ¿tienen `readOnly: true`?
   - Campo calculado sin readOnly → 🟡 ALERTA
-- Campos inyectados de authContext, ¿tienen `readOnly: true` y `source: authContext`?
+- Campos inyectados de authContext, ¿tienen `readOnly: true` y `source: authContext``?
   - Campo de authContext sin flag → 🟡 ALERTA
+  - **Criterio de identificación** — un campo necesita `source: authContext` si cumple las tres condiciones:
+    1. El valor proviene del usuario autenticado (no del request body ni de parámetros de ruta/query)
+    2. Es inmutable después de la creación (ningún UC posterior lo modifica)
+    3. Registra **quién** ejecutó la acción (auditoría de responsabilidad)
+  - Campos típicos con `source: authContext`: `createdBy`, `customerId` inyectado desde JWT, `operatorId` en acciones de backoffice
+  - Campos que NO usan `source: authContext` aunque parezcan candidatos: campos asignables por el actor desde el request (`assignedTo`, `ownerId` editable), estado inicial (`defaultValue:` es el flag correcto), timestamps del servidor (`auditable: true` los inyecta automáticamente)
 
 **B12 — Properties: flags unique/indexed**
 - Propiedad referenciada por domainRule `type: uniqueness`, ¿tiene `unique: true`?
@@ -314,11 +320,23 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
   - Evento sin `payload` (campo ausente o lista vacía) → 🔴 ERROR: el consumidor no puede actuar sin datos — rompe el contrato del evento
   - Evento con payload pero sin `occurredAt` → 🟡 ALERTA: sin timestamp el consumidor no puede ordenar eventos ni detectar llegadas fuera de orden
 
-**B19 — domainEvents.consumed: UC o `acknowledgeOnly: true`**
+**B19 — domainEvents.consumed: UC o `acknowledgeOnly: true` + payload**
 - Para cada evento en `domainEvents.consumed[]`:
   - ¿Existe un UC en `useCases[]` con `trigger.kind: event` y `trigger.event` igual al `name` de este evento?
   - Si no hay UC: ¿tiene `acknowledgeOnly: true`?
-  - Evento consumido sin UC **y** sin `acknowledgeOnly: true` → 🟠 ALERTA: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Opciones: (a) añadir un UC con la lógica de dominio correspondiente, o (b) marcar `acknowledgeOnly: true` si el BC solo necesita suscribirse sin ejecutar lógica (típico en acuses de compensación de saga)
+  - Evento consumido sin UC **y** sin `acknowledgeOnly: true` → 🔴 ERROR: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Opciones: (a) añadir un UC con la lógica de dominio correspondiente, o (b) marcar `acknowledgeOnly: true` si el BC solo necesita suscribirse sin ejecutar lógica (típico en acuses de compensación de saga)
+- Para cada evento en `domainEvents.consumed[]` que tiene un UC asociado (`trigger.kind: event`):
+  - ¿Tiene `payload[]` con al menos un campo?
+  - Evento consumido con UC pero sin `payload` (campo ausente o lista vacía) → 🔴 ERROR: el generador no puede construir el message handler sin saber qué campos leer del mensaje — falla en tiempo de generación de código
+  - Verificar que el payload incluye al mínimo:
+    - Para **saga handlers** (`sagaStep` presente): el ID del agregado que el UC carga del repositorio (ej: `orderId: Uuid`) + `occurredAt: DateTime`
+    - Para **LRM handlers** (UC sobre agregado `readModel: true`): todos los campos que la proyección necesita replicar → comparar con el `payload[]` del evento correspondiente en `domainEvents.published[]` del BC fuente
+    - Para cualquier otro event-triggered UC: el ID del agregado afectado + campos usados en la lógica del UC + `occurredAt: DateTime`
+  - Payload incompleto que falta el ID del agregado a cargar → 🔴 ERROR: el handler no puede ejecutar `repositoryMethod: findById`
+  - Payload incompleto en LRM handler (faltan campos que la proyección usa) → 🔴 ERROR: la proyección quedará desincronizada — el dato que el LRM no recibe en el evento tendrá que buscarlo en el BC fuente (acoplamiento sincrónico encubierto)
+- Para cada evento con `acknowledgeOnly: true`:
+  - ¿Tiene `payload[]` declarado?
+  - Evento `acknowledgeOnly` con payload → 🔵 SUGERENCIA: el payload no tiene efecto (no hay handler) — eliminarlo evita confusión en el lector del diseño
 
 **B20 — repositories.list: params sin mapeo a propiedad necesitan `filterOn` y `operator`**
 - Para cada método en `repositories[].methods[]` de tipo listado (`returns: Page[...]` o `List[...]`):
