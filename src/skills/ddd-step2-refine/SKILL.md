@@ -320,6 +320,34 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
   - Si no hay UC: ¿tiene `acknowledgeOnly: true`?
   - Evento consumido sin UC **y** sin `acknowledgeOnly: true` → 🟠 ALERTA: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Opciones: (a) añadir un UC con la lógica de dominio correspondiente, o (b) marcar `acknowledgeOnly: true` si el BC solo necesita suscribirse sin ejecutar lógica (típico en acuses de compensación de saga)
 
+**B20 — repositories.list: params sin mapeo a propiedad necesitan `filterOn` y `operator`**
+- Para cada método en `repositories[].methods[]` de tipo listado (`returns: Page[...]` o `List[...]`):
+  - Para cada param cuyo `name` no coincide con ninguna propiedad del agregado raiz (típicamente: `search`, `q`, `query`, `keyword`):
+    - ¿Tiene `filterOn[]` con al menos una propiedad que exista en el agregado?
+    - ¿Tiene `operator` con un valor válido (`EQ`, `LIKE_CONTAINS`, `LIKE_STARTS`, `LIKE_ENDS`, `GTE`, `LTE`, `IN`)?
+    - Param sin `filterOn` → 🔴 ERROR: el generador no puede inferir sobre qué columna(s) aplica el filtro — gap de diseño que produce código incorrecto o incompleto.
+    - `filterOn` presente pero sin `operator` → 🔴 ERROR: el operador es parte del predicado; sin él el generador no puede construir la cláusula WHERE.
+    - Verificar además que el UC asociado tenga `implementation: scaffold` si `filterOn`/`operator` no están declarados.
+
+**B21 — `countBy`/`listBy` con calificador `Active` en agregados `softDelete: true`**
+- Para cada método en `repositories[].methods[]` cuyo nombre contiene el calificador `Active` (ej: `countActiveByX`, `listActiveByY`):
+  - ¿El agregado asociado tiene `softDelete: true`?
+  - ¿El agregado tiene una propiedad `status` con un valor `ACTIVE`?
+  - Si el agregado tiene `softDelete: true` pero **no** tiene campo `status`: el calificador `Active` es ambiguo → 🔴 ERROR. El generador infiere `status = 'ACTIVE'` pero la columna no existe. Renombrar el método usando `NonDeleted` (ej: `countNonDeletedByCustomerId`) para que el generador derive `deleted_at IS NULL`.
+  - Si el agregado tiene `softDelete: true` **y** tiene campo `status`: 🟡 ALERTA. El calificador es ambiguo — clarificar si el predicado filtra por `status = 'ACTIVE'`, por `deleted_at IS NULL`, o por ambos. Elegir un nombre que exprese sin ambigüedad la intención.
+
+**B22 — `fkValidations` sobre campos con `source: authContext`**
+- Para cada UC con `fkValidations[]` no vacío:
+  - Para cada entrada en `fkValidations[]`, localizar la propiedad `field` en el agregado del UC.
+  - ¿Esa propiedad tiene `source: authContext`?
+  - Si tiene `source: authContext`: la validación de FK es redundante — el campo viene del `SecurityContext` (ya validado por autenticación) y nunca del request body. El generador generará un puerto (`{Bc}ServicePort`) sin adaptador implementador → Spring falla en startup. → 🔴 ERROR: eliminar la entrada `fkValidations[]` del UC y, si `notFoundError` solo era referenciado desde esa FK, eliminar también la entrada de `errors[]`.
+
+**B23 — `fkValidations[].bc` sin entrada en `integrations.outbound`**
+- Para cada UC con `fkValidations[]` no vacío:
+  - Para cada entrada, ¿el valor de `bc` coincide con algún `bc` en `integrations.outbound[]`?
+  - Si `fkValidations[].bc == "X"` pero no hay entrada en `integrations.outbound` con `bc: X`: el generador produce `XServicePort` (interfaz) pero ningún `@Component` la implementa → Spring no puede satisfacer la dependencia en startup. → 🔴 ERROR. Opciones: (a) declarar la integración outbound hacia `X` en `integrations` si la comunicación HTTP real existe, o (b) eliminar la `fkValidation` si la validación es innecesaria.
+  - **Excepción:** si `bc` referencia el mismo BC (`bc == bc actual`) o es un agregado local del mismo BC — en ese caso no se necesita `integrations.outbound`.
+
 ---
 
 ### Checklist C — Calidad del Diseño del Dominio

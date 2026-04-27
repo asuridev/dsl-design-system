@@ -305,9 +305,14 @@ repositories:
       # el método filtra por un único parámetro obligatorio.
       - name: list
         params:
-          - name: {param}
-            type: {canonical-type}
+          - name: {param}               # param cuyo nombre coincide con una propiedad del agregado
+            type: {canonical-type}      # el generador infiere EQ automáticamente
             required: false    # agregar required: false en params opcionales (filtros)
+          - name: search                # param de búsqueda textual (no mapea a ninguna propiedad)
+            type: String
+            required: false
+            filterOn: [{campo1}, {campo2}]  # propiedades del agregado que filtra
+            operator: LIKE_CONTAINS         # LIKE_CONTAINS | LIKE_STARTS | EQ | GTE | LTE | IN
           - name: page
             type: PageRequest
             required: true

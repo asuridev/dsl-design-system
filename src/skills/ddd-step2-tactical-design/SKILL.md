@@ -926,6 +926,8 @@ Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`
      - `aggregate`: nombre del agregado referenciado (ej: `Category`)
      - `notFoundError`: código de error si el FK no existe (ej: `CATEGORY_NOT_FOUND`)
      - `conditional` (opcional, boolean): `true` si esta validación de FK solo se ejecuta cuando el campo está presente en el request body — aplica a PATCH donde los campos son opcionales. Omitir si la validación es siempre requerida.
+     - **Regla: nunca declarar `fkValidations` sobre un campo con `source: authContext`.** Esos campos provienen del `SecurityContext` (ya autenticado) — nunca del request body. La FK validation es redundante y el generador producirá un puerto sin adaptador implementador (`{Bc}ServicePort` sin `@Component`) → fallo de startup en Spring. Si el campo es `source: authContext`, suprimir la entrada `fkValidations`.
+     - **Regla: si `fkValidations[].bc == "X"` (BC externo), debe existir una entrada en `integrations.outbound` hacia ese BC.** Sin esa integración el generador produce la interfaz de puerto pero no el adaptador HTTP — ningún `@Bean` satisface la dependencia → fallo de startup en Spring. Si la integración no existe, o bien agregar `integrations.outbound` hacia `X`, o bien eliminar la `fkValidation` si no es necesaria.
    - `implementation`: `full` | `scaffold`
      - `full`: el generador produce la implementación completa (CRUD simple, cargas directas, queries sin lógica)
      - `scaffold`: el generador produce el método con un marcador TODO — la lógica la completa la IA en Fase 3
@@ -972,12 +974,14 @@ Por cada agregado, derivar métodos del repositorio desde **4 fuentes**:
 | **property** `unique: true` en el agregado raíz | Por cada propiedad con `unique: true` no cubierta por domainRule | `findBy{FieldName}({type}): {Aggregate}?` |
 | **domainRule** `type: deleteGuard` | Por cada regla de borrado | `delete(Uuid)` |
 | **openapi GET params** | Por cada query param en GET /{resources} | `list({params opcionales}, PageRequest): Page[{Aggregate}]` |
-| **openapi GET params** texto libre (search) | Por cada query param de búsqueda textual | `searchBy{Field1}Or{Field2}(String, PageRequest): Page[{Aggregate}]` |
+| **openapi GET params** texto libre (search) | Por cada query param de búsqueda textual cuyo nombre no mapea a una propiedad del agregado | Param en `list` con `filterOn: [{campo1}, {campo2}]` y `operator: LIKE_CONTAINS` (u otro op). **No renombrar el método** — sigue siendo `list`; el param lleva los metadatos del predicado. |
 | **domainRule** `type: crossAggregateConstraint` | Por cada regla que consulta otro agregado | `countBy{Field1}And{Field2}({type}, {type}): Int` |
 
 **Reglas de naming y params:**
 - Métodos de listado paginado: usar `list` como nombre (no `findAll`). Si filtra por un solo parámetro obligatorio, se puede usar `listBy{Param}`.
 - Params opcionales (filtros de query): agregar `required: false`. Params obligatorios (id, page): omitir `required` o poner `required: true`.
+- **Params cuyo nombre no corresponde a ninguna propiedad del agregado** (ej: `search`, `q`, `keyword`): declarar `filterOn` (array con los nombres de las propiedades del agregado que el predicado involucra) y `operator` (el operador SQL). Sin estos campos el generador no puede derivar el predicado y el UC asociado debe ser `implementation: scaffold`. Valores de `operator`: `EQ` · `LIKE_CONTAINS` · `LIKE_STARTS` · `LIKE_ENDS` · `GTE` · `LTE` · `IN`.
+- **Métodos `countBy` y `listBy` sobre agregados con `softDelete: true`:** El calificador `Active` en el nombre (ej: `countActiveByCustomerId`) implica `status = 'ACTIVE'`, pero en agregados soft-deleted no hay campo `status`. El generador produce un predicado incorrecto. Usar siempre `NonDeleted` como calificador: `countNonDeletedBy{Campo}` → el generador lo mapea a `WHERE {campo} = :v AND deleted_at IS NULL`.
 - Conteos: `returns: Int`. Nunca `int` en minúscula.
 - Paginación: `returns: Page[{Aggregate}]`. **Nunca** `Page<{Aggregate}>` — el generador comprueba `startsWith('Page[')` y la sintaxis Java `<>` lo rompe.
 - Enums en `params[].type`: usar el nombre del enum directamente (ej: `CustomerStatus`). **Nunca** `Enum<CustomerStatus>` — es sintaxis Java sin equivalente en el DSL.
@@ -1152,6 +1156,7 @@ Aplicar **solo si** algún agregado o entidad declara `softDelete: true`.
 - [ ] No existe ninguna propiedad `deletedAt` declarada manualmente en `properties[]` — el generador la inyecta; declararla manualmente produce duplicados
 - [ ] El UC DELETE del agregado o entidad tiene `implementation: scaffold`
 - [ ] El `method` del UC DELETE es `softDelete(id): void`, no `delete(id): void`
+- [ ] Los métodos de repositorio que cuentan o listan instancias “activas” usan el calificador `NonDeleted` (ej: `countNonDeletedByCustomerId`), no `Active`. El calificador `Active` implica `status = 'ACTIVE'` y es ambiguo cuando el agregado no tiene campo `status`.
 - [ ] En `{bc-name}-open-api.yaml` el endpoint DELETE responde `204 No Content` (igual que el borrado físico — el contrato HTTP no cambia)
 - [ ] Si el BC publica un evento al eliminar (ej: `ProductDeleted`), ese evento existe en `domainEvents.published[]` y el UC lo declara en `emits`
 - [ ] No existe un endpoint de restauración (restore/undelete) a menos que haya un UC explícito en la spec para ello

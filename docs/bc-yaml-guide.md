@@ -431,9 +431,19 @@ Cada entrada tiene dos campos raíz:
 | Campo | Descripción |
 |---|---|
 | `name` | camelCase. Nombre del método. Ver convenciones de naming más abajo. |
-| `params` | Lista de parámetros de entrada. Cada uno con `name`, `type`, y opcionalmente `required: false` si es un filtro opcional. |
+| `params` | Lista de parámetros de entrada. Ver campos de cada param en la tabla siguiente. |
 | `returns` | Tipo de retorno. Ver tabla de tipos de retorno más abajo. |
 | `derivedFrom` | Por qué existe este método. Ver valores válidos más abajo. |
+
+### Campos de un `param`
+
+| Campo | Descripción |
+|---|---|
+| `name` | camelCase. Si el nombre coincide con una propiedad del agregado, el generador infiere el predicado `EQ` automáticamente. |
+| `type` | Tipo canónico del parámetro. |
+| `required` | `false` para filtros opcionales. Omitir (o `true`) para params obligatorios. |
+| `filterOn` | Array de propiedades del agregado que filtra este param. **Requerido cuando el nombre del param no corresponde a ninguna propiedad del agregado** (ej: `search`, `q`, `keyword`). El generador no puede derivar el predicado sin este campo. Ejemplo: `filterOn: [name, sku]`. |
+| `operator` | Operador SQL del predicado. **Requerido cuando `filterOn` está presente.** Valores válidos: `EQ` (igualdad exacta — default implícito cuando el nombre mapea a una propiedad), `LIKE_CONTAINS` (`LIKE '%:v%'`), `LIKE_STARTS` (`LIKE ':v%'`), `LIKE_ENDS` (`LIKE '%:v'`), `GTE` (`>=`), `LTE` (`<=`), `IN`. |
 
 ### `derivedFrom` — origen del método
 
@@ -462,8 +472,11 @@ Cada entrada tiene dos campos raíz:
 | `list` | Query con filtros opcionales. Acepta `PageRequest`. |
 | `listBy{Param}` | Query filtrada por un único parámetro **obligatorio** (ej: `listByCategory`). |
 | `countBy{Campo}` | Cuenta instancias que referencian otro agregado. Para reglas `crossAggregateConstraint`. |
+| `countNonDeletedBy{Campo}` | Igual que `countBy{Campo}` pero el agregado tiene `softDelete: true`. El generador deriva `WHERE {campo} = :v AND deleted_at IS NULL`. Usar este nombre en lugar de `countActiveBy{Campo}` — el calificador `Active` es ambiguo cuando el agregado no tiene campo `status`. |
 | `save` | Siempre. INSERT o UPDATE del agregado. |
 | `delete` | Solo si hay regla `deleteGuard`. Eliminación física. |
+
+> **Calificadores en `count`/`list` sobre agregados `softDelete: true`:** El calificador `Active` (ej: `countActiveByCustomerId`, `listActiveByOwnerId`) implica `status = 'ACTIVE'`, pero en agregados soft-deleted no hay `status`. El generador no puede resolver la ambigüedad y produce un predicado incorrecto. Usar siempre `NonDeleted` como calificador de exclusión de borrados lógicos — el generador lo mapea inequívocamente a `deleted_at IS NULL`.
 
 ### Ejemplo completo
 
@@ -489,9 +502,14 @@ repositories:
 
       - name: list                  # derivado del endpoint GET /products del OpenAPI
         params:
-          - name: status            # filtro opcional — el cliente puede omitirlo
+          - name: status            # filtro opcional — mapea a Product.status (EQ implícito)
             type: ProductStatus
             required: false
+          - name: search            # param de búsqueda textual — no mapea a ninguna propiedad
+            type: String
+            required: false
+            filterOn: [name, sku]   # filtra sobre Product.name y Product.sku
+            operator: LIKE_CONTAINS # genera: WHERE (p.name LIKE %:search% OR p.sku LIKE %:search%)
           - name: page              # siempre requerido en métodos list
             type: PageRequest
             required: true
