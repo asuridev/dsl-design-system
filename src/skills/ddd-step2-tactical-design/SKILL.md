@@ -142,7 +142,8 @@ con preguntas agrupadas en una sola llamada.
 
 > Leer `references/bc-yaml-schema.md` para el schema completo antes de escribir.
 > Leer `references/bc-yaml-guide.md` para ejemplos anotados de cada sección, distinción `condition` vs `rules`, flags de agregado (`auditable`, `softDelete`, `readModel`), convenciones de naming y relación con los demás artefactos del Paso 2.
-> Leer `references/canonical-types.md` para la tabla de tipos.
+> Leer `references/canonical-types.md` para la tabla de tipos y sus validaciones implícitas.
+> Leer `references/validation.md` para el vocabulario completo de `validations` — cuándo usarlas, qué constraints están disponibles y cómo se traducen por plataforma. Aplicar `validations` en `properties[]` siempre que el dominio imponga restricciones que el tipo canónico no captura solo (rangos, patrones, mínimos de longitud, restricciones temporales).
 > Leer `references/relationship-types.md` para las reglas de relaciones.
 
 ### 3.1 Estructura del archivo (v1)
@@ -274,6 +275,39 @@ el generador falla sin poder inferirlo.
 - IDs con formato `{PREFIX}-RULE-NNN` donde PREFIX es abreviatura del BC (ej: CAT, PRD, ORD)
 - Capturar solo invariantes que el sistema debe hacer cumplir siempre
 - No capturar validaciones de input (esas van en la capa de aplicación)
+
+**`domainMethods` del agregado (solo en agregados no `readModel: true`):**
+
+Cada método de comportamiento invocable por un command UC se declara en `domainMethods[]`.
+Esta sección es la **fuente de verdad** de: qué parámetros necesita el método, qué retorna y qué evento emite.
+
+Reglas de diseño:
+
+- **Un entry por cada command UC** que invoca al agregado. Si dos UCs llaman al mismo método, un solo entry.
+- **Solo en agregados que NO son `readModel: true`**. Los readModels usan `upsert`/`delete` como valores especiales de `method` en el UC — son operaciones de repositorio directo, no métodos de dominio. No declararlos aquí.
+- `name` — camelCase. Debe coincidir con el valor `method` del UC que lo referencia.
+- `params` — solo los parámetros que el método necesita que **no sean el agregado mismo**. El agregado cargado vía `loadAggregate: true` **no es un param**: el generador lo inyecta implícitamente. Omitir `params` si el método no recibe parámetros externos.
+- `returns` — `void` si el método no retorna nada; tipo del agregado si es una factory (crea la entidad raíz).
+- `emits` — nombre del evento publicado al completarse. `null` si no emite. No declarar `null` explícitamente si se omite el campo — usar `emits: null` solo cuando sea el valor real (no para omitir).
+- El generador resuelve cada `params[]` desde estas fuentes en orden: `input[]` del UC (por nombre), luego `outgoingCalls[].bindsTo` del UC, luego constantes del dominio (para `implementation: scaffold`).
+
+Ejemplo:
+```yaml
+domainMethods:
+  - name: activate
+    params: []           # no recibe parámetros externos
+    returns: void
+    emits: ProductActivated
+
+  - name: checkout
+    params:
+      - name: addressSnapshotId
+        type: Uuid
+      - name: catalogPrices
+        type: List[ProductPriceDto]
+    returns: void
+    emits: OrderPlaced
+```
 
 **Flags de visibilidad de propiedades (aplicar siempre en Etapa A):**
 
@@ -946,49 +980,70 @@ Recorrer todas las properties de todos los agregados:
 
 #### C.3 — Construir sección `useCases`
 
-Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`:
+Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`, y por cada evento en `domainEvents.consumed[]`:
 
-1. Crear una entrada `useCases[]` con:
+1. Crear una entrada `useCases[]` con los siguientes campos:
+
+**Campos comunes a todos los tipos de UC:**
    - `id`: asignar `UC-{ABREV}-{NNN}` secuencial (si ya existía UC-ID en el `triggeredBy` del enum transition, usar ese mismo ID)
-   - `name`: derivar del `operationId` o del `summary` de la operación
-   - `type`: `command` si el método es POST/PATCH/DELETE; `query` si es GET
-   - `actor`: derivar de la descripción del endpoint (operator, customer, driver, system)
-   - `trigger.kind`: `http`
-   - `trigger.operationId`: copiar exactamente el `operationId` del OpenAPI
-   - `aggregate`: identificar qué agregado manipula/consulta (por el path o el schema del request)
-   - `method`: para commands — buscar en los enums la transición cuyo `triggeredBy` referencia este UC-ID; extraer `{methodName}({params}): {ReturnType}`
-   - `repositoryMethod`: método de repositorio que persiste/consulta el resultado (ver C.4)
-   - `rules`: lista de RULE-IDs cuyo `type` es `statePrecondition`, `uniqueness`, `terminalState`, `deleteGuard`, o `crossAggregateConstraint` y que aplican a esta operación. Las reglas `sideEffect` **no** van aquí — no producen guard ni error; se documentan en `{bc-name}-flows.md` como efecto secundario del happy path. **Regla para query UCs con 422:** si el OpenAPI o el internal-api declara una response `422` de negocio para este UC y no existe ninguna domainRule que produzca ese `errorCode` → crear una nueva domainRule `type: statePrecondition` en el agregado correspondiente **antes de completar C.3**. Las precondiciones de estado son invariantes del dominio aunque el UC sea de consulta (ej: un producto debe estar ACTIVE para ser validado en el carrito). No dejar estas reglas como validaciones silenciosas de aplicación.
-   - `emits`: para commands — copiar el campo `emits` de la transición del enum; `null` si no emite
-   - `notFoundError`: agregar en dos casos:
-     1. El use case llama `findById` como primer paso (carga el agregado desde el repositorio antes de operar). Valor: el `code` del error 404 correspondiente al agregado raíz (ej: `PRODUCT_NOT_FOUND`, `CATEGORY_NOT_FOUND`). Aplica a commands que operan sobre un agregado existente y a queries de detalle (GetById, Validate...).
-     2. El use case busca **una entidad dentro del agregado ya cargado** por ID en su colección in-memory (ej: `UpdateSubcategory` o `RemoveSubcategory` buscan `subcategoryId` en `category.subcategories`). Aplica tanto a comandos PATCH (update) como DELETE (remove) sobre entidades subordinadas. En ese caso usar el código de error de la entidad (ej: `SUBCATEGORY_NOT_FOUND`), no del agregado raíz.
-     - Si ambos casos aplican (el UC primero carga el agregado vía `findById` Y luego busca una entidad in-memory), usar formato lista: `notFoundError: [AGGREGATE_NOT_FOUND, ENTITY_NOT_FOUND]`.
-     - **Trazabilidad obligatoria:** cada código en `notFoundError` (sea valor único o elemento de lista) DEBE tener su entrada en `errors[]` con `httpStatus: 404`. Las operaciones sobre entidades subordinadas de composición (RemoveX, UpdateX de entidades in-memory) tienen su propio código distinto al del agregado raíz — ej: `PRODUCT_IMAGE_NOT_FOUND` ≠ `PRODUCT_NOT_FOUND`. Si la entidad no tiene un endpoint propio en el OpenAPI, su error igualmente debe declararse en `errors[]`.
-   - `fkValidations`: agregar si el use case recibe en su request campos que referencian otros agregados por FK y debe validar su existencia. Es una lista de objetos con:
-     - `field`: nombre del campo en el request (ej: `categoryId`)
-     - `aggregate`: nombre del agregado referenciado (ej: `Category`)
-     - `notFoundError`: código de error si el FK no existe (ej: `CATEGORY_NOT_FOUND`)
-     - `conditional` (opcional, boolean): `true` si esta validación de FK solo se ejecuta cuando el campo está presente en el request body — aplica a PATCH donde los campos son opcionales. Omitir si la validación es siempre requerida.
-     - **Regla: nunca declarar `fkValidations` sobre un campo con `source: authContext`.** Esos campos provienen del `SecurityContext` (ya autenticado) — nunca del request body. La FK validation es redundante y el generador producirá un puerto sin adaptador implementador (`{Bc}ServicePort` sin `@Component`) → fallo de startup en Spring. Si el campo es `source: authContext`, suprimir la entrada `fkValidations`.
-     - **Regla: si `fkValidations[].bc == "X"` (BC externo), debe existir una entrada en `integrations.outbound` hacia ese BC.** Sin esa integración el generador produce la interfaz de puerto pero no el adaptador HTTP — ningún `@Bean` satisface la dependencia → fallo de startup en Spring. Si la integración no existe, o bien agregar `integrations.outbound` hacia `X`, o bien eliminar la `fkValidation` si no es necesaria.
-   - `implementation`: `full` | `scaffold`
-     - `full`: el generador produce la implementación completa (CRUD simple, cargas directas, queries sin lógica)
-     - `scaffold`: el generador produce el método con un marcador TODO — la lógica la completa la IA en Fase 3
-     - Criterio para `scaffold`: el método hace más que un guard + save; aplica regla `sideEffect` o `crossAggregateConstraint` que requiere coordinación entre objetos; o el flows.md tiene casos borde significativos que requieren lógica no trivial
-   - `sagaStep` (opcional): presente solo si este UC es un paso o compensación de un saga declarado en `system.yaml`. Campos:
-     - `saga`: nombre del saga (`sagas[].name` en `system.yaml`)
-     - `order`: número de orden del paso en el saga
-     - `role`: `step` (lógica principal del paso) | `compensation` (lógica de compensación)
-     - `compensatedBy`: ID del UC que compensa este paso — solo cuando `role: step` y el paso tiene campo `compensation` definido
+   - `name`: derivar del `operationId` o del `summary` (HTTP) o del evento (event-triggered)
+   - `type`: `command` si el método es POST/PATCH/DELETE o event-triggered; `query` si es GET
+   - `actor`: derivar del contexto (operator, customer, driver, system)
+   - `trigger.kind`: `http` o `event`
+   - `trigger.operationId`: copiar exactamente el `operationId` del OpenAPI (solo si `kind: http`)
+   - `trigger.event` y `trigger.channel`: si `kind: event` — nombre del evento y canal AsyncAPI
+   - `aggregate`: identificar qué agregado manipula o consulta
+   - `rules`: lista de RULE-IDs con `type` en `{statePrecondition, uniqueness, terminalState, deleteGuard, crossAggregateConstraint}` que aplican a esta operación. Las reglas `sideEffect` **no** van aquí — se documentan en `{bc-name}-flows.md` como efecto secundario del happy path. **Regla para query UCs con 422:** si el OpenAPI declara una response `422` para este UC y no existe ninguna domainRule que produzca ese `errorCode` → crear una nueva domainRule `type: statePrecondition` en el agregado correspondiente **antes de completar C.3**.
+   - `notFoundError`: lista de códigos lanzados cuando la entidad no existe (`[CODE]`). Agregar en dos casos:
+     1. El UC carga el agregado raíz vía `findById` (input con `loadAggregate: true`). Valor: código del error 404 del agregado (ej: `[PRODUCT_NOT_FOUND]`).
+     2. El UC busca una entidad dentro del agregado cargado por ID en su colección in-memory. Usar el código de la entidad subordinada (ej: `[SUBCATEGORY_NOT_FOUND]`).
+     - Si ambos casos aplican, usar lista con ambos: `notFoundError: [AGGREGATE_NOT_FOUND, ENTITY_NOT_FOUND]`.
+     - Omitir cuando no aplica ningún caso.
+     - Cada código en `notFoundError` DEBE tener su entrada en `errors[]` con `httpStatus: 404`.
+   - `implementation`: `full` | `scaffold` (ver tabla de criterios más abajo)
+   - `sagaStep` (opcional): presente solo si este UC es un paso o compensación de un saga declarado en `system.yaml`. Campos: `saga`, `order`, `role` (`step` | `compensation`), `compensatedBy` (ID del UC compensador, solo cuando `role: step`).
+
+**Campos específicos de commands (`type: command`):**
+   - `method`: **nombre plano** del método de dominio (sin firma, sin paréntesis, sin tipo de retorno). Resolver así:
+     - Buscar en `aggregates[aggregate].domainMethods` el método cuyo `name` corresponde a la acción del UC.
+     - Para agregados `readModel: true`: usar `upsert` o `delete` — son operaciones de repositorio directo, no `domainMethods`.
+   - `input[]`: parámetros externos que recibe el handler. Por cada param del request body, path y query que el UC necesita, más cualquier campo inyectado del contexto de autenticación:
+     - `name`: camelCase — el generador cruza este nombre contra `domainMethods[method].params[].name` para resolver la invocación.
+     - `type`: tipo DSL del parámetro.
+     - `required`: `true` si obligatorio; `false` si opcional (PATCH fields).
+     - `source`: `path` | `query` | `body` | `authContext` | `event.{campo}` (para event-triggered).
+     - `loadAggregate: true` (opcional): agregar en el param cuyo UUID identifica el agregado a cargar vía `repository.findById(param)`. Solo un param por UC puede tener este flag; su `type` debe ser `Uuid`.
+     - Omitir `input` completamente si la lista está vacía.
+   - `fkValidations[]`: si el UC recibe en `input[]` campos que referencian otros agregados por FK:
+     - `aggregate`: nombre del agregado referenciado
+     - `param`: nombre del `input[]` que contiene el UUID de FK
+     - `error`: código de error si el FK no existe
+     - `conditional` (opcional, boolean): `true` si la validación solo aplica cuando el campo está presente en el request (PATCH con campos opcionales). Omitir si siempre requerida.
+     - **Regla: nunca declarar `fkValidations` sobre un `input[]` con `source: authContext`.** Esos campos provienen del `SecurityContext` — la FK validation es redundante y produce un puerto sin implementador en Spring → fallo de startup.
+     - **Regla: si la FK referencia un BC externo, debe existir la entrada en `integrations.outbound`** — sin ella el generador produce la interfaz pero no el adaptador.
+   - `outgoingCalls[]` (opcional): llamadas explícitas a puertos externos requeridas para resolver parámetros del `domainMethod`. Omitir si no hay llamadas externas.
+     - `port`: nombre del puerto (debe existir en `integrations.outbound[]`)
+     - `method`: método del puerto a invocar
+     - `params` (opcional): nombres de `input[]` pasados al puerto como argumentos
+     - `bindsTo`: nombre del parámetro de `domainMethods[method].params` al que se asigna el resultado de la llamada
+
+**Campos específicos de queries (`type: query`, `kind: http`):**
+   - **NO incluir `method`** — las queries no invocan `domainMethods`.
+   - `input[]`: parámetros del endpoint GET (path params, query params, authContext). Mismo formato que en commands. El campo `loadAggregate: true` se usa para **Path A** (ver abajo).
+   - `returns`: nombre del DTO de respuesta HTTP. Debe existir como schema en el OpenAPI correspondiente.
+   - **NO incluir `fkValidations`** — las queries no validan FKs.
+   - **Resolución Path A vs Path B:**
+     - **Path A**: si algún `input[]` tiene `loadAggregate: true` → el generador invoca `repository.findById(param)` directamente. No requiere `queryMethods`.
+     - **Path B**: si ningún `input[]` tiene `loadAggregate: true` → el generador cruza los nombres de `input[]` contra `repositories[aggregate].queryMethods[].params[]` para identificar el método. Los params deben coincidir por nombre.
 
 ##### Criterios: `implementation: full` vs `scaffold`
 
 | Condición en el use case | `implementation` |
 |---|---|
-| Solo `findById` + `save`/`delete` sin lógica condicional | `full` |
-| Type `query` | `full` |
-| Carga un segundo agregado solo para validar FK | `full` |
+| `type: query` (cualquier query) | `full` |
+| Command: todos los `domainMethods[method].params` resolvibles desde `input[]` y/o `outgoingCalls[].bindsTo` | `full` |
+| Command: carga un segundo agregado solo para validar FK | `full` |
+| Command: algún `domainMethods[method].params` no resolvible desde `input[]` ni `outgoingCalls` (requiere lógica interna o constante) | `scaffold` |
 | Evalúa `crossAggregateConstraint` | `scaffold` |
 | Aplica `sideEffect` (crea entidad adicional) | `scaffold` |
 | Transición de estado con `condition != none` | `scaffold` |
@@ -996,19 +1051,38 @@ Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`
 | Crea (factory) un agregado o entidad subordinada que tiene campos `readOnly` sin `defaultValue` | `scaffold` |
 | DELETE sobre agregado o entidad con `softDelete: true` | `scaffold` |
 
-> **Regla absoluta — `type: query` siempre es `implementation: full`:** Todo UC con `type: query` recibe `full` sin excepción. Aunque aplique una domainRule (ej: verificar que el producto está `ACTIVE` antes de retornarlo), la lógica es `findById` + evaluar condición + retornar — no hay coordinación entre objetos ni efectos secundarios que requieran implementación manual. La presencia de `rules[]` no cambia esta regla: una query con precondición es tan generable determinísticamente como una sin ella. Si un query UC aparenta necesitar `scaffold`, revisar si la regla es una invariante de dominio (domainRule apropiada) o una validación puntual de aplicación.
+> **Regla absoluta — `type: query` siempre es `implementation: full`:** Todo UC con `type: query` recibe `full` sin excepción. La lógica es `findById` / `queryMethod` + retornar — no hay coordinación entre objetos ni efectos secundarios que requieran implementación manual.
 
-> **Nota `repositoryMethods` cuando el UC es `scaffold` por campo calculado:** si el UC crea o re-deriva un campo `readOnly` a partir de una fuente (e.g. `slug` derivado de `name`), debe incluir `findBy{campo}` en `repositoryMethods` para la verificación de unicidad. Excepción: entidades subordinadas sin repositorio propio — en ese caso la unicidad se verifica in-memory contra la colección del agregado raíz ya cargado.
+> **`implementation: full` para commands** se determina comprobando que **cada** `domainMethods[method].params[]` puede resolverse desde: (1) un `input[]` con el mismo `name`, o (2) un `outgoingCalls[].bindsTo` con el mismo nombre. Si al menos un param queda sin resolución → `scaffold`.
 
-Para useCases disparados por evento (no por HTTP) — si el BC consume eventos `domainEvents.consumed[]`:
+Para useCases disparados por evento (`kind: event`) — si el BC consume eventos `domainEvents.consumed[]`:
    - `trigger.kind`: `event`
    - `trigger.event`: nombre del evento consumido
    - `trigger.channel`: canal del asyncapi
    - `actor`: `system`
+   - `method`: mismo criterio que commands HTTP (nombre plano del método, o `upsert`/`delete` para readModels)
+   - `input[]`: un entry por cada campo del evento que el handler necesita, con `source: event.{campo}`. El param con `loadAggregate: true` identifica el ID del agregado a cargar.
 
 #### C.4 — Construir sección `repositories`
 
-Por cada agregado, derivar métodos del repositorio desde **4 fuentes**:
+Cada repositorio tiene dos subsecciones: `queryMethods` (métodos de solo lectura para queries Path B) y `methods` (métodos implícitos, derivados de domainRules y otros).
+
+##### C.4.1 — Derivar `queryMethods`
+
+Por cada agregado, generar un `queryMethod` por cada endpoint GET del OpenAPI cuyo query UC no use `loadAggregate: true` (Path B). Estos métodos son la fuente de verdad para el **Path B** de resolución de queries.
+
+Reglas:
+- Un `queryMethod` por cada operación GET con filtros de listado (no GetById — ese ya es Path A).
+- `name`: convención `list` (sin filtros obligatorios), `listBy{Param}` (un filtro obligatorio), `findBy{Campo}` (por campo único — retorna nullable).
+- `params[]`: los mismos query params del OpenAPI. `required: false` para filtros opcionales.
+- `returns`: tipo de retorno igual al `returns` del UC correspondiente. Usar `Page[{Aggregate}]` para listados paginados, `List[{Aggregate}]` para no paginados.
+- `derivedFrom`: `openapi:{operationId}` de la operación GET correspondiente.
+- Params de búsqueda textual (cuyo `name` no mapea a ninguna propiedad del agregado): declarar `filterOn` y `operator` igual que en `methods` (ver C.4.2).
+- **Separación estricta:** los métodos de `queryMethods` son de **solo lectura**. Nunca poner un método de escritura aquí. Los métodos de lectura por ID (`findById`) van en `methods`, no aquí.
+
+##### C.4.2 — Derivar `methods`
+
+Por cada agregado, derivar métodos desde **5 fuentes**:
 
 | Fuente | Condición | Método generado |
 |--------|-----------|----------------|
@@ -1017,24 +1091,23 @@ Por cada agregado, derivar métodos del repositorio desde **4 fuentes**:
 | **domainRule** `type: uniqueness`, campo `X` | Por cada regla de unicidad | `findBy{X}({type}): {Aggregate}?` |
 | **property** `unique: true` en el agregado raíz | Por cada propiedad con `unique: true` no cubierta por domainRule | `findBy{FieldName}({type}): {Aggregate}?` |
 | **domainRule** `type: deleteGuard` | Por cada regla de borrado | `delete(Uuid)` |
-| **openapi GET params** | Por cada query param en GET /{resources} | `list({params opcionales}, PageRequest): Page[{Aggregate}]` |
-| **openapi GET params** texto libre (search) | Por cada query param de búsqueda textual cuyo nombre no mapea a una propiedad del agregado | Param en `list` con `filterOn: [{campo1}, {campo2}]` y `operator: LIKE_CONTAINS` (u otro op). **No renombrar el método** — sigue siendo `list`; el param lleva los metadatos del predicado. |
 | **domainRule** `type: crossAggregateConstraint` | Por cada regla que consulta otro agregado | `countBy{Field1}And{Field2}({type}, {type}): Int` |
 
 **Reglas de naming y params:**
-- Métodos de listado paginado: usar `list` como nombre (no `findAll`). Si filtra por un solo parámetro obligatorio, se puede usar `listBy{Param}`.
 - Params opcionales (filtros de query): agregar `required: false`. Params obligatorios (id, page): omitir `required` o poner `required: true`.
 - **Params cuyo nombre no corresponde a ninguna propiedad del agregado** (ej: `search`, `q`, `keyword`): declarar `filterOn` (array con los nombres de las propiedades del agregado que el predicado involucra) y `operator` (el operador SQL). Sin estos campos el generador no puede derivar el predicado y el UC asociado debe ser `implementation: scaffold`. Valores de `operator`: `EQ` · `LIKE_CONTAINS` · `LIKE_STARTS` · `LIKE_ENDS` · `GTE` · `LTE` · `IN`.
-- **Métodos `countBy` y `listBy` sobre agregados con `softDelete: true`:** El calificador `Active` en el nombre (ej: `countActiveByCustomerId`) implica `status = 'ACTIVE'`, pero en agregados soft-deleted no hay campo `status`. El generador produce un predicado incorrecto. Usar siempre `NonDeleted` como calificador: `countNonDeletedBy{Campo}` → el generador lo mapea a `WHERE {campo} = :v AND deleted_at IS NULL`.
+- **Métodos `countBy` y `listBy` sobre agregados con `softDelete: true`:** Usar siempre `NonDeleted` como calificador: `countNonDeletedBy{Campo}` → el generador lo mapea a `WHERE {campo} = :v AND deleted_at IS NULL`. Nunca `Active` como calificador — no hay campo `status` en soft-deleted.
 - Conteos: `returns: Int`. Nunca `int` en minúscula.
 - Paginación: `returns: Page[{Aggregate}]`. **Nunca** `Page<{Aggregate}>` — el generador comprueba `startsWith('Page[')` y la sintaxis Java `<>` lo rompe.
-- Enums en `params[].type`: usar el nombre del enum directamente (ej: `CustomerStatus`). **Nunca** `Enum<CustomerStatus>` — es sintaxis Java sin equivalente en el DSL.
+- Enums en `params[].type`: usar el nombre del enum directamente (ej: `CustomerStatus`). **Nunca** `Enum<CustomerStatus>`.
 - Listas: `returns: List[{Type}]`. **Nunca** `List<{Type}>`.
 
 Nombrar el campo `derivedFrom` con:
 - `implicit` — para findById y save
 - `{RULE-ID}` — para métodos derivados de domainRules
-- `openapi:{operationId}` — para métodos derivados de query params del OpenAPI
+- `openapi:{operationId}` — para métodos de `queryMethods` derivados del OpenAPI
+
+
 
 #### C.5 — Construir sección `errors`
 

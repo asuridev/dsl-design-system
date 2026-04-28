@@ -104,6 +104,23 @@ aggregates:
         unique: true | false          # omitir si false; genera índice UNIQUE en DB
         indexed: true | false         # omitir si false; genera índice no-UNIQUE en DB
         description: {descripción}
+        validations:                  # opcional — constraints adicionales que el tipo no puede expresar solo.
+                                      # Ver references/validation.md para el vocabulario completo.
+                                      # Regla: nunca repetir lo que ya está implícito en el tipo
+                                      # (ej: no poner maxLength si ya hay String(n); no poner format:email si el tipo es Email).
+                                      # Estas constraints se heredan automáticamente en TODOS los commands
+                                      # que incluyan este campo en su input[]. El generador aplica las
+                                      # annotations correspondientes en el Command record/class.
+          - minLength: {N}            # solo para String, String(n), Text
+          - pattern: "{REGEXP}"       # solo para String, String(n)
+          - min: {N}                  # solo para Integer, Long, Decimal
+          - max: {N}                  # solo para Integer, Long, Decimal
+          - positive: true            # solo para Integer, Long, Decimal — excluye cero
+          - positiveOrZero: true      # solo para Integer, Long, Decimal — incluye cero
+          - future: true              # solo para Date, DateTime
+          - past: true                # solo para Date, DateTime
+          - minSize: {N}              # solo para List[T]
+          - maxSize: {N}              # solo para List[T]
 
       # ─ Enums propios
       - name: {status}
@@ -198,7 +215,7 @@ aggregates:
             type: Uuid
             required: true
             description: Unique identifier of the {entity}.
-          # ... propiedades de la entidad
+          # ... propiedades de la entidad (admiten validations: igual que aggregates[].properties[])
 
     domainRules:
       - id: {PREFIX}-RULE-{NNN}
@@ -206,12 +223,22 @@ aggregates:
         errorCode: {ERROR_CODE}       # referencia a errors[].code; omitir si no hay error propio
         description: {invariante de negocio que el sistema debe hacer cumplir siempre}
 
+    # ─ Métodos de dominio (fuente de verdad para commands)
+    # Solo en agregados que NO son readModel. Omitir si el agregado es readModel: true.
+    domainMethods:
+      - name: {methodName}          # camelCase — referenciado desde useCases[].method
+        params:                     # omitir si el método no recibe parámetros externos
+          - name: {param}
+            type: {DSL-type}        # tipo canónico o declarado en enums/valueObjects
+        returns: void | {AggregateName}  # void si no devuelve nada; tipo del agregado para creaciones (factory)
+        emits: {NombreEvento | null}     # evento de dominio emitido tras ejecución exitosa; null si no emite
+
 
 # ─── USE CASES ──────────────────────────────────────────────────────────────
 
 useCases:
 
-  # ─ Caso de uso de comando (modifica estado)
+  # ─ Command disparado por HTTP
   - id: UC-{ABREV}-{NNN}
     name: {NombreUC}
     type: command
@@ -220,47 +247,35 @@ useCases:
       kind: http
       operationId: {operationId}    # operationId exacto del OpenAPI generado en Etapa B
     aggregate: {AggregateName}
-    method: {methodName}({params}): {ReturnType}   # firma del método de dominio en el agregado
-    repositoryMethod: {repoMethodName}({params})  # método del repositorio que persiste el resultado
+    method: {methodName}            # → aggregates[{AggregateName}].domainMethods[{methodName}]
+                                    # Excepción — readModel: true: usar "upsert" o "delete" (operación de repositorio directo)
+    input:                          # omitir si no hay parámetros externos
+      - name: {param}
+        type: {DSL-type}
+        required: true | false
+        source: path | query | body | authContext
+        loadAggregate: true         # opcional — activa findById({param}) antes de invocar el método.
+                                    # Exactamente un param por UC puede declararlo; su tipo debe ser Uuid.
+                                    # Omitir en commands de creación (domainMethods[method].returns != void).
     rules: [{RULE-ID}, ...]          # reglas evaluadas DENTRO de este use case
-    emits: {NombreEvento | null}     # evento emitido al completar; null si no emite
-    implementation: full | scaffold  # full = generación completa; scaffold = esqueleto con marcadores TODO
-    # notFoundError: Agregar si el use case llama findById como primer paso,
-    #   o si busca una entidad in-memory en la colección del agregado cargado.
-    #   Si ambos aplican, usar lista: [AGGREGATE_NOT_FOUND, ENTITY_NOT_FOUND]
-    # fkValidations: Agregar si el use case recibe campos que referencian otros agregados por FK
+    notFoundError: [{ERROR_CODE}]   # lista — agregar si loadAggregate: true o si busca entidad in-memory
+    fkValidations:                  # lista vacía [] si no hay FK; omitir en queries
+      - aggregate: {AggregateName}  # agregado cuya existencia se valida
+        param: {paramName}          # nombre del input[] que contiene el UUID de FK
+        error: {ERROR_CODE}         # código de error si el FK no existe
+    outgoingCalls:                  # opcional — llamadas explícitas a puertos externos
+      - port: {PortName}            # debe existir en integrations.outbound[]
+        method: {methodName}
+        params: [{paramName}, ...]  # nombres de input[] pasados al puerto; omitir si ninguno
+        bindsTo: {domainMethodParam} # parámetro de domainMethods[method].params al que se asigna el resultado
+    implementation: full | scaffold  # full = todos los params resolvibles; scaffold = TODOs pendientes
+    sagaStep:                       # opcional — solo si es paso o compensación de una Saga
+      saga: {SagaName}              # debe existir en sagas[].name en system.yaml
+      order: {N}                    # posición en el flujo feliz (1-based); omitir cuando role: compensation
+      role: step | compensation
+      compensates: {N}              # número de orden del paso que se revierte; solo cuando role: compensation
 
-  # Ejemplo con notFoundError y fkValidations:
-  # - id: UC-CAT-008
-  #   name: UpdateProductDetails
-  #   type: command
-  #   ...
-  #   notFoundError: PRODUCT_NOT_FOUND        # lanzado si findById no retorna resultado
-  #   fkValidations:
-  #     - field: categoryId                      # campo en el request que es FK
-  #       aggregate: Category                    # agregado referenciado
-  #       notFoundError: CATEGORY_NOT_FOUND    # error si el FK no existe
-  #       conditional: true                      # opcional: true cuando el campo FK es opcional en el request
-  #                                              # el generador emite la validación dentro de if (field != null)
-  # Aplicar también cuando el FK es opcional (e.g. `categoryId?`). Si el campo se recibe
-  # en el request (aunque sea opcional), el generador debe emitir la validación condicional.
-
-  # ─ Caso de uso de query (solo lectura)
-  - id: UC-{ABREV}-{NNN}
-    name: {NombreUC}
-    type: query
-    actor: customer | operator | driver | system
-    trigger:
-      kind: http
-      operationId: {operationId}
-    aggregate: {AggregateName}
-    repositoryMethod: {repoMethodName}({params})  # método del repositorio que lee los datos
-    rules: []                        # normalmente vacío para queries
-    emits: null
-    notFoundError: {ERROR_CODE}    # agregar si este query llama findById (GetById, Validate...)
-    implementation: full | scaffold
-
-  # ─ Caso de uso disparado por evento
+  # ─ Command disparado por evento
   - id: UC-{ABREV}-{NNN}
     name: {NombreUC}
     type: command
@@ -270,11 +285,42 @@ useCases:
       event: {NombreEvento}          # nombre del evento consumido
       channel: {canal-asyncapi}      # canal AsyncAPI donde llega el evento
     aggregate: {AggregateName}
-    method: {methodName}({params}): {ReturnType}
-    repositoryMethod: {repoMethodName}({params})
+    method: {methodName}             # → aggregates[{AggregateName}].domainMethods[{methodName}]
+                                     # Excepción — readModel: true: usar "upsert" o "delete"
+    input:
+      - name: {param}
+        type: {DSL-type}
+        required: true
+        source: event.{campo}        # extrae el campo del payload del evento
+        loadAggregate: true          # opcional — activa findById({param}) antes de invocar el método
     rules: [{RULE-ID}, ...]
-    emits: {NombreEvento | null}
+    notFoundError: [{ERROR_CODE}]    # omitir cuando no aplica
+    fkValidations: []
     implementation: full | scaffold
+
+  # ─ Query disparada por HTTP
+  - id: UC-{ABREV}-{NNN}
+    name: {NombreUC}
+    type: query
+    actor: customer | operator | driver | system
+    trigger:
+      kind: http
+      operationId: {operationId}
+    aggregate: {AggregateName}
+    # NO incluir "method" en queries — el generador resuelve el queryMethod del repositorio por dos paths:
+    #   Path A (loadAggregate: true): invoca repository.findById(param) directamente.
+    #   Path B (sin loadAggregate): cruza los nombres de input[] contra repositories[aggregate].queryMethods.
+    input:                           # omitir si no hay parámetros
+      - name: {param}
+        type: {DSL-type}
+        required: true | false
+        source: path | query | body | authContext
+        loadAggregate: true          # Path A: findById directo. El nombre del param no necesita
+                                     # coincidir con queryMethods.params.
+    returns: {ResponseDto}           # obligatorio en queries HTTP — schema en {bc}-open-api.yaml
+    rules: []                        # normalmente vacío
+    notFoundError: [{ERROR_CODE}]    # agregar si loadAggregate: true (Path A)
+    implementation: full
 
 
 # ─── REPOSITORIES ────────────────────────────────────────────────────────────
@@ -282,9 +328,25 @@ useCases:
 repositories:
 
   - aggregate: {AggregateName}
+
+    # ─ Métodos de lectura para queries (fuente de verdad para el Path B de resolución)
+    # El generador usa estos métodos cuando un query UC no tiene loadAggregate: true.
+    # El generador cruza los nombres de input[] del UC contra los params de cada queryMethod
+    # para identificar unívocamente el método a invocar.
+    queryMethods:
+      - name: findBy{Campo} | list | listBy{Param}
+        params:
+          - name: {param}
+            type: {canonical-type}
+            required: true | false   # false para filtros opcionales
+            filterOn: [{campo}]      # requerido cuando el nombre no mapea a ninguna propiedad
+            operator: LIKE_CONTAINS  # requerido cuando filterOn está presente
+        returns: "{AggregateName}? | Page[{AggregateName}] | List[{AggregateName}]"
+        derivedFrom: openapi:{operationId} | implicit
+
     methods:
 
-      # ─ Método implícito (siempre presente en todo agregado)
+      # ─ Método implícito de lectura por ID (siempre presente en todo agregado)
       - name: findById
         params:
           - name: id

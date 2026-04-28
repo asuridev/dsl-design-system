@@ -7,25 +7,31 @@ Nunca usar tipos de lenguajes de programación (`String`, `int`, `number` de TS,
 
 ## Tabla Completa de Tipos
 
-| Tipo canónico | Descripción | Java mapping | TypeScript mapping | PostgreSQL mapping |
-|---------------|-------------|-------------|-------------------|-------------------|
-| `Uuid` | Identificador único universal | `java.util.UUID` | `string` (UUID format) | `uuid` |
-| `String` | Texto sin límite de longitud conocido | `String` | `string` | `text` |
-| `String(n)` | Texto con longitud máxima n caracteres | `String` (+ @Size) | `string` | `varchar(n)` |
-| `Text` | Texto largo, sin restricción de longitud | `String` | `string` | `text` |
-| `Integer` | Entero con signo, 32 bits | `int` / `Integer` | `number` | `integer` |
-| `Long` | Entero con signo, 64 bits | `long` / `Long` | `number` | `bigint` |
-| `Decimal` | Número decimal de precisión exacta | `java.math.BigDecimal` | `string` (decimal) | `numeric(p, s)` |
-| `Boolean` | Verdadero / falso | `boolean` / `Boolean` | `boolean` | `boolean` |
-| `Date` | Fecha sin hora (año-mes-día) | `java.time.LocalDate` | `string` (ISO 8601 date) | `date` |
-| `DateTime` | Fecha y hora con timezone UTC | `java.time.Instant` | `string` (ISO 8601 datetime) | `timestamptz` |
-| `Duration` | Duración de tiempo | `java.time.Duration` | `string` (ISO 8601 duration) | `interval` |
-| `Email` | Dirección de correo electrónico válida | `String` (+ @Email) | `string` | `varchar(254)` |
-| `Url` | URL absoluta válida | `java.net.URI` | `string` | `text` |
-| `Money` | Monto monetario (VO compuesto) | VO class | VO interface | `numeric(19,4)` + `varchar(3)` |
-| `List[T]` | Lista ordenada de elementos tipo T | `List<T>` | `T[]` | `json` o tabla relacional |
-| `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | `Page<T>` | `Page<T>` | N/A |
-| `Map[K,V]` | Mapa clave-valor con tipos K y V | `Map<K,V>` | `Record<K,V>` | `jsonb` |
+| Tipo canónico | Descripción | Java mapping | TypeScript mapping | PostgreSQL mapping | Validación implícita |
+|---------------|-------------|-------------|-------------------|-------------------|--------------------|
+| `Uuid` | Identificador único universal | `java.util.UUID` | `string` (UUID format) | `uuid` | formato UUID |
+| `String` | Texto sin límite de longitud conocido | `String` | `string` | `text` | — |
+| `String(n)` | Texto con longitud máxima n caracteres | `String` (+ @Size) | `string` | `varchar(n)` | `maxLength: n` |
+| `Text` | Texto largo, sin restricción de longitud | `String` | `string` | `text` | — |
+| `Integer` | Entero con signo, 32 bits | `int` / `Integer` | `number` | `integer` | — |
+| `Long` | Entero con signo, 64 bits | `long` / `Long` | `number` | `bigint` | — |
+| `Decimal` | Número decimal de precisión exacta | `java.math.BigDecimal` | `string` (decimal) | `numeric(p, s)` | dígitos según `precision`/`scale` |
+| `Boolean` | Verdadero / falso | `boolean` / `Boolean` | `boolean` | `boolean` | — |
+| `Date` | Fecha sin hora (año-mes-día) | `java.time.LocalDate` | `string` (ISO 8601 date) | `date` | formato ISO 8601 date |
+| `DateTime` | Fecha y hora con timezone UTC | `java.time.Instant` | `string` (ISO 8601 datetime) | `timestamptz` | formato ISO 8601 datetime |
+| `Duration` | Duración de tiempo | `java.time.Duration` | `string` (ISO 8601 duration) | `interval` | formato ISO 8601 duration |
+| `Email` | Dirección de correo electrónico válida | `String` (+ @Email) | `string` | `varchar(254)` | formato email + `maxLength: 254` |
+| `Url` | URL absoluta válida | `java.net.URI` | `string` | `text` | formato URL absoluta |
+| `Money` | Monto monetario (VO compuesto) | VO class | VO interface | `numeric(19,4)` + `varchar(3)` | ver sección Money |
+| `List[T]` | Lista ordenada de elementos tipo T | `List<T>` | `T[]` | `json` o tabla relacional | — |
+| `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | `Page<T>` | `Page<T>` | N/A | — |
+| `Map[K,V]` | Mapa clave-valor con tipos K y V | `Map<K,V>` | `Record<K,V>` | `jsonb` | — |
+
+> **Regla:** nunca declarar en `validations` lo que ya está en la columna "Validación implícita".
+> Por ejemplo, no escribir `maxLength: 200` en un campo `String(200)` — ya está implícito.
+> Usar `validations` solo para agregar constraints que el tipo por sí solo no puede expresar
+> (ej: `minLength`, `pattern`, rangos numéricos, restricciones temporales).
+> Ver `references/validation.md` para el vocabulario completo de constraints.
 
 ---
 

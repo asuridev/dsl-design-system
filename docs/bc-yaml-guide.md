@@ -331,11 +331,77 @@ Las invariantes que el sistema debe hacer cumplir siempre, independientemente de
 
 ---
 
+## `domainMethods` — Métodos de dominio del agregado
+
+Cada agregado declara en `domainMethods` sus métodos de comportamiento invocables por commands.
+Esta sección es la **fuente de verdad** para parámetros, retornos y eventos de commands.
+Las queries **no referencian** `domainMethods`.
+
+Se declara dentro del agregado, después de `domainRules`. Solo en agregados que **no** son `readModel: true`.
+Agregados con `readModel: true` usan `upsert` / `delete` como valores especiales de `method` en el UC
+— esos son operaciones de repositorio directo, no métodos de dominio, y no se declaran aquí.
+
+```yaml
+aggregates:
+  - name: Product
+    ...
+    domainMethods:
+      - name: activate
+        params: []           # omitir si el método no recibe parámetros externos
+        returns: void
+        emits: ProductActivated
+
+      - name: discontinue
+        params: []
+        returns: void
+        emits: ProductDiscontinued
+
+      - name: updatePrice
+        params:
+          - name: newPrice
+            type: Money
+        returns: void
+        emits: ProductPriceUpdated
+
+  - name: Cart
+    ...
+    domainMethods:
+      - name: create
+        params:
+          - name: customerId
+            type: Uuid
+        returns: Cart        # tipo del agregado cuando el método es una factory (creación)
+        emits: null
+
+      - name: checkout
+        params:
+          - name: addressSnapshotId
+            type: Uuid
+          - name: catalogPrices
+            type: List[ProductPriceDto]
+        returns: void
+        emits: OrderPlaced
+```
+
+**Propiedades de `domainMethods`:**
+
+| Campo | Obligatorio | Descripción |
+|---|---|---|
+| `name` | sí | camelCase. Referenciado desde `useCases[].method` en commands. |
+| `params` | no (omitir si vacío) | Parámetros del método. El generador los resuelve desde `input[]`, `outgoingCalls[]` y constantes en la Fase 3. |
+| `params[].name` | sí | camelCase. |
+| `params[].type` | sí | Tipo DSL del parámetro. |
+| `returns` | sí | `void` si no devuelve nada; tipo del agregado para factories (ej: `Cart`). |
+| `emits` | sí | Evento de dominio publicado tras la ejecución exitosa. `null` si no emite. |
+
+---
+
 ## `useCases` — Operaciones del BC
 
 Cada use case es una operación con nombre, actor, trigger, y comportamiento definido.
+Hay tres tipos según su naturaleza y trigger.
 
-### Use case de comando (modifica estado)
+### Command disparado por HTTP
 
 ```yaml
 useCases:
@@ -346,19 +412,97 @@ useCases:
     actor: operator
     trigger:
       kind: http
-      operationId: activateProduct   # coincide con el operationId del OpenAPI
+      operationId: activateProduct
     aggregate: Product
-    method: activate(): void
-    repositoryMethod: save(product)
+    method: activate              # → aggregates[Product].domainMethods[activate]
+    input: []                     # activate() no recibe parámetros externos
     rules: [PRD-RULE-001]
-    emits: ProductActivated
+    notFoundError: [PRODUCT_NOT_FOUND]
+    fkValidations: []
     implementation: full
+
+  - id: UC-PRD-003
+    name: UpdateProductPrice
+    type: command
+    actor: operator
+    trigger:
+      kind: http
+      operationId: updateProductPrice
+    aggregate: Product
+    method: updatePrice           # → aggregates[Product].domainMethods[updatePrice]
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true       # carga Product via repository.findById(id)
+      - name: newPrice
+        type: Money
+        required: true
+        source: body
+    rules: []
+    notFoundError: [PRODUCT_NOT_FOUND]
+    fkValidations: []
+    implementation: full
+
+  - id: UC-ORD-005
+    name: CheckoutCart
+    type: command
+    actor: customer
+    trigger:
+      kind: http
+      operationId: checkoutCart
+    aggregate: Cart
+    method: checkout              # → aggregates[Cart].domainMethods[checkout]
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true       # carga Cart via repository.findById(cartId)
+      - name: addressSnapshotId
+        type: Uuid
+        required: true
+        source: body
+    rules: [ORD-RULE-001]
+    notFoundError: [CART_NOT_FOUND, CUSTOMER_ADDRESS_SNAPSHOT_NOT_FOUND]
+    fkValidations:
+      - aggregate: CustomerAddressSnapshot
+        param: addressSnapshotId
+        error: CUSTOMER_ADDRESS_SNAPSHOT_NOT_FOUND
+    outgoingCalls:
+      - port: CatalogPort
+        method: validateProductsAndPrices
+        params: [cartId]
+        bindsTo: catalogPrices    # → domainMethods[checkout].params[catalogPrices]
+    implementation: full          # outgoingCalls cubre catalogPrices — todos los params resolvibles
 ```
 
-### Use case de query (solo lectura)
+### Query disparada por HTTP
 
 ```yaml
+  # Query por ID (Path A: loadAggregate)
   - id: UC-PRD-001
+    name: GetProduct
+    type: query
+    actor: operator
+    trigger:
+      kind: http
+      operationId: getProduct
+    aggregate: Product
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true       # Path A: el generador invoca findById(id) directamente
+    returns: ProductResponse      # → products-open-api.yaml#/components/schemas/ProductResponse
+    rules: []
+    notFoundError: [PRODUCT_NOT_FOUND]
+    implementation: full
+
+  # Query con filtros y paginación (Path B: name matching)
+  - id: UC-PRD-002
     name: ListProducts
     type: query
     actor: operator
@@ -366,51 +510,108 @@ useCases:
       kind: http
       operationId: listProducts
     aggregate: Product
-    repositoryMethod: list(filters, page)
+    input:
+      - name: status
+        type: ProductStatus
+        required: false
+        source: query
+      - name: page
+        type: PageRequest
+        required: false
+        source: query
+    returns: Page[ProductSummaryResponse]
     rules: []
-    emits: null
     implementation: full
 ```
 
-### Use case disparado por evento (reacción a mensaje)
+> **Path A vs Path B:** Cuando un `input[]` tiene `loadAggregate: true`, el generador usa **Path A**
+> (`repository.findById`). Cuando ningún `input[]` tiene `loadAggregate: true`, el generador usa **Path B**
+> (cruza los nombres de `input[]` contra `repositories[aggregate].queryMethods` para identificar el método).
+
+### Command disparado por evento
 
 ```yaml
-  - id: UC-CAT-010
-    name: HandleStockUpdated
+  - id: UC-ORD-012
+    name: CancelOrderOnStockFailed
     type: command
     actor: system
     trigger:
       kind: event
-      event: StockUpdated
-      channel: inventory.stock.updated   # canal AsyncAPI donde llega el evento
-    aggregate: CatalogProductSnapshot    # readModel que se actualiza
-    method: updateAvailability(productId, available): void
-    repositoryMethod: save(snapshot)
+      event: StockReservationFailed
+      channel: inventory.stock.reservation-failed
+    aggregate: Order
+    method: cancel                # → aggregates[Order].domainMethods[cancel]
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: event.orderId
+        loadAggregate: true       # carga Order via repository.findById(orderId)
+      - name: occurredAt
+        type: DateTime
+        required: true
+        source: event.occurredAt
+    rules: [ORD-RULE-005]
+    notFoundError: [ORDER_NOT_FOUND]
+    fkValidations: []
+    implementation: scaffold      # TODO: reason = constante STOCK_RESERVATION_FAILED
+
+  # LRM event handler (upsert de proyección)
+  - id: UC-ORD-019
+    name: HandleAddressCreated
+    type: command
+    actor: system
+    trigger:
+      kind: event
+      event: AddressCreated
+      channel: customers.address.created
+    aggregate: CustomerAddressSnapshot  # readModel: true
+    method: upsert                      # operación de repositorio directo — no en domainMethods
+    input:
+      - name: addressId
+        type: Uuid
+        required: true
+        source: event.addressId
+      - name: customerId
+        type: Uuid
+        required: true
+        source: event.customerId
     rules: []
-    emits: null
+    fkValidations: []
     implementation: full
 ```
 
 **Campos de un use case:**
 
-| Campo | Descripción |
-|---|---|
-| `id` | `UC-{ABREV}-{NNN}`. La abreviatura es del BC (ej: `PRD`, `ORD`, `CAT`). |
-| `name` | PascalCase. Nombre descriptivo de la operación. |
-| `type` | `command` (modifica estado) \| `query` (solo lectura). |
-| `actor` | `customer` \| `operator` \| `driver` \| `system`. |
-| `trigger.kind` | `http` (llamada API) \| `event` (mensaje del broker). |
-| `trigger.operationId` | Si `kind: http`, el `operationId` exacto del OpenAPI. |
-| `trigger.event` | Si `kind: event`, nombre del evento consumido. |
-| `trigger.channel` | Si `kind: event`, canal AsyncAPI del evento. |
-| `aggregate` | Agregado sobre el que actúa el use case. |
-| `method` | Firma del método de dominio en el agregado (para commands). |
-| `repositoryMethod` | Método del repositorio llamado al final. |
-| `rules` | Lista de RULE-IDs evaluados dentro del use case. |
-| `emits` | Evento emitido al completar (`null` si ninguno). |
-| `notFoundError` | ERROR_CODE lanzado si `findById` no retorna resultado. |
-| `fkValidations` | Lista de validaciones de FK recibidas en el request. |
-| `implementation` | `full` = generación completa. `scaffold` = esqueleto con TODOs. |
+| Campo | Obligatorio | Descripción |
+|---|---|---|
+| `id` | sí | `UC-{ABREV}-{NNN}`. La abreviatura es del BC (ej: `PRD`, `ORD`, `CAT`). |
+| `name` | sí | PascalCase. Nombre descriptivo de la operación. |
+| `type` | sí | `command` (modifica estado) \| `query` (solo lectura). |
+| `actor` | sí | `customer` \| `operator` \| `driver` \| `system`. |
+| `trigger.kind` | sí | `http` (llamada API) \| `event` (mensaje del broker). |
+| `trigger.operationId` | si `kind: http` | `operationId` exacto del OpenAPI. |
+| `trigger.event` | si `kind: event` | Nombre del evento consumido. |
+| `trigger.channel` | si `kind: event` | Canal AsyncAPI del evento. |
+| `aggregate` | sí | Agregado sobre el que actúa el use case. |
+| `method` | si `type: command` | Nombre del método de dominio. Resuelto como `aggregates[aggregate].domainMethods[method]`. **Ausente en queries.** Para `readModel: true`: `upsert` o `delete` (operaciones de repositorio directo). |
+| `input` | no (omitir si vacío) | Parámetros externos que recibe el handler (evento, HTTP, authContext). |
+| `input[].source` | sí | `event.{campo}` \| `path` \| `query` \| `body` \| `authContext`. |
+| `input[].loadAggregate` | no | `true` activa `findById(param)` antes de invocar el método (commands) o como Path A (queries). Un único param por UC puede declararlo; tipo `Uuid`. |
+| `returns` | si `type: query` + `kind: http` | DTO de respuesta HTTP. Debe existir en el OpenAPI. **Ausente en commands.** |
+| `rules` | sí | Lista de RULE-IDs evaluados dentro del use case. `[]` si no aplica ninguna. |
+| `notFoundError` | no | Lista de códigos lanzados cuando la entidad no existe. Siempre lista: `[ERROR_CODE]`. Omitir cuando no aplica. |
+| `fkValidations` | si `type: command` | Lista de validaciones de FK. `[]` si no hay FK. |
+| `fkValidations[].aggregate` | sí | Agregado cuya existencia se valida. |
+| `fkValidations[].param` | sí | Nombre del `input[]` que contiene el UUID de FK. |
+| `fkValidations[].error` | sí | Código de error si el FK no existe. |
+| `outgoingCalls` | no | Llamadas explícitas a puertos externos. Omitir si no hay. |
+| `outgoingCalls[].port` | sí | Nombre del puerto. Debe existir en `integrations.outbound[]`. |
+| `outgoingCalls[].method` | sí | Método del puerto a invocar. |
+| `outgoingCalls[].params` | no | Nombres de `input[]` pasados al puerto. Omitir si ninguno. |
+| `outgoingCalls[].bindsTo` | sí | Parámetro de `domainMethods[method].params` al que se asigna el resultado. |
+| `implementation` | sí | `full`: todos los params resolvibles. `scaffold`: TODOs para params no resolvibles. |
+| `sagaStep` | no | Solo si es paso o compensación de una Saga declarada en `system.yaml`. |
 
 ---
 
@@ -419,12 +620,56 @@ useCases:
 Declara los métodos que el dominio necesita para leer y escribir sus agregados. Son
 interfaces del dominio — el generador produce la implementación concreta.
 
-Cada entrada tiene dos campos raíz:
+Cada entrada tiene tres campos raíz:
 
 | Campo | Descripción |
 |---|---|
 | `aggregate` | PascalCase. Nombre del agregado al que pertenece este repositorio. Un repositorio por agregado. |
-| `methods` | Lista de métodos del repositorio. |
+| `queryMethods` | Lista de métodos de lectura usados por queries (Path B de resolución). |
+| `methods` | Lista de métodos de escritura/lectura por ID (save, findById, delete, countBy…). |
+
+### `queryMethods` — métodos de lectura para queries
+
+Son la fuente de verdad para el **Path B**: cuando un query UC no tiene `loadAggregate: true`,
+el generador cruza los nombres de `input[]` del UC contra los `params` de cada `queryMethod`
+para identificar unívocamente el método a invocar.
+
+```yaml
+repositories:
+
+  - aggregate: Order
+    queryMethods:
+      - name: listByCustomerId
+        params:
+          - name: customerId
+            type: Uuid
+            required: true
+          - name: status
+            type: OrderStatus
+            required: false
+          - name: page
+            type: PageRequest
+            required: false
+        returns: "Page[Order]"
+        derivedFrom: openapi:listOrders
+
+      - name: listByDriverId
+        params:
+          - name: driverId
+            type: Uuid
+            required: true
+        returns: "List[Order]"
+        derivedFrom: openapi:listOrdersByDriver
+```
+
+El nombre del `queryMethod` sigue las mismas convenciones que `methods`:
+- `list` — query con filtros opcionales + paginación
+- `listBy{Param}` — filtrada por un único param obligatorio
+- `findBy{Campo}` — búsqueda por campo único (retorna nullable)
+
+> **Separación estricta:** los métodos de `queryMethods` son de solo lectura. Los métodos de
+> `methods` son los implícitos (`findById`, `save`, `delete`) y los derivados de domainRules.
+> Un método de listado (con parámetros de filtro) **nunca va en `methods`** — va en `queryMethods`.
 
 ### Campos de un método
 
