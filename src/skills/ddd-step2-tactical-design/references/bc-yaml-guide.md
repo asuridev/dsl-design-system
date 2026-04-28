@@ -19,6 +19,7 @@ type            → clasificación DDD
 description     → propósito del BC
 enums           → tipos con valores cerrados (estados, clasificaciones)
 valueObjects    → tipos de valor compuestos
+projections     → shapes de lectura (retornos de queries no 1:1 con agregados)
 aggregates      → modelo del dominio (entidades, reglas, propiedades)
 useCases        → operaciones que el BC expone o reacciona
 repositories    → contratos de acceso a datos
@@ -163,6 +164,88 @@ valueObjects:
 | `Email` | Email validado | Genera validación automática. |
 | `Url` | URL absoluta validada | |
 | `Money` | VO monetario | Siempre declarar como Value Object, no como primitivo. |
+
+---
+
+## `projections` — Shapes de lectura
+
+Una proyección es un shape de lectura que **no existe como estado del dominio** — nunca vive
+como propiedad de un agregado o entidad. Su único rol es tipificar el `returns` de un use
+case de tipo `query`.
+
+**Regla de clasificación:**
+
+| Pregunta | Respuesta → Dónde va |
+|---|---|
+| ¿El tipo vive como propiedad de un agregado/entidad? | `valueObjects[]` |
+| ¿El tipo solo aparece en `returns` de queries? | `projections[]` (nombrado) o inline |
+| ¿El mismo shape lo retornan ≥2 UCs, o tiene nombre semántico en el negocio? | `projections[]` nombrado |
+| ¿Shape simple de un único UC? | Lista inline en `returns` del UC |
+
+```yaml
+projections:
+
+  # Proyección para listados: subconjunto del agregado sin campos pesados
+  - name: ProductSummary
+    description: >
+      Lightweight view of a product for listing endpoints. Excludes description
+      and images to keep list payloads lightweight.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: price
+        type: Money
+        required: true
+      - name: status
+        type: ProductStatus
+        required: true
+      - name: categoryId
+        type: Uuid
+        required: true
+
+  # Proyección para integración interna: shape mínimo para un contrato BC-a-BC
+  - name: ProductPriceSnapshot
+    description: >
+      Authoritative price captured at query time. Used by the orders BC at checkout
+      to prevent OWASP A04 monetary fraud through stale or manipulated prices.
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+      - name: price
+        type: Money
+        required: true
+```
+
+Referenciadas desde `returns` del use case:
+
+```yaml
+returns: Page[ProductSummary]      # colección paginada
+returns: ProductPriceSnapshot      # objeto simple
+returns: ProductDetail             # detalle completo
+```
+
+`returns` inline para shapes simples de un único UC:
+
+```yaml
+- id: UC-INT-001
+  name: ValidateProductAndSnapPrice
+  type: query
+  ...
+  returns:
+    - name: productId
+      type: Uuid
+    - name: price
+      type: Money
+```
+
+**Naming:** el nombre expresa **qué es el dato**, no cómo se transfiere.
+- Prohibidos: `*Response`, `*Dto`, `*Request`, `*Payload`
+- Correctos: `ProductSummary`, `ProductDetail`, `ProductPriceSnapshot`, `OrderLineSummary`
 
 ---
 
@@ -378,7 +461,7 @@ aggregates:
           - name: addressSnapshotId
             type: Uuid
           - name: catalogPrices
-            type: List[ProductPriceDto]
+            type: List[ProductPriceSnapshot]  # VO declarado en valueObjects[] del BC consumidor
         returns: void
         emits: OrderPlaced
 ```
@@ -496,7 +579,7 @@ useCases:
         required: true
         source: path
         loadAggregate: true       # Path A: el generador invoca findById(id) directamente
-    returns: ProductResponse      # → products-open-api.yaml#/components/schemas/ProductResponse
+    returns: ProductDetail        # nombre en projections[], o nombre del agregado si retorna el modelo completo
     rules: []
     notFoundError: [PRODUCT_NOT_FOUND]
     implementation: full
@@ -519,7 +602,7 @@ useCases:
         type: PageRequest
         required: false
         source: query
-    returns: Page[ProductSummaryResponse]
+    returns: Page[ProductSummary]
     rules: []
     implementation: full
 ```
@@ -598,7 +681,7 @@ useCases:
 | `input` | no (omitir si vacío) | Parámetros externos que recibe el handler (evento, HTTP, authContext). |
 | `input[].source` | sí | `event.{campo}` \| `path` \| `query` \| `body` \| `authContext`. |
 | `input[].loadAggregate` | no | `true` activa `findById(param)` antes de invocar el método (commands) o como Path A (queries). Un único param por UC puede declararlo; tipo `Uuid`. |
-| `returns` | si `type: query` + `kind: http` | DTO de respuesta HTTP. Debe existir en el OpenAPI. **Ausente en commands.** |
+| `returns` | si `type: query` + `kind: http` | Nombre en `projections[]`, nombre de un agregado del BC, o lista inline de propiedades. **Ausente en commands.** |
 | `rules` | sí | Lista de RULE-IDs evaluados dentro del use case. `[]` si no aplica ninguna. |
 | `notFoundError` | no | Lista de códigos lanzados cuando la entidad no existe. Siempre lista: `[ERROR_CODE]`. Omitir cuando no aplica. |
 | `fkValidations` | si `type: command` | Lista de validaciones de FK. `[]` si no hay FK. |

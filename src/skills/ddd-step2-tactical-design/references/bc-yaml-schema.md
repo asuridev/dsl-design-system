@@ -69,6 +69,29 @@ valueObjects:
         description: {descripción}
 
 
+# ─── PROJECTIONS ─────────────────────────────────────────────────────────────
+
+# Proyecciones: shapes de lectura usados como `returns` en use cases de tipo query.
+# No representan estado del dominio — NUNCA se usan como `type` en aggregates[].properties[].
+#
+# Cuándo definir aquí (nombrado) vs inline en `returns`:
+#   - Nombrado: el mismo shape lo retornan ≥2 UCs, o el concepto tiene nombre semántico en el negocio
+#   - Inline:   shape simple de un único UC
+
+projections:
+
+  - name: {ProjectionName}         # PascalCase — qué ES el dato en el negocio, no cómo se transfiere
+                                   # Sufijos PROHIBIDOS: *Response, *Dto, *Request, *Payload
+                                   # Sufijos permitidos: Summary, Detail, Snapshot, View (o sin sufijo)
+    description: >
+      {qué representa esta proyección y por qué no coincide 1:1 con el agregado completo}
+    properties:
+      - name: {field}
+        type: {canonical-type | EnumName | ValueObjectName}
+        required: true | false
+        description: {descripción}
+
+
 # ─── AGGREGATES ──────────────────────────────────────────────────────────────
 
 aggregates:
@@ -317,7 +340,12 @@ useCases:
         source: path | query | body | authContext
         loadAggregate: true          # Path A: findById directo. El nombre del param no necesita
                                      # coincidir con queryMethods.params.
-    returns: {ResponseDto}           # obligatorio en queries HTTP — schema en {bc}-open-api.yaml
+    returns: {ProjectionName} | {AggregateName}  # nombre declarado en projections[] o nombre del agregado
+                                    # Colecciones: Page[{ProjectionName}] o List[{ProjectionName}]
+                                    # Inline (shape simple de 1 UC):
+                                    #   returns:
+                                    #     - name: {field}
+                                    #       type: {canonical-type}
     rules: []                        # normalmente vacío
     notFoundError: [{ERROR_CODE}]    # agregar si loadAggregate: true (Path A)
     implementation: full
@@ -500,7 +528,7 @@ domainEvents:
 ## Orden canónico de secciones
 
 ```
-bc → type → description → enums → valueObjects → aggregates → useCases → repositories → errors → integrations → domainEvents
+bc → type → description → enums → valueObjects → projections → aggregates → useCases → repositories → errors → integrations → domainEvents
 ```
 
 ---
@@ -521,6 +549,11 @@ bc → type → description → enums → valueObjects → aggregates → useCas
 ## Checklist de Calidad (yaml v2)
 
 Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
+
+**Proyecciones:**
+- [ ] Cada `returns` de tipo query referencia un nombre en `projections[]`, el nombre de un agregado del BC, o es lista inline de propiedades
+- [ ] Ningún nombre en `projections[]` tiene sufijo `*Response`, `*Dto`, `*Request` o `*Payload`
+- [ ] Ninguna propiedad en `aggregates[]` ni `entities[]` usa un nombre de `projections[]` como `type`
 
 **Secciones base:**
 - [ ] `bc` coincide exactamente con el nombre en `system.yaml`

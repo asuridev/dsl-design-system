@@ -228,6 +228,62 @@ el generador falla sin poder inferirlo.
 > declarar el VO en `valueObjects[]` primero, con las propiedades exactas que el
 > consumidor del evento necesita — ni más ni menos.
 
+### 3.3.2 Reglas de diseño de Proyecciones
+
+`projections[]` es la sección para shapes de lectura que **no son estado del dominio** —
+nunca son `type` de una propiedad en `aggregates[]` ni `entities[]`. Su único rol es
+tipificar el `returns` de use cases de tipo `query`.
+
+**Criterio de clasificación:**
+
+| Pregunta | Resultado |
+|---|---|
+| ¿El tipo vive como propiedad de un agregado o entidad? | `valueObjects[]` |
+| ¿El tipo solo aparece en `returns` de queries? | `projections[]` o inline |
+| ¿Lo retornan ≥2 UCs, o tiene nombre semántico en el negocio? | `projections[]` nombrado |
+| ¿Shape simple de un único UC? | Lista inline en `returns` del UC |
+
+**Formato nombrado (en `projections[]`):**
+
+```yaml
+projections:
+  - name: ProductSummary          # nombre semántico: qué ES, no cómo se usa
+    description: >
+      Lightweight product view for listing endpoints.
+    properties:
+      - name: id
+        type: Uuid
+      - name: price
+        type: Money
+      - name: status
+        type: ProductStatus
+```
+
+Referenciado desde `returns`:
+```yaml
+returns: Page[ProductSummary]     # colección
+returns: ProductPriceSnapshot     # objeto simple
+```
+
+**Formato inline (shape de un único UC):**
+
+```yaml
+returns:
+  - name: productId
+    type: Uuid
+  - name: price
+    type: Money
+```
+
+**Regla de naming — sufijos prohibidos:** `Response`, `Dto`, `Request`, `Payload` son
+conceptos de capa de aplicación. El nombre de una proyección debe expresar **qué es
+el dato en el negocio**: `ProductSummary`, `ProductDetail`, `ProductPriceSnapshot`.
+
+**Separación estricta:**
+- `projections[]` ↔ `returns` de queries: ✅
+- `projections[]` como `type` en propiedades de agregados/entidades: ❌ (usar `valueObjects[]`)
+- `projections[]` como `type` en `domainMethods[].params[]`: ❌ (usar `valueObjects[]`)
+
 ### 3.4 Reglas de diseño de Agregados
 
 **Root del agregado:**
@@ -304,7 +360,7 @@ domainMethods:
       - name: addressSnapshotId
         type: Uuid
       - name: catalogPrices
-        type: List[ProductPriceDto]
+        type: List[ProductPriceSnapshot]  # VO declarado en valueObjects[] — no un Dto ni proyección
     returns: void
     emits: OrderPlaced
 ```
