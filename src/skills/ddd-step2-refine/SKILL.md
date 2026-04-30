@@ -722,7 +722,7 @@ Vocabulario válido (whitelist) — solo estas claves son procesadas por el gene
 - **External system referenced in integrations must declare `operations[]`**:
   si bc.yaml tiene `integrations.outbound[].name: {ext}` con `type: externalSystem`,
   ese `{ext}` debe estar en `system.yaml externalSystems[]` con `operations[]`
-  declaradas → si falta, 🔴 ERROR (INT-014).
+  declaradas → si falta, 🔴 ERROR (INT-008 / INT-009).
 
 - **INT-016..INT-021 — cross-yaml AsyncAPI**:
   - Cada `domainEvents.published[]` debe tener canal en `{bc}-async-api.yaml`

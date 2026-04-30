@@ -156,8 +156,10 @@ externalSystems:
 | `description` | texto | Propósito de la operación. |
 | `direction` | `outbound` \| `inbound` | `outbound`: nuestra app llama al externo. `inbound`: webhook/callback que recibimos. |
 
-> **Validador INT-014:** un `externalSystem` referenciado en `integrations[]` (como
-> `from` o `to`) debe declarar `operations[]` no vacío. Sin esto el generador no puede
+> **Validador INT-008:** todo contrato HTTP hacia un `externalSystem` debe matchear
+> una operación declarada en `operations[]`. Además, **INT-009** verifica que cada
+> operación declarada en `outbound[type=externalSystem]` exista en
+> `system.externalSystems[].operations[]`. Sin `operations[]` el generador no puede
 > crear el ACL adapter.
 
 ### Valores válidos de `type`
@@ -531,7 +533,7 @@ Antes de considerar el `system.yaml` completo, verificar:
 - [ ] Los contratos de `message-broker` son objetos `{name, channel}`, no strings
 - [ ] Los contratos de `http/grpc` son strings en camelCase, no objetos
 - [ ] Todo sistema en `externalSystems` aparece en al menos una integración
-- [ ] Todo `externalSystem` referenciado en `integrations` declara `operations[]` no vacío (**INT-014**)
+- [ ] Todo `externalSystem` referenciado en `integrations` declara `operations[]` y los contratos matchean (**INT-008** / **INT-009**)
 - [ ] Toda integración con `auth.type: oauth2-cc` declara `tokenEndpoint` y `credentialKey` (**INT-015**)
 - [ ] Si existen `sagas[]`, está activado `infrastructure.reliability.outbox: true` y `consumerIdempotency: true` (recomendado)
 - [ ] Todo evento en `sagas[].steps[].onSuccess/onFailure/compensation` existe como contrato de integración

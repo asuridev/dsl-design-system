@@ -22,7 +22,7 @@
   - [4.4 `integrations[]` — Mapa de comunicación](#44-integrations--mapa-de-comunicación)
   - [4.5 `sagas[]` — Procesos de negocio transversales](#45-sagas--procesos-de-negocio-transversales)
   - [4.6 `infrastructure` — Restricciones técnicas](#46-infrastructure--restricciones-técnicas)
-  - [4.7 Reglas de validación INT-001 .. INT-015](#47-reglas-de-validación-int-001--int-015)
+  - [4.7 Reglas de validación INT-001 .. INT-021](#47-reglas-de-validación-int-001--int-021)
   - [4.8 Ejemplo completo end-to-end](#48-ejemplo-completo-end-to-end)
 - [5. `{bc}.yaml` — Diseño táctico](#5-bcyaml--diseño-táctico)
   - [5.1 Metadatos del BC](#51-metadatos-del-bc)
@@ -35,7 +35,7 @@
   - [5.8 `useCases[]`](#58-usecases)
   - [5.9 `repositories[]`](#59-repositories)
   - [5.10 `projections[]`](#510-projections)
-  - [5.11 `integrations` (outbound)](#511-integrations-outbound)
+  - [5.11 `integrations` (outbound + inbound)](#511-integrations-outbound--inbound)
   - [5.12 Convenciones de nombres y códigos de error](#512-convenciones-de-nombres-y-códigos-de-error)
   - [5.13 Relación con otros artefactos del Paso 2](#513-relación-con-otros-artefactos-del-paso-2)
 - [6. Tipos canónicos](#6-tipos-canónicos)
@@ -343,7 +343,7 @@ externalSystems:
 
 - **Tipo:** lista de objetos `{name, description, direction}`.
 - **Obligatoriedad:** **requerida si el sistema externo aparece en `integrations[]`**
-  como `from` o `to` (validador **INT-014**). Sin esto el generador no puede crear
+  como `from` o `to` (validador **INT-008**). Sin esto el generador no puede crear
   el ACL adapter.
 - **Qué resuelve:** enumera explícitamente las operaciones que el ACL expondrá.
 
@@ -786,22 +786,78 @@ infrastructure:
 
 ---
 
-### 4.7 Reglas de validación INT-001 .. INT-015
+### 4.7 Reglas de validación INT-001 .. INT-021
 
-Reglas que el agente `ddd-step1-refine` (y el generador) verifican.
+Reglas que ejecuta el módulo `integration-validator` del generador sobre todos los
+YAML cargados (`src/utils/integration-validator.js`). El agente `ddd-step1-refine`
+las verifica antes de la entrega.
+
+Cada diagnóstico tiene la forma:
+```js
+{ code: 'INT-003', level: 'error' | 'warn', message: '...', location: 'system.yaml#/integrations[1]' }
+```
+
+#### 4.7.1 Reglas cross-YAML system.yaml ↔ bc.yaml
 
 | ID | Severidad | Regla |
 |---|---|---|
-| INT-001 | 🔴 ERROR | Todo `from`/`to` en `integrations` existe en `boundedContexts` o `externalSystems`. |
-| INT-002 | 🔴 ERROR | Si hay `channel: message-broker`, `infrastructure.messageBroker: true`. |
-| INT-003 | 🔴 ERROR | Contratos de `message-broker` son objetos `{name, channel}`. |
-| INT-004 | 🔴 ERROR | Contratos de `http`/`grpc`/`websocket` son strings `camelCase`. |
-| INT-005 | 🟡 ALERTA | Sistema en `externalSystems` sin integración → posible huérfano. |
-| INT-006 | 🔴 ERROR | Cada evento en `sagas[].steps[].onSuccess/onFailure/compensation` existe como contrato `pattern: event`. |
-| INT-014 | 🔴 ERROR | `externalSystem` referenciado en `integrations` declara `operations[]` no vacío. |
-| INT-015 | 🔴 ERROR | `auth.type: oauth2-cc` declara `tokenEndpoint` y `credentialKey`. |
-| — | 🟡 ALERTA | Existen `sagas[]` y `reliability.outbox` está `false` o ausente. |
-| — | 🟡 ALERTA | Existen `sagas[]` y `reliability.consumerIdempotency` está `false` o ausente. |
+| INT-001 | 🔴 ERROR | Todo `system.integrations[]` con `pattern: event` declara cada `contract.name` en `domainEvents.published[]` del BC `from`. |
+| INT-002 | 🔴 ERROR | Idem para `domainEvents.consumed[]` del BC `to`. |
+| INT-003 | 🔴 ERROR | `pattern: customer-supplier` + `channel: http` requiere `arch/{to}/{to}-internal-api.yaml` + entrada recíproca en `bc.{to}.integrations.inbound[]` y en `bc.{from}.integrations.outbound[]`. |
+| INT-004 | 🔴 ERROR | `pattern: acl` + `channel: http` requiere `system.externalSystems[]` con `name === to`. |
+| INT-005 | 🟡 WARN  | El `channel` declarado discrepa de la convención `<from>.<kebab(eventName).replaceAll(-, .)>`. |
+| INT-006 | 🔴 ERROR | Cada `bc.integrations.outbound[]` tiene su recíproco en `system.integrations[]` (from=bc, to=outbound.name). |
+| INT-007 | 🔴 ERROR | Cada `bc.domainEvents.consumed[].name` está en `domainEvents.published[]` de algún otro BC. |
+| INT-008 | 🔴 ERROR | Cada contrato HTTP hacia un `externalSystem` matchea un `externalSystems[name=to].operations[*].name`. |
+| INT-009 | 🔴 ERROR | Cada operación declarada en `outbound[type=externalSystem]` existe en `system.externalSystems[].operations[]`. |
+
+#### 4.7.2 Reglas de projections persistentes (LRM)
+
+| ID | Severidad | Regla |
+|---|---|---|
+| INT-010 | 🔴 ERROR | Toda projection `persistent: true` declara `source: { kind: event, event, from }` y el evento está publicado por el BC `from`. |
+| INT-011 | 🔴 ERROR | Toda projection persistente declara `keyBy` y la propiedad referida existe en `properties[]`. |
+
+#### 4.7.3 Reglas de sagas
+
+| ID | Severidad | Regla |
+|---|---|---|
+| INT-012 | 🔴 ERROR | Toda `saga.steps[].triggeredBy` está publicado por algún BC (o coincide con `saga.trigger.event`). |
+| INT-013 | 🔴 ERROR | `saga.trigger.event` está en `domainEvents.published[]` del BC `saga.trigger.bc`. |
+| INT-014 | 🔴 ERROR | `steps[].onSuccess` / `onFailure` / `compensation` están publicados por `step.bc` (o por algún BC en el caso de `compensation`). |
+
+#### 4.7.4 Reglas de auth
+
+| ID | Severidad | Regla |
+|---|---|---|
+| INT-015 | 🔴 ERROR | Toda integración HTTP con `auth.type: oauth2-cc` declara `tokenEndpoint` y `credentialKey`. Aplica a `system.integrations[].auth`, `system.externalSystems[].auth` y `bc.integrations.outbound[].auth`. |
+
+#### 4.7.5 Reglas cross-YAML AsyncAPI ↔ bc.yaml
+
+| ID | Severidad | Regla |
+|---|---|---|
+| INT-016 | 🔴 ERROR | Cada `components.messages.{X}` referenciado por un canal del AsyncAPI del BC está declarado en `domainEvents.published[]` o `domainEvents.consumed[]` del mismo BC. |
+| INT-017 | 🔴 ERROR | Cada `domainEvents.published[].name` tiene entrada en el AsyncAPI del BC (mensaje + canal con `message.$ref` válido). |
+| INT-018 | 🟡 WARN  | El `channel` declarado en `domainEvents.published[]` matchea la dirección de un canal del AsyncAPI que referencie el mensaje. |
+| INT-019 | 🟡 WARN  | Los nombres de campo de `published[].payload[]` existen en el schema del mensaje AsyncAPI y los tipos son compatibles (drift de tipo → warn). |
+| INT-020 | 🔴 ERROR | Cada `domainEvents.consumed[].payload[]` es subconjunto (por nombre) del payload publicado por el BC productor declarado en `consumed[].sourceBc`. |
+| INT-021 | 🔴 ERROR | Si un campo de `published[].payload[]` coincide en nombre con una propiedad de aggregate `hidden: true` del BC productor, el evento debe declarar `allowHiddenLeak: true`. |
+
+#### 4.7.6 Reglas adicionales auditadas por `ddd-step1-refine`
+
+| Severidad | Regla |
+|---|---|
+| 🟡 ALERTA | Existen `sagas[]` y `reliability.outbox` está `false` o ausente. |
+| 🟡 ALERTA | Existen `sagas[]` y `reliability.consumerIdempotency` está `false` o ausente. |
+| 🟡 ALERTA | Sistema en `externalSystems` sin integración → posible huérfano. |
+| 🔴 ERROR  | Si hay `channel: message-broker` en alguna integración, `infrastructure.messageBroker: true` debe estar presente. |
+
+#### 4.7.7 Modo de ejecución
+
+```bash
+dsl-springboot build --strict       # aborta al primer error (default)
+dsl-springboot build --no-strict    # solo imprime diagnósticos
+```
 
 ---
 
@@ -932,7 +988,9 @@ errors: []                   # § 5.7
 useCases: []                 # § 5.8
 repositories: []             # § 5.9
 projections: []              # § 5.10
-integrations: { outbound: [] }                  # § 5.11
+integrations:                                   # § 5.11
+  outbound: []
+  inbound: []
 ```
 
 ---
@@ -1136,22 +1194,27 @@ properties:
 
 - **Tipo:** boolean.
 - **Default:** `false`.
-- **Qué resuelve:** la propiedad solo puede setearse en la creación. Los commands de
-  update no la incluyen.
+- **Qué resuelve:** propiedad **server-generated**. Excluida de los requests (ni
+  create ni update la incluyen), incluida en responses y persistida en DB.
+- **Restricciones cruzadas:** requiere `defaultValue` o `source` declarado.
+- **Ejemplos típicos:** `status`, `slug`, `createdBy`.
 
 ##### 5.4.2.7 `properties[].hidden`
 
 - **Tipo:** boolean.
 - **Default:** `false`.
-- **Qué resuelve:** la propiedad no se expone en respuestas REST ni en eventos
-  `scope: integration` o `both` (a menos que el evento declare `allowHiddenLeak: true`).
+- **Qué resuelve:** propiedad **write-only**. Incluida en requests, **excluida de
+  responses**, persiste en DB. Además, no aparece en eventos `scope: integration`
+  o `both` salvo que el evento declare `allowHiddenLeak: true` (validador INT-021).
+- **Ejemplos típicos:** `password`, `pin`, tokens secretos.
 
 ##### 5.4.2.8 `properties[].internal`
 
 - **Tipo:** boolean.
 - **Default:** `false`.
-- **Qué resuelve:** la propiedad no aparece nunca fuera del dominio (ni en eventos,
-  ni en projections, ni en respuestas).
+- **Qué resuelve:** propiedad **solo en DB**. Excluida de requests y de responses.
+  Nunca aparece en projections, eventos ni APIs.
+- **Ejemplos típicos:** `attemptCount`, `retryCount`, flags internos.
 
 ##### 5.4.2.9 `properties[].defaultValue`
 
@@ -2010,33 +2073,134 @@ projections:
 
 ---
 
-### 5.11 `integrations` (outbound)
+### 5.11 `integrations` (outbound + inbound)
 
-Override por integración (espejo del bloque global de `system.yaml`). Aplica solo a
-las integraciones que el BC inicia (`outbound`).
+Detalle operacional de las integraciones del BC. Complementa `system.yaml`: cada
+`operation.name` aquí debe coincidir literalmente con un string declarado en
+`integrations[].contracts` de `system.yaml`.
+
+Tiene **dos subsecciones fijas**:
+
+| Subsección | Qué declara |
+|---|---|
+| `outbound[]` | BCs o sistemas externos a los que **este BC llama**. |
+| `inbound[]` | BCs **que llaman a este BC** para consumir sus endpoints. |
+
+---
+
+#### 5.11.1 `outbound[]` — dependencias que este BC consume
 
 ```yaml
 integrations:
   outbound:
-    - bc: payments
+    - name: inventory
+      type: internalBc
+      pattern: customerSupplier
+      protocol: http
+      description: catalog calls inventory to read current stock status.
+      operations:
+        - name: getStockItem
+          description: Returns current stock for a product.
+          triggersOn: UC-PRD-001
       auth:
         type: bearer
-        valueProperty: integration.payments.token
+        valueProperty: integration.inventory.token
       resilience:
         timeoutMs: 3000
         retries: { maxAttempts: 2, waitDurationMs: 200 }
 
-    - bc: payment-gateway
+    - name: payment-gateway
+      type: externalSystem
+      pattern: acl                    # obligatorio para externalSystem
+      protocol: http
+      description: catalog uses payment-gateway to validate card tokens.
+      operations:
+        - name: validateCardToken
+          description: Validates a card token before activation.
+          triggersOn: UC-PRD-004
       auth:
         type: oauth2-cc
         tokenEndpoint: https://idp.example.com/oauth2/token
         credentialKey: payment-gateway
 ```
 
-**Precedencia:** valores aquí > `system.yaml.infrastructure.integrations.defaults`.
+##### 5.11.1.1 Campos de `outbound[]`
 
-**Restricciones cruzadas:** **INT-015** (oauth2-cc requiere `tokenEndpoint` +
-`credentialKey`) aplica también aquí.
+| Campo | Tipo | Obligatoriedad | Descripción |
+|---|---|---|---|
+| `name` | kebab-case | requerido | BC o externalSystem destino. Debe existir en `system.yaml`. |
+| `type` | enum | requerido | `internalBc` · `externalSystem`. |
+| `pattern` | enum | requerido | `customerSupplier` · `acl` · `conformist`. **`acl` obligatorio si `type: externalSystem`.** |
+| `protocol` | enum | requerido | `http` · `grpc` · `message-broker`. |
+| `description` | texto | requerido | Por qué llamamos al destino. |
+| `operations[]` | lista | requerido | Operaciones invocadas. |
+| `auth` | objeto | opcional | Override de auth (mismo schema que § 4.4.7). |
+| `resilience` | objeto | opcional | Override de resilience (mismo schema que § 4.4.8). |
+
+##### 5.11.1.2 Campos de `outbound[].operations[]`
+
+| Campo | Tipo | Obligatoriedad | Descripción |
+|---|---|---|---|
+| `name` | camelCase | requerido | Coincide con `contracts` en `system.yaml`. |
+| `description` | texto | requerido | Qué retorna o qué efecto produce. |
+| `triggersOn` | UC-ID | requerido | UC de este BC que dispara la llamada. |
+| `responseEvents` | lista `PascalCase` | opcional | Eventos emitidos como consecuencia de la respuesta. |
+
+---
+
+#### 5.11.2 `inbound[]` — consumidores que llaman a este BC
+
+```yaml
+integrations:
+  inbound:
+    - name: orders
+      type: internalBc
+      pattern: customerSupplier       # este BC es el supplier
+      protocol: http
+      description: orders calls catalog to validate products and snapshot prices.
+      operations:
+        - name: validateProductsAndPrices
+          definedIn: catalog-open-api.yaml
+          endpoint: POST /api/catalog/v1/products/validate
+        - name: getProductById
+          definedIn: catalog-open-api.yaml
+          endpoint: GET /api/catalog/v1/products/{id}
+```
+
+##### 5.11.2.1 Campos de `inbound[]`
+
+| Campo | Tipo | Obligatoriedad | Descripción |
+|---|---|---|---|
+| `name` | kebab-case | requerido | BC consumidor. |
+| `type` | enum | requerido | Siempre `internalBc`. Los `externalSystem` no declaran inbound. |
+| `pattern` | enum | requerido | Generalmente `customerSupplier` (este BC es el supplier). |
+| `protocol` | enum | requerido | Casi siempre `http`. |
+| `description` | texto | requerido | Qué consume el llamante y para qué. |
+| `operations[]` | lista | requerido | Endpoints de **este BC** que el consumidor invoca. |
+
+##### 5.11.2.2 Campos de `inbound[].operations[]`
+
+| Campo | Tipo | Obligatoriedad | Descripción |
+|---|---|---|---|
+| `name` | camelCase | requerido | `operationId` del OpenAPI de este BC. Coincide con `contracts` en `system.yaml`. |
+| `definedIn` | filename | requerido | Archivo OpenAPI/AsyncAPI donde está definido (ej: `catalog-open-api.yaml`). |
+| `endpoint` | string | requerido | Método + ruta (ej: `POST /api/catalog/v1/products/validate`). |
+
+---
+
+#### 5.11.3 Restricciones cruzadas
+
+- Cada `operation.name` (en `outbound` e `inbound`) debe aparecer en `contracts` de
+  la integración correspondiente en `system.yaml`. Si no, el Paso 2 es incoherente
+  con el Paso 1.
+- Toda integración hacia un `externalSystem` debe usar `pattern: acl`.
+- **INT-015** (oauth2-cc requiere `tokenEndpoint` + `credentialKey`) aplica al
+  bloque `auth` de cada `outbound[]`.
+- **Precedencia de auth/resilience:** `outbound[].auth|resilience` (local) >
+  `system.yaml.infrastructure.integrations.defaults`.
+- Los `externalSystem` referenciados en `outbound[]` deben declarar `operations[]`
+  en `system.yaml.externalSystems[]` (regla **INT-008**) y cada `operation.name`
+  invocado debe coincidir con esas operaciones (regla **INT-009**).
 
 ---
 

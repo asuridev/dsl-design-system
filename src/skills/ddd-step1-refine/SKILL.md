@@ -429,7 +429,7 @@ referencia como `from` o `to`. Cada operación contiene:
 - `description`: propósito de la operación
 - `direction`: `inbound|outbound`
 
-- ExternalSystem referenciado en `integrations[]` sin `operations[]` declaradas → 🔴 ERROR (INT-014): el generador no puede crear el ACL adapter sin saber qué métodos exponer.
+- ExternalSystem referenciado en `integrations[]` sin `operations[]` declaradas → 🔴 ERROR (INT-008 / INT-009): el generador no puede crear el ACL adapter sin saber qué métodos exponer; cada contrato HTTP hacia el externo debe matchear una operación.
 - ExternalSystem con `operations[]` pero ninguna integración que lo referencie → 🟡 ALERTA: posible sistema externo huérfano.
 
 **G3 — `auth` y `resilience` por integración o global**

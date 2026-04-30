@@ -1767,5 +1767,5 @@ integrations:
 `system.yaml.infrastructure.integrations.defaults`.
 
 External systems referenciados deben existir en `system.yaml.externalSystems[]` con
-`operations[]` declaradas (INT-014).
+`operations[]` declaradas (INT-008 / INT-009).
 
