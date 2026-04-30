@@ -118,11 +118,25 @@ externalSystems:
     description: >
       Third-party payment processor that handles card charging and refunds.
     type: payment-gateway
+    operations:
+      - name: chargePayment
+        description: Charge a credit card and return authorization code
+        direction: outbound
+      - name: refundPayment
+        description: Refund a previously authorized payment
+        direction: outbound
+      - name: webhookPaymentEvent
+        description: Receive async notification of payment status changes
+        direction: inbound
 
   - name: sms-provider
     description: >
       SMS delivery service for customer notifications via mobile.
     type: notification-provider
+    operations:
+      - name: sendSms
+        description: Send a single SMS message
+        direction: outbound
 ```
 
 ### Campos
@@ -132,6 +146,19 @@ externalSystems:
 | `name` | kebab-case | Debe coincidir exactamente con los valores `from`/`to` en `integrations`. |
 | `description` | texto | Qué hace este sistema externo. |
 | `type` | enum | Clasificación del sistema externo. |
+| `operations` | lista | **Obligatorio** si el sistema es referenciado en `integrations`. Operaciones que el ACL adapter expondrá. |
+
+### Campos de `operations[]`
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `name` | camelCase | Identificador de la operación. |
+| `description` | texto | Propósito de la operación. |
+| `direction` | `outbound` \| `inbound` | `outbound`: nuestra app llama al externo. `inbound`: webhook/callback que recibimos. |
+
+> **Validador INT-014:** un `externalSystem` referenciado en `integrations[]` (como
+> `from` o `to`) debe declarar `operations[]` no vacío. Sin esto el generador no puede
+> crear el ACL adapter.
 
 ### Valores válidos de `type`
 
@@ -196,6 +223,50 @@ integrations:
 | `channel` | enum | Mecanismo de transporte. |
 | `contracts` | lista | Operaciones (HTTP) o eventos (message-broker) del contrato. |
 | `notes` | texto | Por qué existe esta integración y decisiones de diseño relevantes. |
+| `auth` | objeto | **Opcional** — credenciales para el cliente saliente. Override de `infrastructure.integrations.defaults.auth`. |
+| `resilience` | objeto | **Opcional** — timeouts, retries y circuit breaker. Override de defaults globales. |
+
+### Bloque `auth` (opcional, por integración)
+
+```yaml
+- from: payments
+  to: payment-gateway
+  pattern: acl
+  channel: http
+  contracts: [chargePayment, refundPayment]
+  auth:
+    type: oauth2-cc                  # none | api-key | bearer | oauth2-cc | mTLS
+    tokenEndpoint: https://idp.example.com/oauth2/token
+    credentialKey: payment-gateway   # registrationId en spring-security
+```
+
+| `auth.type` | Cómo se inyecta | Configuración requerida |
+|---|---|---|
+| `none` | Sin interceptor | — |
+| `api-key` | Header configurable (default `X-Api-Key`) | `valueProperty`, opcional `header` |
+| `bearer` | `Authorization: Bearer <token>` | `valueProperty` |
+| `oauth2-cc` | `OAuth2AuthorizedClientManager` resuelve y refresca tokens | `tokenEndpoint`, `credentialKey` |
+| `mTLS` | Configuración externa (truststore/keystore) | — |
+
+> **Validador INT-015 (bloqueante):** si `auth.type: oauth2-cc`, los campos
+> `tokenEndpoint` y `credentialKey` son obligatorios.
+
+### Bloque `resilience` (opcional, por integración)
+
+```yaml
+resilience:
+  timeoutMs: 3000
+  connectTimeoutMs: 1000
+  retries:
+    maxAttempts: 3
+    waitDurationMs: 500
+  circuitBreaker:
+    failureRateThreshold: 50           # %, 0..100
+```
+
+Si una integración no declara `resilience`, el generador aplica los defaults
+de `infrastructure.integrations.defaults.resilience`. Para integraciones críticas
+(payments, identity-provider) suele convenir override local con timeouts más estrictos.
 
 ### Patrones válidos
 
@@ -403,6 +474,52 @@ No se declara la tecnología concreta (RabbitMQ, Kafka, etc.) — eso lo decide 
 | `db-per-bc` | Microservicios. Base de datos completamente separada por BC. |
 | `prefix-per-bc` | Monolito simple. Tablas con prefijo del BC en una sola DB. Útil para proyectos pequeños. |
 
+### `reliability` (opcional)
+
+Patrones de robustez para la publicación y consumo de eventos.
+
+```yaml
+infrastructure:
+  reliability:
+    outbox: true                    # outbox pattern para publicación at-least-once
+    consumerIdempotency: true       # idempotencia automática en consumidores
+```
+
+| Campo | Cuándo activarlo |
+|---|---|
+| `outbox: true` | Hay alguna integración `channel: message-broker` y se requiere garantía at-least-once. **Activar siempre que existan `sagas[]`** — sin outbox, una falla entre commit y publish puede romper la cadena del saga. |
+| `consumerIdempotency: true` | Hay UCs disparados por evento (`trigger.kind: event` en algún BC). **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe ejecutar el paso dos veces. |
+
+### `integrations.defaults` (opcional)
+
+Defaults globales de `auth` y `resilience` aplicados a todas las integraciones que
+no declaren los suyos localmente.
+
+```yaml
+infrastructure:
+  integrations:
+    defaults:
+      auth:
+        type: bearer
+        valueProperty: integration.default.token
+        header: Authorization
+      resilience:
+        timeoutMs: 5000
+        connectTimeoutMs: 1000
+        retries:
+          maxAttempts: 3
+          waitDurationMs: 500
+        circuitBreaker:
+          failureRateThreshold: 50
+```
+
+**Precedencia:** valores locales en `integrations[].auth` / `integrations[].resilience` >
+defaults globales en `infrastructure.integrations.defaults`.
+
+> Para integraciones con sistemas externos críticos suele convenir declarar al menos
+> `resilience` (global o local) — sin timeout ni retries explícitos el comportamiento
+> depende de los defaults del runtime.
+
 ---
 
 ## Reglas de validación rápida
@@ -414,6 +531,9 @@ Antes de considerar el `system.yaml` completo, verificar:
 - [ ] Los contratos de `message-broker` son objetos `{name, channel}`, no strings
 - [ ] Los contratos de `http/grpc` son strings en camelCase, no objetos
 - [ ] Todo sistema en `externalSystems` aparece en al menos una integración
+- [ ] Todo `externalSystem` referenciado en `integrations` declara `operations[]` no vacío (**INT-014**)
+- [ ] Toda integración con `auth.type: oauth2-cc` declara `tokenEndpoint` y `credentialKey` (**INT-015**)
+- [ ] Si existen `sagas[]`, está activado `infrastructure.reliability.outbox: true` y `consumerIdempotency: true` (recomendado)
 - [ ] Todo evento en `sagas[].steps[].onSuccess/onFailure/compensation` existe como contrato de integración
 
 ---

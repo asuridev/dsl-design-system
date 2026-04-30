@@ -141,19 +141,11 @@ valueObjects:
         scale: 4
         required: true
         description: Exact monetary amount as a decimal string.
-        validations:
-          - positive: true          # un monto monetario nunca puede ser cero ni negativo
       - name: currency
         type: String(3)
         required: true
         description: ISO 4217 currency code (e.g. COP, USD, EUR).
-        validations:
-          - pattern: "^[A-Z]{3}$"  # exactamente 3 letras mayúsculas — ISO 4217
 ```
-
-Las `validations` declaradas en las propiedades de un VO **se propagan automáticamente**
-a toda propiedad de un agregado que use ese VO como `type`. No es necesario (ni correcto)
-repetir las constraints en el agregado que lo referencia.
 
 ### Tipos canónicos disponibles para propiedades
 
@@ -1200,3 +1192,580 @@ Campos de cada evento consumido:
 | `{bc-name}-spec.md` | Narrativa de los mismos use cases, en prosa. |
 | `{bc-name}-flows.md` | Los flujos Given/When/Then derivan de los `domainRules` y `useCases`. |
 | `system.yaml` | `bc`, `type` y los eventos en `domainEvents` deben ser consistentes con `boundedContexts` e `integrations`. |
+
+---
+
+## Características avanzadas soportadas por el generador
+
+Esta sección recoge el vocabulario extendido que el generador SpringBoot acepta hoy.
+Todo lo aquí descrito es opcional: úsalo solo cuando aporte valor concreto al diseño.
+Cualquier clave fuera de las whitelist que se documentan aquí será rechazada por el
+generador.
+
+### Aggregates
+
+#### `concurrencyControl: optimistic`
+
+```yaml
+aggregates:
+  - name: Order
+    root: Order
+    auditable: true
+    concurrencyControl: optimistic   # único valor admitido
+```
+
+Activa control de concurrencia optimista (columna `version` + `@Version`). Único valor
+admitido es `optimistic` — declararlo solo cuando se necesite proteger contra updates
+concurrentes (típico en agregados con muchas escrituras).
+
+#### `softDelete: true`
+
+```yaml
+aggregates:
+  - name: Product
+    softDelete: true                 # inyecta deletedAt + filtra automáticamente
+```
+
+El generador inyecta `deletedAt` (nullable), filtra automáticamente todos los `findAll`
+y `findById` por `deletedAt IS NULL`, y mapea el endpoint DELETE a `softDelete(id)`.
+Para repositorios con métodos como `countByStatus`, declarar la versión soft-delete
+mediante el qualifier:
+
+```yaml
+repositories:
+  - aggregate: Product
+    methods:
+      - name: countNonDeletedByStatus
+        softDelete: true             # excluye filas con deletedAt != null
+```
+
+#### `validations[]` — vocabulario soportado (whitelist)
+
+Solo estas claves son procesadas. Cualquier otra es ignorada o produce error:
+
+`notEmpty` · `minLength` · `maxLength` · `pattern` · `min` · `max` · `positive`
+· `positiveOrZero` · `minSize` · `maxSize`.
+
+```yaml
+- name: sku
+  type: String
+  validations:
+    - notEmpty: true
+    - minLength: 3
+    - maxLength: 32
+    - pattern: "^[A-Z0-9-]+$"
+
+- name: quantity
+  type: Integer
+  validations:
+    - positive: true
+
+- name: tags
+  type: List[String]
+  validations:
+    - minSize: 1
+    - maxSize: 10
+```
+
+Para semánticas `email`, `url`, `future`, `past`: usar tipos canónicos `Email`,
+`Url`, `Date`, `DateTime` (validan en su constructor).
+
+**Validations en value objects propagan al agregado** que los usa como `type` —
+no repetir las constraints en el agregado.
+
+#### `domainRules[].type` — whitelist y campos requeridos
+
+```yaml
+domainRules:
+  # Unicidad — opcional constraintName
+  - id: PRD-001
+    type: uniqueness
+    field: sku
+    errorCode: PRODUCT_SKU_DUPLICATED
+    constraintName: idx_product_sku       # opcional, snake_case
+
+  # Precondición de estado
+  - id: PRD-002
+    type: statePrecondition
+    condition: "status == ProductStatus.DRAFT"
+    errorCode: PRODUCT_NOT_DRAFT
+
+  # Estado terminal — error obligatorio (InvalidStateTransitionException)
+  - id: PRD-003
+    type: terminalState
+    state: DISCONTINUED
+    errorCode: PRODUCT_DISCONTINUED
+
+  # Side effect — sin error visible al cliente
+  - id: PRD-004
+    type: sideEffect
+    description: Append entry to PriceHistory when price changes
+
+  # Guard de borrado — requiere targetAggregate y targetRepositoryMethod
+  - id: PRD-005
+    type: deleteGuard
+    targetAggregate: OrderLine
+    targetRepositoryMethod: existsByProductId
+    errorCode: PRODUCT_HAS_ORDERS
+
+  # Constraint cruzado — requiere targetAggregate, field, expectedStatus
+  - id: ORD-001
+    type: crossAggregateConstraint
+    targetAggregate: Product
+    field: status
+    expectedStatus: ACTIVE
+    errorCode: PRODUCT_NOT_ACTIVE
+```
+
+#### Entidades hijas — `relationship` + `cardinality`
+
+```yaml
+entities:
+  - name: ProductImage
+    relationship: composition          # composition | aggregation
+    cardinality: oneToMany             # oneToOne | oneToMany — manyToMany NO soportado
+    properties:
+      - name: id
+        type: Uuid                      # IDs de entidades hijas: solo Uuid
+```
+
+`manyToMany` no es soportado. IDs de entidades hijas: solo `Uuid`.
+
+---
+
+### Domain events — capacidades extendidas
+
+```yaml
+domainEvents:
+  published:
+    - name: OrderConfirmed
+      version: 1                            # entero ≥ 1, default 1
+      scope: integration                    # internal | integration | both — default both
+      payload:
+        - { name: orderId, type: Uuid, source: aggregate, field: id }
+        - { name: customerId, type: Uuid, source: aggregate, field: customerId }
+        - { name: amount, type: Decimal, source: aggregate, field: total.amount }
+        - { name: occurredOn, type: DateTime, source: timestamp }
+        - { name: source, type: String, source: constant, value: "orders-bc" }
+        - { name: triggeredBy, type: String, source: auth-context, claim: sub }
+        - { name: discount, type: Decimal, source: derived,
+            derivedFrom: [total.amount, total.discountRate],
+            expression: "amount * discountRate" }
+      broker:
+        partitionKey: customerId            # campo del payload usado como key
+        headers:
+          x-event-type: order.confirmed
+        retry:
+          maxAttempts: 5
+          backoff: exponential              # fixed | exponential
+          initialMs: 200
+          maxMs: 5000
+        dlq:
+          afterAttempts: 5
+          target: orders.dlq.order.confirmed
+
+    - name: OrderConfirmedInternal
+      scope: internal                       # solo se publica por bus interno (no broker)
+      payload: [...]
+
+    - name: ProductPriceChanged
+      scope: both
+      allowHiddenLeak: true                 # opt-in: permite que un campo hidden:true
+                                            # del agregado aparezca en el payload de un
+                                            # evento integration/both
+      payload:
+        - { name: oldPrice, type: Decimal, source: aggregate, field: priceCost }  # hidden
+
+  consumed:
+    - name: PaymentCaptured
+      fromBc: payments
+      retry: { maxAttempts: 3, backoff: fixed, initialMs: 500 }
+      dlq: { afterAttempts: 3, target: orders.dlq.payment.captured }
+
+    - name: AuditOrderEvent
+      fromBc: audit
+      acknowledgeOnly: true                 # se suscribe sin lógica de dominio
+                                            # (útil para warm-up / observabilidad)
+```
+
+#### `payload[].source` — whitelist
+
+| `source` | Campos auxiliares | Significado |
+|---|---|---|
+| `aggregate` | `field` | valor de una propiedad del agregado |
+| `param` | `param` | parámetro de entrada del use case que emite el evento |
+| `timestamp` | — | momento de emisión (`Instant.now()`) |
+| `constant` | `value` | literal estático |
+| `auth-context` | `claim` | claim del usuario autenticado (sub, email, …) |
+| `derived` | `derivedFrom[]` + `expression` | expresión Java sobre otros campos |
+
+#### `EventMetadata` canónica (NO declarar manualmente)
+
+El generador inyecta automáticamente: `eventId`, `occurredAt`, `eventType`, `sourceBC`,
+`correlationId`. Declararlos manualmente en `payload[]` produce conflicto.
+
+---
+
+### Errors — schema extendido
+
+```yaml
+errors:
+  # Caso simple — código + mensaje + status
+  - code: PRODUCT_NOT_FOUND
+    httpStatus: 404                          # whitelist (ver abajo)
+    message: "Product not found"
+
+  # Con plantilla parametrizada
+  - code: PRICE_OUT_OF_RANGE
+    httpStatus: 422
+    messageTemplate: "Price {value} is out of allowed range [{min}, {max}]"
+    args:
+      - { name: value, type: Decimal }
+      - { name: min, type: Decimal }
+      - { name: max, type: Decimal }
+
+  # Override de la clase Java generada
+  - code: ORDER_INVALID_STATE
+    httpStatus: 409
+    message: "Order in invalid state"
+    errorType: OrderInvalidStateError        # PascalCase, sufijo Error
+
+  # Encadenamiento de causa
+  - code: PAYMENT_GATEWAY_FAILED
+    httpStatus: 503
+    message: "Payment gateway unreachable"
+    chainable: true                          # añade ctor (message, cause)
+    kind: infrastructure
+    triggeredBy: feign.RetryableException    # FQN — solo si kind: infrastructure
+
+  # Relacionado con un domainRule de tipo uniqueness
+  - code: PRODUCT_SKU_DUPLICATED
+    httpStatus: 409
+    message: "SKU already exists"
+    constraintName: idx_product_sku          # solo en errores de uniqueness
+
+  # Manualmente lanzado (sin auto-mapeo desde domainRule)
+  - code: CUSTOM_FAILURE
+    httpStatus: 422
+    message: "Custom failure"
+    usedFor: manual                          # auto (default) | manual
+```
+
+#### `httpStatus` — whitelist
+
+`400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
+
+Cualquier valor fuera de esta lista es rechazado. Los nuevos statuses (402, 408, 412,
+415, 423, 429, 503, 504) se mapean a `DomainException` dinámico vía
+`@ExceptionHandler(DomainException.class)`.
+
+#### `kind` y `triggeredBy`
+
+- `kind: business` (default) — error de regla de dominio.
+- `kind: infrastructure` — error de capa técnica. Habilita `triggeredBy: <FQN>` para
+  documentar la causa raíz.
+- `triggeredBy` solo es válido si `kind: infrastructure`.
+
+---
+
+### UseCases — capacidades extendidas
+
+#### `returns` — whitelist
+
+| Tipo de UC | `returns` válidos |
+|---|---|
+| Command | `Void`, `Optional[X]`, `<VO>`, `<projection>` |
+| Query | `<VO>`, `<projection>`, `Page[X]`, `Slice[X]`, `List[X]`, `BinaryStream` |
+
+#### `validations[]` — pre-condiciones declarativas
+
+```yaml
+useCases:
+  - name: confirmOrder
+    type: command
+    validations:
+      - id: VAL-001
+        expression: "order.getTotal().compareTo(BigDecimal.ZERO) > 0"
+        errorCode: ORDER_AMOUNT_INVALID
+        description: "Total must be positive"
+```
+
+Cada validación se traduce a un guard al inicio del `execute()`.
+
+#### `lookups[]` — resolución de entidades antes de ejecutar
+
+```yaml
+lookups:
+  - param: orderId
+    aggregate: Order
+    errorCode: ORDER_NOT_FOUND
+  - param: lineId
+    nestedIn: Order.lines               # entidad hija
+    errorCode: ORDER_LINE_NOT_FOUND
+```
+
+Mutuamente excluyente con `notFoundError` legacy.
+
+#### `input[]` — campos extendidos
+
+```yaml
+input:
+  - name: limit
+    type: Integer
+    default: 50                          # valor por defecto si null
+    max: 100                             # cap superior
+  - name: tenantId
+    type: String
+    source: header                       # body (default) | query | path | header | multipart
+    headerName: X-Tenant-Id
+```
+
+#### `pagination` (queries)
+
+```yaml
+pagination:
+  defaultSize: 20
+  maxSize: 100
+  sortable:
+    - createdAt
+    - total
+  defaultSort:
+    field: createdAt
+    direction: DESC                      # ASC | DESC
+```
+
+#### `fkValidations[].bc` — validación cross-BC
+
+```yaml
+fkValidations:
+  - field: customerId
+    bc: customers                        # cross-BC: requiere integrations.outbound[]
+    aggregate: Customer
+    errorCode: CUSTOMER_NOT_FOUND
+```
+
+#### `idempotency` (commands)
+
+```yaml
+idempotency:
+  header: Idempotency-Key
+  ttl: PT24H                             # ISO-8601 duration
+  storage: redis                         # database | redis
+```
+
+#### `authorization`
+
+```yaml
+authorization:
+  rolesAnyOf: [ADMIN, MANAGER]
+  ownership:
+    field: customerId                    # campo del agregado/comando
+    claim: sub                           # claim del JWT
+    allowRoleBypass: true                # roles en rolesAnyOf saltan el ownership
+```
+
+#### Multi-aggregate — `aggregates[]` + `steps[]`
+
+```yaml
+aggregates: [Order, Invoice]
+steps:
+  - aggregate: Order
+    method: confirm
+  - aggregate: Invoice
+    method: emit
+    onFailure:
+      compensate: Order.revertConfirmation
+```
+
+#### `bulk` — operaciones en lote
+
+```yaml
+bulk:
+  itemType: ConfirmOrderItem
+  maxItems: 1000
+  onItemError: continue                  # continue | abort
+```
+
+#### `async` — ejecución asíncrona
+
+```yaml
+async:
+  mode: jobTracking                      # jobTracking | fireAndForget
+  statusEndpoint: /api/orders/jobs/{jobId}
+```
+
+#### Multipart (subida de ficheros)
+
+```yaml
+input:
+  - name: invoice
+    type: File
+    source: multipart
+    partName: invoice
+    maxSize: 5MB
+    contentTypes: [application/pdf, image/png]
+```
+
+#### `Range[T]` y `SearchText`
+
+```yaml
+input:
+  - name: priceRange
+    type: Range[Decimal]                 # genera priceFrom + priceTo
+  - name: query
+    type: SearchText
+    fields: [name, description, sku]     # multi-columna LIKE_CONTAINS
+```
+
+#### `trigger.kind: event`
+
+```yaml
+trigger:
+  kind: event                            # http (default) | event
+  consumes: PaymentCaptured
+  fromBc: payments
+  filter: "amount.compareTo(BigDecimal.valueOf(1000)) > 0"  # opcional
+```
+
+---
+
+### Repositories — capacidades extendidas
+
+#### `operator` por param — whitelist
+
+`EQ` (default) · `LIKE_CONTAINS` · `LIKE_STARTS` · `LIKE_ENDS` · `GTE` · `LTE` · `IN`.
+
+```yaml
+methods:
+  - name: searchProducts
+    params:
+      - { name: query, type: String, required: false, filterOn: [name, sku] }       # ⇒ LIKE_CONTAINS
+      - { name: priceFrom, type: Decimal, required: false, operator: GTE }
+      - { name: priceTo, type: Decimal, required: false, operator: LTE }
+      - { name: statuses, type: List[ProductStatus], required: false, operator: IN }
+    returns: Page[Product]
+```
+
+Sin `operator` declarado: `filterOn` ⇒ `LIKE_CONTAINS`; resto ⇒ `EQ`.
+
+#### `returns` — whitelist
+
+`void` · `Boolean` · `Int` · `Long` · `T` · `T?` · `List[T]` · `Page[T]` · `Slice[T]` · `Stream[T]`.
+
+#### `derivedFrom`
+
+```yaml
+- name: findBySku
+  derivedFrom: domainRule:PRD-001         # uniqueness rule
+- name: validateProductsAndPrices
+  derivedFrom: openapi:validateProductsAndPrices
+- name: findByName
+  derivedFrom: implicit                   # auto-derivado por análisis del UC
+```
+
+#### Phase 3 opt-ins
+
+```yaml
+- { name: existsBySku, returns: Boolean }
+- { name: deleteByStatus, returns: Long, transactional: true }
+- name: bulkActivate
+  bulkOperations: true
+- name: findByIdForUpdate                 # SELECT ... FOR UPDATE
+```
+
+#### Soft-delete qualifier
+
+```yaml
+- name: countNonDeletedByStatus
+  softDelete: true                        # excluye deletedAt != null
+```
+
+#### Read models — restricción
+
+Repositorio con `readModel: true` solo admite `findById`, `findBy{unique}`, `upsert`.
+**Nunca `save` ni `delete`**.
+
+#### `autoDerive: false`
+
+Opt-out de la generación automática de `findBy*` desde `domainRules` de tipo
+`uniqueness`. Útil si el repositorio se gestiona manualmente.
+
+---
+
+### Projections
+
+#### Whitelist de claves de propiedad
+
+`name`, `type`, `required`, `description`, `example`, `serializedName`, `derivedFrom`.
+
+#### Sufijos prohibidos
+
+`Dto`, `Response`, `Request`, `Payload` no se permiten en `projections[].name`.
+
+#### Tipos canónicos extendidos
+
+`Date`, `Duration`, `BigInt`, `Json` admitidos además de los habituales.
+
+#### Restricciones
+
+- Aggregates **no** pueden usarse como `type` en projections (usar `Uuid` con composición).
+- Projections vacías (`properties: []`) no son válidas.
+- Inline `returns:` en un UC sintetiza automáticamente `${UC}Result`.
+- `source: aggregate:<Name>` o `source: readModel:<Name>` (opcional) traza la
+  procedencia.
+
+#### Persistent projections (Local Read Model)
+
+```yaml
+projections:
+  - name: ProductSummary
+    persistent: true
+    source:
+      kind: event
+      event: ProductActivated
+      from: catalog
+    keyBy: productId
+    upsertStrategy: lastWriteWins         # lastWriteWins | versionGuarded
+    properties:
+      - { name: productId, type: Uuid }
+      - { name: name, type: String }
+      - { name: priceAmount, type: Decimal }
+```
+
+Genera una proyección persistida (LRM) actualizada por consumo de eventos. Útil para
+cachear datos de otros BCs sin acoplamiento síncrono.
+
+---
+
+### Integrations — auth y resilience por integración
+
+```yaml
+integrations:
+  outbound:
+    - bc: payments
+      auth:
+        type: bearer                      # none | api-key | bearer | oauth2-cc | mTLS
+        valueProperty: integration.payments.token
+        header: Authorization             # default Authorization (bearer) o X-Api-Key (api-key)
+      resilience:
+        timeoutMs: 3000
+        connectTimeoutMs: 1000
+        retries: { maxAttempts: 2, waitDurationMs: 200 }
+        circuitBreaker: { failureRateThreshold: 50 }
+
+    - bc: payment-gateway
+      auth:
+        type: oauth2-cc
+        tokenEndpoint: https://idp.example.com/oauth2/token
+        credentialKey: payment-gateway    # registrationId en spring-security
+```
+
+**INT-015 (validador bloqueante):** `auth.type: oauth2-cc` requiere `tokenEndpoint`
++ `credentialKey`.
+
+**Precedencia:** valores locales en `bc.yaml` > defaults globales en
+`system.yaml.infrastructure.integrations.defaults`.
+
+External systems referenciados deben existir en `system.yaml.externalSystems[]` con
+`operations[]` declaradas (INT-014).
+
