@@ -67,6 +67,20 @@ valueObjects:
         type: {canonical-type}     # ver canonical-types.md
         required: true | false
         description: {descripción}
+        validations:               # opcional — constraints adicionales que el tipo no expresa solo.
+                                   # Ver references/validation.md para el vocabulario completo.
+                                   # Las constraints aquí declaradas se propagan automáticamente
+                                   # a cualquier propiedad de un agregado que use este VO como tipo.
+          - minLength: {N}         # solo para String, String(n), Text
+          - pattern: "{REGEXP}"    # solo para String, String(n)
+          - min: {N}               # solo para Integer, Long, Decimal
+          - max: {N}               # solo para Integer, Long, Decimal
+          - positive: true         # solo para Integer, Long, Decimal — excluye cero
+          - positiveOrZero: true   # solo para Integer, Long, Decimal — incluye cero
+          - future: true           # solo para Date, DateTime
+          - past: true             # solo para Date, DateTime
+          - minSize: {N}           # solo para List[T]
+          - maxSize: {N}           # solo para List[T]
 
 
 # ─── PROJECTIONS ─────────────────────────────────────────────────────────────

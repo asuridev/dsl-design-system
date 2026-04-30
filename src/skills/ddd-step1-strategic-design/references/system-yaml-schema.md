@@ -48,6 +48,12 @@ externalSystems:
     type: ""            # payment-gateway | notification-provider |
                         # identity-provider | erp | logistics | tax-authority |
                         # crm | analytics | storage | other
+    operations:         # OBLIGATORIO si el sistema externo es referenciado en integrations
+      - name: ""        # camelCase — identificador de la operación
+        description: >  # propósito de la operación
+          ...
+        direction: ""   # outbound (nuestra app llama al externo) |
+                        # inbound (el externo nos llama: webhooks/callbacks)
 
 # ─── MAPA DE INTEGRACIONES ───────────────────────────────────────────────────
 # Sección dedicada — separada de los BCs para evolucionar independientemente
@@ -67,6 +73,17 @@ integrations:
                         #   - name: PedidoConfirmado         ← PascalCase
                         #     channel: orders.order.confirmed ← nombre exacto del canal AsyncAPI
       - ""
+    auth:               # OPCIONAL — override de defaults globales
+      type: ""          # none | api-key | bearer | oauth2-cc | mTLS
+      valueProperty: "" # nombre de propiedad de configuración con el secreto
+      header: ""        # nombre del header (api-key | bearer)
+      tokenEndpoint: "" # solo oauth2-cc — URL del endpoint de tokens
+      credentialKey: "" # solo oauth2-cc — clave del secret con client_id/secret
+    resilience:         # OPCIONAL — override de defaults globales
+      timeoutMs: 0
+      connectTimeoutMs: 0
+      retries: { maxAttempts: 0, waitDurationMs: 0 }
+      circuitBreaker: { failureRateThreshold: 0 }   # 0..100
     notes: ""           # explicación del por qué de esta integración
 
 # ─── INFRAESTRUCTURA ─────────────────────────────────────────────────────────
@@ -98,6 +115,25 @@ infrastructure:
                             # que evoluciona a microservicios
     notes: >
       ...
+
+  reliability:          # OPCIONAL — patrones de robustez de eventos
+    outbox: false       # patrón outbox para publicación at-least-once de eventos
+    consumerIdempotency: false   # idempotencia automática en consumidores
+                                 # ACTIVAR siempre que existan sagas[]
+
+  integrations:         # OPCIONAL — defaults globales para todas las integraciones
+    defaults:
+      auth:
+        type: ""        # none | api-key | bearer | oauth2-cc | mTLS
+        valueProperty: ""
+        header: ""
+        tokenEndpoint: ""    # solo oauth2-cc
+        credentialKey: ""    # solo oauth2-cc
+      resilience:
+        timeoutMs: 0
+        connectTimeoutMs: 0
+        retries: { maxAttempts: 0, waitDurationMs: 0 }
+        circuitBreaker: { failureRateThreshold: 0 }
 ```
 
 ---
@@ -120,6 +156,9 @@ infrastructure:
 - Si un `channel` es `message-broker`, debe existir `infrastructure.messageBroker: true`
 - Si `deployment.strategy` es `modular-monolith`, `database.isolationStrategy` debe ser `schema-per-bc` (recomendado) o `db-per-bc`
 - Si `channel` es `message-broker`, cada elemento de `contracts[]` DEBE ser un objeto con `name` y `channel`. Si `channel` es `http | grpc | websocket`, cada elemento DEBE ser un string camelCase.
+- Todo `externalSystem` referenciado por una `integration` (como `from` o `to`) DEBE declarar `operations[]` no vacío (INT-014).
+- Si `auth.type: oauth2-cc` (global o por integración), `tokenEndpoint` y `credentialKey` son obligatorios (INT-015).
+- Si existen `sagas[]`, recomendado activar `infrastructure.reliability.outbox: true` y `consumerIdempotency: true`.
 
 ### Conteo orientativo de BCs por tipo de sistema
 | Tipo de Sistema | BCs Esperados | Señal de alerta |

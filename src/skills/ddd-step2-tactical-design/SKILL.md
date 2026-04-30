@@ -108,6 +108,98 @@ Si existe `arch/{bc-name}/` con archivos:
 - Leer lo que existe
 - Preguntar al usuario si continúa, reemplaza o refina
 
+### 1.3 Capacidades soportadas por el generador (LEER ANTES DE DISEÑAR)
+
+El generador SpringBoot soporta un vocabulario extendido para cada sección del BC.
+**No usar capacidades fuera de este inventario** — el generador rechazará el YAML.
+
+#### Aggregates
+- `concurrencyControl: optimistic` (único valor admitido).
+- Propiedades:
+  - Flags: `readOnly`, `hidden`, `internal`, `unique`, `indexed`, `defaultValue`, `source: authContext`.
+  - `validations[]` declarativas — vocabulario soportado por el generador (whitelist exacta): `notEmpty`, `minLength`, `maxLength`, `pattern`, `min`, `max`, `positive`, `positiveOrZero`, `minSize`, `maxSize`. Para semánticas como email, url, fecha futura/pasada: usar los tipos canónicos `Email`, `Url`, `Date`, `DateTime` (ellos validan en su constructor) — NO existen claves `email`, `url`, `future`, `past`.
+- Entidades hijas: `relationship: composition|aggregation` + `cardinality: oneToOne|oneToMany`. **`manyToMany` NO soportado**. IDs solo `Uuid`.
+- `softDelete: true` (en agregado o entidad). Inyecta `deletedAt`. Resolución vía `softDelete` qualifier (`countNonDeletedBy*`).
+- Auto equals/hashCode/toString por id (no declarar manualmente).
+- `domainRules[].type` whitelist:
+  - `uniqueness` — opcional `constraintName: snake_case_index`.
+  - `statePrecondition` — siempre con `errorCode`.
+  - `terminalState` — `errorCode` traduce a `InvalidStateTransitionException`.
+  - `sideEffect` — sin error visible al cliente; documentado en flows.md.
+  - `deleteGuard` — requiere `targetAggregate` + `targetRepositoryMethod`.
+  - `crossAggregateConstraint` — requiere `targetAggregate` + `field` + `expectedStatus`.
+
+#### Domain Events
+- `published[]`:
+  - `version` (entero ≥1, default 1).
+  - `scope: internal|integration|both` (default `both`).
+  - `broker: { partitionKey, headers, retry: { maxAttempts, backoff: fixed|exponential, initialMs, maxMs }, dlq: { afterAttempts, target } }`.
+  - `payload[].source: aggregate|param|timestamp|constant|auth-context|derived` con sus campos auxiliares (`field`, `param`, `value`, `claim`, `derivedFrom`/`expression`).
+  - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `occurredAt`, `eventType`, `sourceBC`, `correlationId`.
+  - `allowHiddenLeak: true` — opt-in cuando un campo `hidden: true` aparece en payload de evento `integration` o `both`.
+- `consumed[]`:
+  - `retry`, `dlq` (mismas keys que en published.broker).
+  - `acknowledgeOnly: true` — suscribirse sin lógica de dominio.
+
+#### Errors
+- `code` SCREAMING_SNAKE_CASE.
+- `httpStatus` whitelist: `400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
+- `errorType` (override de la clase Java; PascalCase con sufijo `Error`).
+- `chainable: true` — añade ctor `(message, cause)`.
+- `usedFor: auto|manual` (default auto).
+- `messageTemplate` + `args[]` — ctor parametrizado. Placeholders deben coincidir con `args[].name`.
+- `kind: business|infrastructure`. `triggeredBy: <FQN>` solo válido si `kind: infrastructure`.
+- `constraintName` solo en errores de domainRule `uniqueness`.
+
+#### UseCases — capacidades extendidas
+- Commands: `returns: Void | Optional[X] | <VO|projection>`.
+- `derived_from` obligatorio (operationId del OpenAPI o evento del AsyncAPI).
+- `validations[]` (array): `id`, `expression` (Java-boolean), `errorCode`, `description`.
+- `lookups[]`: `param` + (`aggregate` o `nestedIn`) + `errorCode`. Mutuamente excluyente con `notFoundError`.
+- `input[]` extendido: `default`, `max`, `source: header` + `headerName`.
+- `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`.
+- `fkValidations[].bc` — cross-BC; requiere `integrations.outbound[]`.
+- `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: database|redis`.
+- `authorization`: `rolesAnyOf[]`, `ownership: { field, claim, allowRoleBypass }`.
+- Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
+- `bulk: { itemType, maxItems, onItemError: continue|abort }`.
+- `async: { mode: jobTracking|fireAndForget, statusEndpoint }`.
+- Multipart: `type: File`, `source: multipart`, `partName`, `maxSize`, `contentTypes[]`.
+- `returns: BinaryStream` (solo queries).
+- `Range[T]`, `SearchText { fields[] }`.
+- `trigger.kind: event` con `consumes`, `fromBc`, `filter` (booleano).
+
+#### Repositories — capacidades extendidas
+- Operadores whitelist: `EQ, LIKE_CONTAINS, LIKE_STARTS, LIKE_ENDS, GTE, LTE, IN`.
+- Returns whitelist: `void, Boolean, Int, Long, T, T?, List[T], Page[T], Slice[T], Stream[T]`.
+- `derivedFrom: domainRule:{RULE-ID}` o `openapi:{operationId}` o `implicit`.
+- Multi-field: `findByXAndY`.
+- `defaultSort`, `sortable[]`, `transactional: true`.
+- Phase 3 opt-ins: `existsBy*`, `deleteBy*`, `bulkOperations: true`, `findByIdForUpdate`.
+- `autoDerive: false` — opt-out de derivación automática desde domainRules `uniqueness`.
+- ReadModels (`readModel: true`): solo `findById`, `findBy{unique}`, `upsert`. **Nunca `save` ni `delete`**.
+
+#### Projections
+- Property keys whitelist: `name, type, required, description, example, serializedName, derivedFrom`.
+- Sufijos prohibidos en nombres: `Dto, Response, Request, Payload`.
+- Tipos canónicos extendidos: `Date, Duration, BigInt, Json`.
+- Aggregates **NO** pueden ser `type` en projections (usar `Uuid` con composición).
+- Projections vacías (`properties: []`) prohibidas.
+- Inline `returns:` en UC sintetiza `${UC}Result`.
+- `source: aggregate:<Name>` o `readModel:<Name>` (opcional).
+- `persistent: true` (Local Read Model) requiere `source: { kind: event, event, from }` + `keyBy` + `upsertStrategy: lastWriteWins|versionGuarded`.
+
+#### Integrations — capacidades de plataforma
+- `auth.type: none|api-key|bearer|oauth2-cc|mTLS` con campos auxiliares (`valueProperty`, `header`, `tokenEndpoint`, `credentialKey`).
+  - **INT-015**: `oauth2-cc` requiere `tokenEndpoint` + `credentialKey`.
+- `resilience: { timeoutMs, connectTimeoutMs, retries: { maxAttempts, waitDurationMs }, circuitBreaker: { failureRateThreshold } }`.
+- Precedencia: bc.yaml `auth/resilience` > system.yaml.
+- External systems referenciados deben existir en `system.yaml externalSystems[]` con `operations[]`.
+
+> **Validación cruzada con AsyncAPI (INT-016..INT-021):**
+> - Cada evento publicado/consumido tiene canal en el AsyncAPI con schema que coincide con `payload[]`.
+> - Hidden-field-leak detection: usar `allowHiddenLeak: true` para opt-in.
+
 ---
 
 ## Fase 2: Clarificación con el Usuario
@@ -190,6 +282,35 @@ Un VO es apropiado cuando:
 Propiedades de un VO siempre tienen tipos canónicos — nunca referencian otros VOs o
 Enums de forma anidada excepto si es genuinamente un tipo compuesto (`Money` contiene
 `Decimal` y `String(3)`).
+
+**Validaciones en propiedades de VOs:**
+Las propiedades de un VO pueden (y deben) llevar `validations` cuando el dominio impone
+restricciones que el tipo canónico no captura solo. Estas constraints se propagan
+automáticamente a toda propiedad de un agregado o entidad que use ese VO como `type`.
+
+```yaml
+valueObjects:
+  - name: Money
+    properties:
+      - name: amount
+        type: Decimal
+        precision: 19
+        scale: 4
+        required: true
+        validations:
+          - positive: true          # nunca cero ni negativo
+      - name: currency
+        type: String(3)
+        required: true
+        validations:
+          - pattern: "^[A-Z]{3}$"  # ISO 4217
+```
+
+Cuando un agregado declara `price: Money`, el generador aplica `positive` y el `pattern`
+en todos los commands que incluyan ese campo — sin necesidad de repetirlos en el agregado.
+
+> Leer `references/validation.md` para el vocabulario completo de constraints y las reglas
+> de qué declarar y qué no.
 
 ### 3.3.1 Resolución de tipos — Regla de cierre del vocabulario de tipos
 

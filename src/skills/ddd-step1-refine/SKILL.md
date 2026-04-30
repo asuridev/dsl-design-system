@@ -405,6 +405,91 @@ ejecutar el test de las tres preguntas:
 
 ---
 
+### Checklist G — Capacidades Soportadas por el Generador (system.yaml extendido)
+
+Validaciones específicas de las capacidades de plataforma que `system.yaml` declara y
+que el generador SpringBoot procesa. Estas no aplicaban en versiones anteriores del DSL.
+
+**G1 — `infrastructure.reliability` consistencia**
+
+Si `infrastructure.reliability` está declarado, sus valores válidos son:
+- `outbox: true|false` — patrón outbox para eventos publicados
+- `consumerIdempotency: true|false` — idempotencia automática en consumidores
+
+- Valor fuera del booleano → 🔴 ERROR.
+- Si `outbox: true` pero no hay ninguna integración `channel: message-broker` → 🔵 SUGERENCIA: outbox sin eventos es overhead innecesario.
+- Si hay sagas (`sagas[]`) y `consumerIdempotency: false` → 🟡 ALERTA: las cadenas de saga requieren idempotencia para tolerar redelivery; recomendar activarla.
+- Si `outbox: true` y algún BC ya tiene diseño táctico con `broker.dlq` declarado, alertar inconsistencia → 🟡 ALERTA.
+
+**G2 — `externalSystems[].operations[]` declaradas**
+
+Cada `externalSystem` debe declarar `operations[]` cuando alguna integración lo
+referencia como `from` o `to`. Cada operación contiene:
+- `name`: identificador camelCase
+- `description`: propósito de la operación
+- `direction`: `inbound|outbound`
+
+- ExternalSystem referenciado en `integrations[]` sin `operations[]` declaradas → 🔴 ERROR (INT-014): el generador no puede crear el ACL adapter sin saber qué métodos exponer.
+- ExternalSystem con `operations[]` pero ninguna integración que lo referencie → 🟡 ALERTA: posible sistema externo huérfano.
+
+**G3 — `auth` y `resilience` por integración o global**
+
+Bloque `auth` opcional en `system.yaml.integrations[]` o globalmente bajo `infrastructure.integrations.defaults`:
+
+```yaml
+auth:
+  type: none | api-key | bearer | oauth2-cc | mTLS
+  valueProperty: <nombre-propiedad-config>     # api-key/bearer
+  header: <header-name>                         # api-key/bearer
+  tokenEndpoint: <url>                          # solo oauth2-cc
+  credentialKey: <secret-key-name>              # solo oauth2-cc
+```
+
+- `auth.type` fuera del whitelist → 🔴 ERROR.
+- **INT-015**: si `auth.type: oauth2-cc`, faltan `tokenEndpoint` o `credentialKey` → 🔴 ERROR.
+- `auth.type: api-key` sin `valueProperty` y `header` → 🔴 ERROR.
+- `auth.type: mTLS` sin certificados configurados (al menos `valueProperty` apuntando al secreto del cert) → 🟡 ALERTA.
+
+Bloque `resilience` opcional:
+
+```yaml
+resilience:
+  timeoutMs: <int>
+  connectTimeoutMs: <int>
+  retries: { maxAttempts: <int>, waitDurationMs: <int> }
+  circuitBreaker: { failureRateThreshold: <0-100> }
+```
+
+- `retries.maxAttempts < 1` → 🔴 ERROR.
+- `circuitBreaker.failureRateThreshold` fuera de [0, 100] → 🔴 ERROR.
+- `connectTimeoutMs > timeoutMs` → 🔵 SUGERENCIA: invertido — connect siempre menor que total.
+- Integración con sistema externo sin ningún bloque de resiliencia (ni global ni local) → 🟡 ALERTA: ACL externo sin timeout/retries explícitos depende de defaults del runtime.
+
+**G4 — Sagas y reliability**
+
+- Saga declarado en `sagas[]` pero `infrastructure.reliability.outbox: false` o ausente → 🟡 ALERTA: las sagas por coreografía requieren outbox para garantizar entrega de eventos de transición.
+- Saga con `consumerIdempotency: false` → 🟡 ALERTA: sin idempotencia, una redelivery del mismo evento puede ejecutar el paso dos veces.
+
+**G5 — Eventos de integración: scope y broker hints**
+
+Aunque el `scope` del evento es declarado en `bc.yaml domainEvents.published[]`, el
+`system.yaml integrations[]` debe coincidir:
+
+- Cada contrato `channel: message-broker` en `system.yaml` representa un evento con
+  `scope: integration` o `both` en el bc.yaml emisor. Si el bc.yaml ya está diseñado y
+  el evento tiene `scope: internal` → 🔴 ERROR: contradicción (un evento internal nunca
+  cruza fronteras de BC).
+
+- El campo `partitionKey` del bloque `broker` (cuando se hereda de `system.yaml.infrastructure.broker.defaults`) debe ser un nombre de campo presente en el payload del evento; verificación cruzada con bc.yaml si existe.
+
+**G6 — Convención de versionado de eventos**
+
+Si dos integraciones declaran el mismo `name` de contrato con `version` distinto:
+- Es válido siempre que el broker enrute por `version` (típicamente vía topic suffix o header) — registrar en `notes`.
+- Sin documentación → 🔵 SUGERENCIA: clarificar la estrategia de versionado.
+
+---
+
 ### Resultado de la Fase 1B
 
 Al terminar todos los checklists, determinar el estado del diseño:

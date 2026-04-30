@@ -648,6 +648,106 @@ Reglas del schema:
 - Todos los nombres de eventos siguen la misma regla **PascalCase inglés** que los contratos de integración.
 - Cada evento en `onSuccess`, `onFailure` y `compensation` debe existir como contrato en la integración `from: {bc}, to: ..., pattern: event` del BC emisor (agregar si falta).
 - `onFailure` y `compensation` son opcionales por paso: omitir si el paso no puede fallar o si no tiene compensación.
+
+### 3.1.1 Capacidades extendidas de `system.yaml` soportadas por el generador
+
+El generador SpringBoot procesa los siguientes bloques opcionales. Declararlos solo
+cuando aporten valor concreto al diseño — no añadirlos por completar.
+
+#### `externalSystems[].operations[]` — OBLIGATORIO si el sistema externo es referenciado
+
+Cuando un `externalSystem` aparece como `from` o `to` en `integrations[]`, debe declarar
+qué operaciones expone, para que el generador pueda crear los ACL adapters:
+
+```yaml
+externalSystems:
+  - name: payment-gateway
+    type: external
+    description: Third-party payment processor
+    operations:
+      - name: chargePayment
+        description: Charge a credit card and return authorization code
+        direction: outbound        # outbound: nuestra app llama al externo
+      - name: refundPayment
+        description: Refund a previously authorized payment
+        direction: outbound
+      - name: webhookPaymentEvent
+        description: Receive async notification of payment status changes
+        direction: inbound         # inbound: el externo nos llama
+```
+
+- `direction: outbound` — operaciones que nuestro BC inicia hacia el externo.
+- `direction: inbound` — webhooks o callbacks que el externo nos envía.
+
+#### `infrastructure.reliability` — patrón outbox y consumer idempotency
+
+```yaml
+infrastructure:
+  reliability:
+    outbox: true                 # publicación de eventos vía outbox pattern
+    consumerIdempotency: true    # idempotencia automática en consumidores
+```
+
+Cuándo activar `outbox: true`:
+- Hay al menos una integración `channel: message-broker`.
+- El sistema requiere garantía at-least-once de entrega.
+- **Activar siempre que existan `sagas[]`** — sin outbox, una falla entre commit y
+  publish puede romper la cadena del saga.
+
+Cuándo activar `consumerIdempotency: true`:
+- Hay UCs disparados por evento (`trigger.kind: event` en algún BC).
+- **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe
+  ejecutar el paso dos veces.
+
+#### `infrastructure.integrations.defaults` — `auth` y `resilience` globales
+
+```yaml
+infrastructure:
+  integrations:
+    defaults:
+      auth:
+        type: bearer              # none | api-key | bearer | oauth2-cc | mTLS
+        valueProperty: api.token
+        header: Authorization
+        # solo oauth2-cc:
+        # tokenEndpoint: https://auth.provider.com/token
+        # credentialKey: oauth.client.secret
+      resilience:
+        timeoutMs: 5000
+        connectTimeoutMs: 1000
+        retries:
+          maxAttempts: 3
+          waitDurationMs: 500
+        circuitBreaker:
+          failureRateThreshold: 50    # %
+```
+
+- Estos valores aplican a TODAS las integraciones salvo override en `bc.yaml`.
+- Precedencia: `bc.yaml integrations[].auth/resilience` > `system.yaml.infrastructure.integrations.defaults`.
+- **INT-015 (validador bloqueante)**: `auth.type: oauth2-cc` requiere `tokenEndpoint` + `credentialKey`. El skill `ddd-step1-refine` lo verifica.
+- Recomendación: declarar resilience al menos para integraciones con sistemas externos — sin timeout/retries el comportamiento depende de defaults del runtime.
+
+#### Integraciones internas: `auth` y `resilience` opcionales por integración
+
+```yaml
+integrations:
+  - from: orders
+    to: payments
+    pattern: customer-supplier
+    channel: http
+    contracts: [validatePayment]
+    auth:
+      type: bearer
+      valueProperty: orders.token
+      header: Authorization
+    resilience:
+      timeoutMs: 3000
+      retries: { maxAttempts: 2, waitDurationMs: 200 }
+```
+
+Si la integración no declara `auth`/`resilience` localmente, el generador aplica los
+defaults globales. Para integraciones críticas (ej: payments) suele convenir override
+local con timeouts más estrictos.
 ### 3.2 system-spec.md
 
 Para cada BC, escribe una sección con esta estructura exacta:

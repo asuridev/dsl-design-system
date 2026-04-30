@@ -141,11 +141,19 @@ valueObjects:
         scale: 4
         required: true
         description: Exact monetary amount as a decimal string.
+        validations:
+          - positive: true          # un monto monetario nunca puede ser cero ni negativo
       - name: currency
         type: String(3)
         required: true
         description: ISO 4217 currency code (e.g. COP, USD, EUR).
+        validations:
+          - pattern: "^[A-Z]{3}$"  # exactamente 3 letras mayúsculas — ISO 4217
 ```
+
+Las `validations` declaradas en las propiedades de un VO **se propagan automáticamente**
+a toda propiedad de un agregado que use ese VO como `type`. No es necesario (ni correcto)
+repetir las constraints en el agregado que lo referencia.
 
 ### Tipos canónicos disponibles para propiedades
 
