@@ -483,18 +483,27 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
   | type | Hints requeridos | Hints opcionales |
   |---|---|---|
   | `uniqueness` | `field` (o `fields[]` para clave compuesta) + `errorCode` | `constraintName` en snake_case |
-  | `statePrecondition` | `condition` + `errorCode` | — |
-  | `terminalState` | `state` + `errorCode` | — |
+  | `statePrecondition` | `errorCode` | — |
+  | `terminalState` | `errorCode` (opcional) | — |
   | `sideEffect` | `description` | — (sin `errorCode`) |
   | `deleteGuard` | `targetAggregate` + `targetRepositoryMethod` + `errorCode` | — |
   | `crossAggregateConstraint` | `targetAggregate` + `field` + `expectedStatus` + `errorCode` | — |
   - Falta de hint requerido → 🔴 ERROR.
 
-- **uniqueness sin `field` → 🔴 ERROR.** El reader exige `field` (o `fields[]`) para
-  saber qué columna del almacenamiento debe recibir la restricción de unicidad y para
-  vincular la excepción de violación de integridad de datos del runtime al error
-  correcto. Esto aplica **siempre**, incluso cuando `constraintName` está declarado:
-  el constraint name es opcional, el field no.
+  > **`condition` y `state` no son claves válidas en `domainRules[]`.** Son errores
+  > frecuentes de diseño: `condition: "status == DRAFT"` en una `statePrecondition`
+  > y `state: DISCONTINUED` en una `terminalState`. El generador aplica whitelist
+  > estricta y rechaza ambos con error. La condición va en `description` (texto
+  > legible para Fase 3); el estado terminal es implícito en el tipo. → 🔴 ERROR.
+
+- **uniqueness sin `field` → 🔴 ERROR.** El reader exige `field` para saber qué
+    columna del almacenamiento debe recibir la restricción de unicidad y para vincular
+    la excepción de violación de integridad del runtime al error correcto. Aplica
+    **siempre**, incluso cuando `constraintName` está declarado. El `field` puede
+    referenciar una propiedad del **agregado raíz o de cualquier entidad hija** del
+    mismo agregado (por ejemplo, `sku` de una entidad `ProductVariant` declarada en
+    `entities[]`). Si el campo solo existe en una entidad hija, el generador lo
+    valida igualmente.
 
   - **`constraintName` (opcional, solo en `type: uniqueness`)**: nombre físico del
     índice único en la base de datos (ej: `uk_category_name`). Si está presente:
@@ -758,11 +767,28 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`returns` whitelist**: `void, Boolean, Int, Long, T, T?, List[T], Page[T],
   Slice[T], Stream[T]`. Otros → 🔴 ERROR.
 
+- **`returns: Page[T]` requiere param paginable**: todo método con `returns: Page[T]`
+  debe declarar en `params[]` **una** de estas dos formas:
+  - Un param con `type: PageRequest` (o `name: pageable`) — opción recomendada
+  - El par `{ name: page, type: Integer }` + `{ name: size, type: Integer }`
+  Sin ninguna de las dos → 🔴 ERROR: el generador no puede construir la firma del
+  método en el repositorio JPA (Spring Data exige `Pageable` como argumento).
+
 - **`derivedFrom`** — whitelist exacta del reader (sin normalización de prefijos):
   `<RULE-ID>` literal (p. ej. `PRD-001`, **sin** prefijo `domainRule:`),
   `openapi:<operationId>`, o `implicit`. Si referencia un RULE-ID, ese ID debe
   existir en `aggregates[].domainRules[].id`. Cualquier otra forma
   (incluido `domainRule:PRD-001`) → 🔴 ERROR.
+
+- **`derivedFrom: implicit` en métodos `findBy*`**: `implicit` significa "heredado
+  directamente de `JpaRepository<T, ID>`" — válido solo para `findById`, `save`,
+  `delete`, `count`, `saveAll`, `findAllById`. Los métodos `findBySlug`, `findByEmail`,
+  `findByXxx` (cualquier finder distinto de `findById`) **NO** son heredados de
+  JpaRepository — deben declararse en la interfaz JPA. El generador los trata como
+  Spring Data derived queries incluso si dicen `implicit`, pero el valor semánticamente
+  correcto es `openapi:<operationId>` o un `<RULE-ID>` de unicidad. Usar `implicit`
+  en un `findBy*` distinto de `findById` → 🟡 ALERTA: funcionará, pero es semántica
+  incorrecta; prefer `openapi:` o el ID de la regla de unicidad.
 
 - **Multi-field finders**: `findByXAndY` requiere todos los params en el método.
 
@@ -801,6 +827,17 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   manualmente declarado.
 
 #### E8 — Projections: schema y restricciones
+
+- **Alineación schema OpenAPI / internal-api ↔ projection name**: cuando un UC
+  (en `{bc}.yaml`) declara `returns: <ProjectionName>`, y la operación correspondiente
+  en `{bc}-open-api.yaml` o `{bc}-internal-api.yaml` tiene una respuesta
+  `$ref: '#/components/schemas/<SchemaName>'`, el `<SchemaName>` **debe ser idéntico**
+  a `<ProjectionName>`. Si difieren:
+  - El generador usa el schema name para parametrizar `Query<R>` → `Query<SchemaNameDto>`
+  - El controlador usa `uc.returns` → retorna `ProjectionName`
+  - Java falla: tipos incompatibles en `dispatch(query)` → 🔴 COMPILE ERROR
+  > **Regla**: si se renombra una projection en `{bc}.yaml`, actualizar también el
+  > nombre del schema en el archivo OpenAPI / internal-api correspondiente.
 
 - **Property keys whitelist**: solo `name, type, required, description, example,
   serializedName, derivedFrom`. Llaves fuera → 🔴 ERROR.

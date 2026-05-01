@@ -1272,16 +1272,16 @@ domainRules:
     errorCode: PRODUCT_SKU_DUPLICATED
     constraintName: idx_product_sku       # opcional, snake_case
 
-  # Precondición de estado
+  # Precondición de estado — la condición va en description, no en un campo "condition"
   - id: PRD-002
     type: statePrecondition
-    condition: "status == ProductStatus.DRAFT"
+    description: A product can only be activated from DRAFT status.
     errorCode: PRODUCT_NOT_DRAFT
 
-  # Estado terminal — error obligatorio (transición inválida)
+  # Estado terminal — el estado es implícito en el tipo; sin campo "state"
   - id: PRD-003
     type: terminalState
-    state: DISCONTINUED
+    description: A discontinued product cannot transition to any other status.
     errorCode: PRODUCT_DISCONTINUED
 
   # Side effect — sin error visible al cliente
