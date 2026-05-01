@@ -476,6 +476,24 @@ integrations:
           triggersOn: {UC-ID | evento}
           responseEvents:           # opcional
             - {NombreEvento}
+      auth:                         # OPCIONAL — override del auth declarado en system.yaml
+        type: {none|api-key|bearer|oauth2-cc|mTLS}
+        valueProperty: {clave de configuración con el secreto}
+        header: {nombre del header}          # solo api-key | bearer
+        tokenEndpoint: {url}                 # solo oauth2-cc
+        credentialKey: {clave de credencial} # solo oauth2-cc
+      resilience:                   # OPCIONAL — override del resilience declarado en system.yaml
+        circuitBreaker:             # presencia del objeto → @CircuitBreaker(name="{name}") en el adaptador
+          failureRateThreshold: 50           # % de fallos para abrir el circuito (1–100)
+          waitDurationInOpenState: 30s       # tiempo en estado OPEN (string con unidad: "30s", "60s")
+          slidingWindowSize: 20
+          minimumNumberOfCalls: 10
+          permittedNumberOfCallsInHalfOpenState: 3
+        retries:                    # PLURAL — maxAttempts > 1 → @Retry(name="{name}") en el adaptador
+          maxAttempts: 3            # debe ser > 1 para activar @Retry
+          waitDuration: 500ms       # tiempo entre reintentos (string con unidad: "500ms", "1s")
+        connectTimeoutMs: 5000      # timeout de conexión TCP en ms (campo plano, default: 5000)
+        timeoutMs: 15000            # timeout de lectura en ms (campo plano, default: 15000 BC→BC / 30000 externo)
 
   inbound:
     - name: {bc-consumidor}

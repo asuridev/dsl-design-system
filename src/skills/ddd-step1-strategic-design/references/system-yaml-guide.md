@@ -257,14 +257,31 @@ integrations:
 
 ```yaml
 resilience:
-  timeoutMs: 3000
-  connectTimeoutMs: 1000
-  retries:
-    maxAttempts: 3
-    waitDurationMs: 500
-  circuitBreaker:
-    failureRateThreshold: 50           # %, 0..100
+  circuitBreaker:                      # presencia del objeto → @CircuitBreaker(name="{to}")
+    failureRateThreshold: 50           # % de fallos para abrir el circuito (1–100)
+    waitDurationInOpenState: 30s       # tiempo en estado OPEN (string con unidad: "30s", "60s")
+    slidingWindowSize: 20
+    minimumNumberOfCalls: 10
+    permittedNumberOfCallsInHalfOpenState: 3
+  retries:                             # PLURAL — maxAttempts > 1 → @Retry(name="{to}")
+    maxAttempts: 3                     # debe ser > 1 para activar @Retry
+    waitDuration: 500ms                # string con unidad: "500ms", "1s"
+  connectTimeoutMs: 5000               # timeout de conexión TCP en ms (campo plano)
+  timeoutMs: 15000                     # timeout de lectura en ms (campo plano)
 ```
+
+**Efecto en el generador (Resilience4j):**
+
+| Campo declarado | Artefacto generado |
+|---|---|
+| `circuitBreaker` (objeto) | `@CircuitBreaker(name="{to}")` en cada método del adaptador + método `{op}Fallback` con `// TODO` |
+| `retries.maxAttempts > 1` | `@Retry(name="{to}")` en cada método del adaptador. **La clave es `retries` en plural.** |
+| Sub-campos de `circuitBreaker` / `retries` | Bloque `instances.{to}` en `resilience.yaml` (por entorno) con `baseConfig: default` + campos declarados |
+| `connectTimeoutMs` | `Request.Options` connect timeout en `{To}FeignConfig.java` (default si ausente: 5000 ms) |
+| `timeoutMs` | `Request.Options` read timeout en `{To}FeignConfig.java` (default: 15000 ms BC→BC, 30000 ms externo) |
+
+> Si se declara `circuitBreaker: {}` (sin sub-campos), la anotación se genera igual pero
+> no se crea bloque `instances` en `resilience.yaml` — la instancia hereda `configs.default`.
 
 Si una integración no declara `resilience`, el generador aplica los defaults
 de `infrastructure.integrations.defaults.resilience`. Para integraciones críticas
@@ -506,13 +523,17 @@ infrastructure:
         valueProperty: integration.default.token
         header: Authorization
       resilience:
-        timeoutMs: 5000
-        connectTimeoutMs: 1000
-        retries:
-          maxAttempts: 3
-          waitDurationMs: 500
         circuitBreaker:
           failureRateThreshold: 50
+          waitDurationInOpenState: 30s
+          slidingWindowSize: 20
+          minimumNumberOfCalls: 10
+          permittedNumberOfCallsInHalfOpenState: 3
+        retries:          # PLURAL
+          maxAttempts: 3
+          waitDuration: 500ms
+        connectTimeoutMs: 5000
+        timeoutMs: 15000
 ```
 
 **Precedencia:** valores locales en `integrations[].auth` / `integrations[].resilience` >

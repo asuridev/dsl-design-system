@@ -1736,23 +1736,52 @@ cachear datos de otros BCs sin acoplamiento síncrono.
 ```yaml
 integrations:
   outbound:
-    - bc: payments
+    - name: payments
       auth:
         type: bearer                      # none | api-key | bearer | oauth2-cc | mTLS
         valueProperty: integration.payments.token
         header: Authorization             # default Authorization (bearer) o X-Api-Key (api-key)
       resilience:
-        timeoutMs: 3000
-        connectTimeoutMs: 1000
-        retries: { maxAttempts: 2, waitDurationMs: 200 }
-        circuitBreaker: { failureRateThreshold: 50 }
+        circuitBreaker:                   # presencia del objeto → @CircuitBreaker(name="payments")
+          failureRateThreshold: 50        # % de fallos para abrir el circuito (1–100)
+          waitDurationInOpenState: 30s    # string con unidad: "30s", "60s"
+          slidingWindowSize: 20
+          minimumNumberOfCalls: 10
+          permittedNumberOfCallsInHalfOpenState: 3
+        retries:                          # PLURAL — maxAttempts > 1 → @Retry(name="payments")
+          maxAttempts: 3                  # debe ser > 1 para activar @Retry
+          waitDuration: 500ms             # string con unidad: "500ms", "1s"
+        connectTimeoutMs: 3000            # timeout de conexión TCP en ms (campo plano)
+        timeoutMs: 10000                  # timeout de lectura en ms (campo plano)
 
-    - bc: payment-gateway
+    - name: payment-gateway
       auth:
         type: oauth2-cc
         tokenEndpoint: https://idp.example.com/oauth2/token
         credentialKey: payment-gateway    # identificador de credencial registrada en el runtime destino
+      resilience:
+        circuitBreaker:
+          failureRateThreshold: 30
+          waitDurationInOpenState: 60s
+        retries:
+          maxAttempts: 5
+          waitDuration: 1000ms
+        connectTimeoutMs: 5000
+        timeoutMs: 30000                  # default externo: 30000 ms
 ```
+
+**Efecto en el generador (Resilience4j):**
+
+| Campo declarado | Artefacto generado |
+|---|---|
+| `circuitBreaker` (objeto) | `@CircuitBreaker(name="{name}")` en cada método del adaptador + método `{op}Fallback` con `// TODO` |
+| `retries.maxAttempts > 1` | `@Retry(name="{name}")` en cada método del adaptador. **La clave es `retries` en plural.** |
+| Sub-campos de `circuitBreaker` / `retries` | Bloque `instances.{name}` en `resilience.yaml` (por entorno) con `baseConfig: default` + campos declarados |
+| `connectTimeoutMs` | `Request.Options` connect timeout en `{Name}FeignConfig.java` (default: 5000 ms) |
+| `timeoutMs` | `Request.Options` read timeout en `{Name}FeignConfig.java` (default: 15000 ms BC→BC, 30000 ms externo) |
+
+> Si se declara `circuitBreaker: {}` (sin sub-campos), la anotación se genera igual pero
+> no se crea bloque `instances` en `resilience.yaml` — la instancia hereda `configs.default`.
 
 **INT-015 (validador bloqueante):** `auth.type: oauth2-cc` requiere `tokenEndpoint`
 + `credentialKey`.

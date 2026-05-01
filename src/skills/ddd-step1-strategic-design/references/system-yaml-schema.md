@@ -54,6 +54,24 @@ externalSystems:
           ...
         direction: ""   # outbound (nuestra app llama al externo) |
                         # inbound (el externo nos llama: webhooks/callbacks)
+    auth:               # OPCIONAL — autenticación saliente para este sistema externo
+      type: ""          # none | api-key | bearer | oauth2-cc | mTLS
+      valueProperty: "" # nombre de propiedad de configuración con el secreto
+      header: ""        # nombre del header (api-key | bearer)
+      tokenEndpoint: "" # solo oauth2-cc — URL del endpoint de tokens
+      credentialKey: "" # solo oauth2-cc — clave del secret con client_id/secret
+    resilience:         # OPCIONAL — configuración Resilience4j para este cliente HTTP
+      circuitBreaker:   # presencia del objeto → @CircuitBreaker(name="{name}") en el adaptador
+        failureRateThreshold: 50       # % de fallos para abrir el circuito (1–100)
+        waitDurationInOpenState: 30s   # tiempo en estado OPEN (string con unidad: "30s", "60s")
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+      retries:          # PLURAL — maxAttempts > 1 → @Retry(name="{name}") en el adaptador
+        maxAttempts: 3  # debe ser > 1 para activar @Retry
+        waitDuration: 500ms            # tiempo entre reintentos (string con unidad)
+      connectTimeoutMs: 5000           # timeout de conexión TCP en ms (default: 5000)
+      timeoutMs: 30000                 # timeout de lectura en ms (default externo: 30000)
 
 # ─── MAPA DE INTEGRACIONES ───────────────────────────────────────────────────
 # Sección dedicada — separada de los BCs para evolucionar independientemente
@@ -79,11 +97,18 @@ integrations:
       header: ""        # nombre del header (api-key | bearer)
       tokenEndpoint: "" # solo oauth2-cc — URL del endpoint de tokens
       credentialKey: "" # solo oauth2-cc — clave del secret con client_id/secret
-    resilience:         # OPCIONAL — override de defaults globales
-      timeoutMs: 0
-      connectTimeoutMs: 0
-      retries: { maxAttempts: 0, waitDurationMs: 0 }
-      circuitBreaker: { failureRateThreshold: 0 }   # 0..100
+    resilience:         # OPCIONAL — configuración Resilience4j para este cliente HTTP
+      circuitBreaker:   # presencia del objeto → @CircuitBreaker(name="{to}") en el adaptador
+        failureRateThreshold: 50       # % de fallos para abrir el circuito (1–100)
+        waitDurationInOpenState: 30s   # tiempo en estado OPEN (string con unidad: "30s", "60s")
+        slidingWindowSize: 20          # nº de llamadas para calcular tasa de fallos
+        minimumNumberOfCalls: 10       # mínimo de llamadas antes de calcular la tasa
+        permittedNumberOfCallsInHalfOpenState: 3
+      retries:          # PLURAL — maxAttempts > 1 → @Retry(name="{to}") en el adaptador
+        maxAttempts: 3  # debe ser > 1 para activar @Retry; sub-campos → instances.{to} en resilience.yaml
+        waitDuration: 500ms            # tiempo entre reintentos (string con unidad: "500ms", "1s")
+      connectTimeoutMs: 5000           # timeout de conexión TCP en ms (campo plano, default: 5000)
+      timeoutMs: 15000                 # timeout de lectura en ms (campo plano, default: 15000 BC→BC / 30000 externo)
     notes: ""           # explicación del por qué de esta integración
 
 # ─── INFRAESTRUCTURA ─────────────────────────────────────────────────────────
@@ -129,11 +154,18 @@ infrastructure:
         header: ""
         tokenEndpoint: ""    # solo oauth2-cc
         credentialKey: ""    # solo oauth2-cc
-      resilience:
-        timeoutMs: 0
-        connectTimeoutMs: 0
-        retries: { maxAttempts: 0, waitDurationMs: 0 }
-        circuitBreaker: { failureRateThreshold: 0 }
+      resilience:       # defaults aplicados a integraciones que no declaran resilience local
+        circuitBreaker:
+          failureRateThreshold: 50
+          waitDurationInOpenState: 30s
+          slidingWindowSize: 20
+          minimumNumberOfCalls: 10
+          permittedNumberOfCallsInHalfOpenState: 3
+        retries:          # PLURAL
+          maxAttempts: 3
+          waitDuration: 500ms
+        connectTimeoutMs: 5000
+        timeoutMs: 15000
 ```
 
 ---
