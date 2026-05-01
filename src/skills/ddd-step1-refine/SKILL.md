@@ -408,7 +408,7 @@ ejecutar el test de las tres preguntas:
 ### Checklist G — Capacidades Soportadas por el Generador (system.yaml extendido)
 
 Validaciones específicas de las capacidades de plataforma que `system.yaml` declara y
-que el generador SpringBoot procesa. Estas no aplicaban en versiones anteriores del DSL.
+que el generador procesa. Estas no aplicaban en versiones anteriores del DSL.
 
 **G1 — `infrastructure.reliability` consistencia**
 

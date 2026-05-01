@@ -651,7 +651,7 @@ Reglas del schema:
 
 ### 3.1.1 Capacidades extendidas de `system.yaml` soportadas por el generador
 
-El generador SpringBoot procesa los siguientes bloques opcionales. Declararlos solo
+El generador procesa los siguientes bloques opcionales. Declararlos solo
 cuando aporten valor concreto al diseño — no añadirlos por completar.
 
 #### `externalSystems[].operations[]` — OBLIGATORIO si el sistema externo es referenciado

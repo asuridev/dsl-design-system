@@ -579,7 +579,7 @@ useCases:
         required: true
         source: path
         loadAggregate: true       # Path A: el generador invoca findById(id) directamente
-    returns: ProductDetail        # nombre en projections[], o nombre del agregado si retorna el modelo completo
+    returns: ProductDetail        # nombre en projections[]. Para retornar el DTO completo del agregado: {AggregateName}Response (ej: ProductResponse). NO usar el nombre del agregado a secas.
     rules: []
     notFoundError: [PRODUCT_NOT_FOUND]
     implementation: full
@@ -681,7 +681,7 @@ useCases:
 | `input` | no (omitir si vacío) | Parámetros externos que recibe el handler (evento, HTTP, authContext). |
 | `input[].source` | sí | `event.{campo}` \| `path` \| `query` \| `body` \| `authContext`. |
 | `input[].loadAggregate` | no | `true` activa `findById(param)` antes de invocar el método (commands) o como Path A (queries). Un único param por UC puede declararlo; tipo `Uuid`. |
-| `returns` | si `type: query` + `kind: http` | Nombre en `projections[]`, nombre de un agregado del BC, o lista inline de propiedades. **Ausente en commands.** |
+| `returns` | si `type: query` + `kind: http` | Nombre en `projections[]`, `{AggregateName}Response` para el DTO completo del agregado, o lista inline de propiedades. **Nunca el nombre del agregado a secas.** **Ausente en commands.** |
 | `rules` | sí | Lista de RULE-IDs evaluados dentro del use case. `[]` si no aplica ninguna. |
 | `notFoundError` | no | Lista de códigos lanzados cuando la entidad no existe. Siempre lista: `[ERROR_CODE]`. Omitir cuando no aplica. |
 | `fkValidations` | si `type: command` | Lista de validaciones de FK. `[]` si no hay FK. |
@@ -1197,7 +1197,7 @@ Campos de cada evento consumido:
 
 ## Características avanzadas soportadas por el generador
 
-Esta sección recoge el vocabulario extendido que el generador SpringBoot acepta hoy.
+Esta sección recoge el vocabulario extendido que el generador acepta hoy.
 Todo lo aquí descrito es opcional: úsalo solo cuando aporte valor concreto al diseño.
 Cualquier clave fuera de las whitelist que se documentan aquí será rechazada por el
 generador.
@@ -1214,7 +1214,7 @@ aggregates:
     concurrencyControl: optimistic   # único valor admitido
 ```
 
-Activa control de concurrencia optimista (columna `version` + `@Version`). Único valor
+Activa control de concurrencia optimista (vector de versión persistido). Único valor
 admitido es `optimistic` — declararlo solo cuando se necesite proteger contra updates
 concurrentes (típico en agregados con muchas escrituras).
 
@@ -1243,16 +1243,16 @@ repositories:
 
 Solo estas claves son procesadas. Cualquier otra es ignorada o produce error:
 
-`notEmpty` · `minLength` · `maxLength` · `pattern` · `min` · `max` · `positive`
-· `positiveOrZero` · `minSize` · `maxSize`.
+`notEmpty` · `minLength` · `pattern` · `min` · `max` · `positive`
+· `positiveOrZero` · `negative` · `negativeOrZero` · `future` · `futureOrPresent`
+· `past` · `pastOrPresent` · `minSize` · `maxSize`.
 
 ```yaml
 - name: sku
-  type: String
+  type: String(32)
   validations:
     - notEmpty: true
     - minLength: 3
-    - maxLength: 32
     - pattern: "^[A-Z0-9-]+$"
 
 - name: quantity
@@ -1267,8 +1267,9 @@ Solo estas claves son procesadas. Cualquier otra es ignorada o produce error:
     - maxSize: 10
 ```
 
-Para semánticas `email`, `url`, `future`, `past`: usar tipos canónicos `Email`,
-`Url`, `Date`, `DateTime` (validan en su constructor).
+`maxLength` no se declara explícitamente: ya está implícito en `String(n)`. Para semánticas
+ya cubiertas por tipos canónicos (email, url) usar los tipos `Email`, `Url` (validan en
+su constructor). Ver `references/validation.md` para la referencia completa del vocabulario.
 
 **Validations en value objects propagan al agregado** que los usa como `type` —
 no repetir las constraints en el agregado.
@@ -1290,7 +1291,7 @@ domainRules:
     condition: "status == ProductStatus.DRAFT"
     errorCode: PRODUCT_NOT_DRAFT
 
-  # Estado terminal — error obligatorio (InvalidStateTransitionException)
+  # Estado terminal — error obligatorio (transición inválida)
   - id: PRD-003
     type: terminalState
     state: DISCONTINUED
@@ -1394,10 +1395,10 @@ domainEvents:
 |---|---|---|
 | `aggregate` | `field` | valor de una propiedad del agregado |
 | `param` | `param` | parámetro de entrada del use case que emite el evento |
-| `timestamp` | — | momento de emisión (`Instant.now()`) |
+| `timestamp` | — | momento de emisión (timestamp del runtime destino) |
 | `constant` | `value` | literal estático |
 | `auth-context` | `claim` | claim del usuario autenticado (sub, email, …) |
-| `derived` | `derivedFrom[]` + `expression` | expresión Java sobre otros campos |
+| `derived` | `derivedFrom[]` + `expression` | expresión booleana en el lenguaje de implementación destino sobre otros campos |
 
 #### `EventMetadata` canónica (NO declarar manualmente)
 
@@ -1424,7 +1425,7 @@ errors:
       - { name: min, type: Decimal }
       - { name: max, type: Decimal }
 
-  # Override de la clase Java generada
+  # Override de la clase de error generada
   - code: ORDER_INVALID_STATE
     httpStatus: 409
     message: "Order in invalid state"
@@ -1434,9 +1435,9 @@ errors:
   - code: PAYMENT_GATEWAY_FAILED
     httpStatus: 503
     message: "Payment gateway unreachable"
-    chainable: true                          # añade ctor (message, cause)
+    chainable: true                          # habilita envolver la causa original
     kind: infrastructure
-    triggeredBy: feign.RetryableException    # FQN — solo si kind: infrastructure
+    triggeredBy: payment.gateway.RetryableException  # identificador de clase de excepción del runtime destino — solo si kind: infrastructure
 
   # Relacionado con un domainRule de tipo uniqueness
   - code: PRODUCT_SKU_DUPLICATED
@@ -1456,14 +1457,14 @@ errors:
 `400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
 
 Cualquier valor fuera de esta lista es rechazado. Los nuevos statuses (402, 408, 412,
-415, 423, 429, 503, 504) se mapean a `DomainException` dinámico vía
-`@ExceptionHandler(DomainException.class)`.
+415, 423, 429, 503, 504) se mapean al manejador genérico de error de dominio del runtime
+destino.
 
 #### `kind` y `triggeredBy`
 
 - `kind: business` (default) — error de regla de dominio.
-- `kind: infrastructure` — error de capa técnica. Habilita `triggeredBy: <FQN>` para
-  documentar la causa raíz.
+- `kind: infrastructure` — error de capa técnica. Habilita `triggeredBy: <identificador
+  de clase de excepción del runtime destino>` para documentar la causa raíz.
 - `triggeredBy` solo es válido si `kind: infrastructure`.
 
 ---
@@ -1475,7 +1476,13 @@ Cualquier valor fuera de esta lista es rechazado. Los nuevos statuses (402, 408,
 | Tipo de UC | `returns` válidos |
 |---|---|
 | Command | `Void`, `Optional[X]`, `<VO>`, `<projection>` |
-| Query | `<VO>`, `<projection>`, `Page[X]`, `Slice[X]`, `List[X]`, `BinaryStream` |
+| Query | `{AggregateName}Response`, `<projection>`, `Page[{AggregateName}Response]`, `Page[<projection>]`, `Slice[X]`, `List[X]`, `BinaryStream` |
+
+> **⚠ Convención obligatoria:** para retornar el DTO del agregado completo en una query,
+> usar siempre **`{AggregateName}Response`** (ej: `CategoryResponse`, `ProductResponse`).
+> El generador mapea `{AggregateName}Response` → `{AggregateName}ResponseDto`.
+> Escribir el nombre del agregado a secas (ej: `Category`) genera un import a una clase
+> `dtos.Category` que no existe → error de compilación en el proyecto destino.
 
 #### `validations[]` — pre-condiciones declarativas
 
@@ -1485,7 +1492,7 @@ useCases:
     type: command
     validations:
       - id: VAL-001
-        expression: "order.getTotal().compareTo(BigDecimal.ZERO) > 0"
+        expression: "order.getTotal() > 0"
         errorCode: ORDER_AMOUNT_INVALID
         description: "Total must be positive"
 ```
@@ -1624,7 +1631,7 @@ trigger:
   kind: event                            # http (default) | event
   consumes: PaymentCaptured
   fromBc: payments
-  filter: "amount.compareTo(BigDecimal.valueOf(1000)) > 0"  # opcional
+  filter: "amount > 1000"  # opcional
 ```
 
 ---
@@ -1757,7 +1764,7 @@ integrations:
       auth:
         type: oauth2-cc
         tokenEndpoint: https://idp.example.com/oauth2/token
-        credentialKey: payment-gateway    # registrationId en spring-security
+        credentialKey: payment-gateway    # identificador de credencial registrada en el runtime destino
 ```
 
 **INT-015 (validador bloqueante):** `auth.type: oauth2-cc` requiere `tokenEndpoint`

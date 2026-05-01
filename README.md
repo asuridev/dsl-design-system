@@ -1601,12 +1601,24 @@ errors:
 - **`triggeredBy`** — FQN de la clase Java original (`feign.RetryableException`).
   **Solo válido si `kind: infrastructure`**.
 
-#### 5.7.7 `errors[].constraintName`
+#### 5.7.7 Vinculación con `domainRules.uniqueness` — NO usar `errors[].constraintName`
 
-- **Tipo:** `snake_case`.
-- **Obligatoriedad:** opcional.
-- **Qué resuelve:** vincula el error a un constraint UNIQUE de DB. **Solo válido en
-  errores asociados a un `domainRule.type: uniqueness`** con el mismo `constraintName`.
+- **Regla:** `constraintName` **NO es válido en `errors[]`**. El validador aplica
+  whitelist estricta a las claves de error — `{code, httpStatus, description, message,
+  title, errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}` —
+  y aborta el build ante claves desconocidas.
+- **Por qué:** el nombre del UNIQUE INDEX físico es **detalle de implementación de
+  infraestructura**, no información de dominio (regla #7 de [AGENTS.md](AGENTS.md):
+  separación intención/implementación). El YAML declara la **intención**
+  (`type: uniqueness` en `domainRules`) y el generador decide el nombre del constraint
+  en la entidad JPA.
+- **Dónde sí se declara:** en `aggregates[].domainRules[]` con `type: uniqueness`,
+  como campo `constraintName: snake_case_index`. El generador empareja automáticamente
+  el `errorCode` de la rule con su entrada en `errors[]` y traduce
+  `DataIntegrityViolationException` al error correcto.
+- **Para errores de infraestructura encadenados** usar `kind: infrastructure` +
+  `triggeredBy: <FQN-de-excepción-Java>` en `errors[]` (ver § 5.7.6). `triggeredBy`
+  apunta a clases de excepción (`feign.RetryableException`), no a domain rules.
 
 #### 5.7.8 `errors[].usedFor`
 
@@ -1625,7 +1637,6 @@ Operación de aplicación. Hay dos tipos: `command` (muta estado) y `query` (lee
 useCases:
   - name: confirmOrder
     type: command
-    derived_from: confirmOrder      # operationId del OpenAPI
     description: Confirms a draft order, capturing payment and reserving stock.
     aggregate: Order
     trigger: { kind: http, operationId: confirmOrder }
@@ -1653,13 +1664,22 @@ useCases:
 - **Valores permitidos:** `command` · `query`.
 - **Qué resuelve:** distingue mutadores de lectores (CQRS).
 
-##### 5.8.1.3 `useCases[].derived_from`
+##### 5.8.1.3 Trazabilidad del UC — NO usar `derived_from` ni `derivedFrom`
 
-- **Tipo:** string.
-- **Obligatoriedad:** requerido.
-- **Valores permitidos:** un `operationId` del `{bc}-open-api.yaml` o un `name` de
-  evento del `{bc}-async-api.yaml`.
-- **Qué resuelve:** trazabilidad obligatoria entre el contrato y la implementación.
+- **Regla:** las claves `derived_from` y `derivedFrom` **NO son válidas** en `useCases[]`.
+  El generador valida con whitelist estricta y aborta el build ante claves desconocidas
+  (regla #1 de [AGENTS.md](AGENTS.md): el generador no toma decisiones de dominio; un
+  typo silencioso como `triger:` no debe pasar desapercibido).
+- **Por qué:** un UC ya queda identificado unívocamente por su `id` (UC-XXX-NNN) y por
+  el binding explícito con el contrato externo via `trigger.kind` + `trigger.operationId`
+  (HTTP) o `trigger.event` (eventos). No es un artefacto derivado de un campo o regla,
+  sino la unidad atómica del diseño táctico.
+- **Dónde sí aplica `derivedFrom`:** marca de trazabilidad de artefactos **derivados**
+  de un campo o regla — válido en `aggregates[].domainMethods[]`,
+  `repositories[].queryMethods[]`, `aggregates[].properties[]` (`source: derived`),
+  `projections[].properties[]` y `domainEvents[].payload[]` (`source: derived`).
+- **Para documentar el origen del UC** (PRD, historia de usuario): usar `description:`
+  o enlazar reglas vía `rules: [RULE-ID, ...]` apuntando a `domainRules[]`.
 
 ##### 5.8.1.4 `useCases[].returns` (whitelist)
 
@@ -1893,7 +1913,7 @@ repositories:
     autoDerive: true                # default
     methods:
       - name: findBySku
-        derivedFrom: domainRule:PRD-001
+        derivedFrom: PRD-001
         params: [{ name: sku, type: String, required: true }]
         returns: Optional[Product]
       - name: searchProducts
@@ -1979,9 +1999,9 @@ repositories:
 
 #### 5.9.7 `repositories[].methods[].derivedFrom`
 
-- **Tipo:** string con prefijo.
-- **Valores permitidos:**
-  - `domainRule:<RULE-ID>` — método derivado de un domainRule (típicamente uniqueness).
+- **Tipo:** string.
+- **Valores permitidos** (whitelist exacta del reader, sin normalización de prefijos):
+  - `<RULE-ID>` — ID literal de un domainRule declarado en el agregado (p. ej. `PRD-001`, `CAT-RULE-003`). **Sin prefijo `domainRule:`** — el reader compara contra `aggregates[].domainRules[].id` y aborta si no existe o si lleva prefijo.
   - `openapi:<operationId>` — método requerido por un endpoint del OpenAPI.
   - `implicit` — auto-derivado por análisis del UC.
 - **Qué resuelve:** trazabilidad obligatoria del método.

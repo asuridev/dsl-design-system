@@ -354,8 +354,10 @@ useCases:
         source: path | query | body | authContext
         loadAggregate: true          # Path A: findById directo. El nombre del param no necesita
                                      # coincidir con queryMethods.params.
-    returns: {ProjectionName} | {AggregateName}  # nombre declarado en projections[] o nombre del agregado
-                                    # Colecciones: Page[{ProjectionName}] o List[{ProjectionName}]
+    returns: {ProjectionName} | {AggregateName}Response  # nombre declarado en projections[]
+                                    # o {AggregateName}Response para el DTO del agregado completo
+                                    # (NUNCA el nombre del agregado a secas — genera error de compilación)
+                                    # Colecciones: Page[{AggregateName}Response] o Page[{ProjectionName}]
                                     # Inline (shape simple de 1 UC):
                                     #   returns:
                                     #     - name: {field}

@@ -338,13 +338,13 @@ Para cada uno verificar:
 
 **B17 — Sintaxis Java genérica prohibida**
 
-El generador parsea los tipos literalmente. Cualquier uso de sintaxis Java con ángulos (`<>`) produce fallos silenciosos en generación:
+El generador parsea los tipos literalmente. Cualquier uso de sintaxis con ángulos (`<>`) — habitual en lenguajes de implementación, ajena al DSL — produce fallos silenciosos en generación:
 
 | Patrón prohibido | Corrección | Error que produce |
 |---|---|---|
-| `returns: Page<X>` | `returns: Page[X]` | `startsWith('Page[')` falla → no genera `@Query`, Spring Data no puede derivar `list...` → error en runtime |
-| `returns: List<X>` | `returns: List[X]` | tipo no reconocido → campo generado como `Object` |
-| `type: Enum<X>` | `type: X` (nombre del enum directamente) | tipo no resuelto → compilación falla |
+| `returns: Page<X>` | `returns: Page[X]` | el reader no reconoce el tipo paginado → método de listado degradado, fallo en tiempo de ejecución |
+| `returns: List<X>` | `returns: List[X]` | tipo no reconocido → propiedad generada con tipo desconocido |
+| `type: Enum<X>` | `type: X` (nombre del enum directamente) | tipo no resuelto → la generación falla |
 | `type: List<X>` | `type: List[X]` | ídem List<X> |
 
 Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). Cada ocurrencia → 🔴 ERROR: corregir antes de pasar al generador.
@@ -396,12 +396,12 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 - Para cada UC con `fkValidations[]` no vacío:
   - Para cada entrada en `fkValidations[]`, localizar el `input[]` cuyo `name` coincide con `fkValidations[].param` en el UC.
   - ¿Ese `input[]` tiene `source: authContext`?
-  - Si tiene `source: authContext`: la validación de FK es redundante — el campo viene del `SecurityContext` (ya validado por autenticación) y nunca del request body. El generador generará un puerto (`{Bc}ServicePort`) sin adaptador implementador → Spring falla en startup. → 🔴 ERROR: eliminar la entrada `fkValidations[]` del UC y, si el código en `fkValidations[].error` solo era referenciado desde esa FK, eliminar también la entrada de `errors[]`.
+  - Si tiene `source: authContext`: la validación de FK es redundante — el campo viene del contexto de autenticación (ya validado por la capa de seguridad) y nunca del request body. El generador emitiría un puerto de salida hacia ese BC sin adaptador implementador → fallo en el arranque del servicio porque la dependencia no se puede satisfacer. → 🔴 ERROR: eliminar la entrada `fkValidations[]` del UC y, si el código en `fkValidations[].error` solo era referenciado desde esa FK, eliminar también la entrada de `errors[]`.
 
 **B23 — `fkValidations[].aggregate` sin entrada en `integrations.outbound`**
 - Para cada UC con `fkValidations[]` no vacío:
   - Para cada entrada, ¿el valor de `aggregate` corresponde a un agregado local del BC actual o a un agregado de un BC externo con entrada en `integrations.outbound[]`?
-  - Si `fkValidations[].aggregate` es de un BC externo pero no hay entrada en `integrations.outbound` para ese BC: el generador produce `{Bc}ServicePort` (interfaz) pero ningún `@Component` la implementa → Spring no puede satisfacer la dependencia en startup. → 🔴 ERROR. Opciones: (a) declarar la integración outbound hacia ese BC si la comunicación HTTP real existe, o (b) eliminar la `fkValidation` si la validación es innecesaria.
+  - Si `fkValidations[].aggregate` es de un BC externo pero no hay entrada en `integrations.outbound` para ese BC: el generador produce el puerto de salida hacia ese BC pero ningún componente lo implementa → fallo en el arranque del servicio porque la dependencia queda sin proveedor. → 🔴 ERROR. Opciones: (a) declarar la integración outbound hacia ese BC si la comunicación HTTP real existe, o (b) eliminar la `fkValidation` si la validación es innecesaria.
   - **Excepción:** si el `aggregate` es un agregado local del mismo BC — no se necesita `integrations.outbound`.
 
 ---
@@ -454,8 +454,8 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 
 ### Checklist E — Validaciones Específicas de Características del Generador
 
-Este checklist captura validaciones bloqueantes derivadas de capacidades nuevas del
-generador SpringBoot. Si alguna falla, el generador rechaza el YAML o produce código
+Este checklist captura validaciones bloqueantes derivadas de capacidades del
+generador. Si alguna falla, el generador rechaza el YAML o produce código
 incorrecto en runtime — son ERROR salvo indicación contraria.
 
 #### E1 — Aggregates: `concurrencyControl` y `domainRules` whitelist
@@ -470,12 +470,21 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
   Cualquier otro valor → 🔴 ERROR (el generador no clasifica la regla).
 
 - **Hints obligatorios por tipo**:
-  | type | Hints requeridos |
-  |---|---|
-  | `deleteGuard` | `targetAggregate` + `targetRepositoryMethod` |
-  | `crossAggregateConstraint` | `targetAggregate` + `field` + `expectedStatus` |
-  | `uniqueness` | (opcional pero recomendado) `constraintName` en snake_case |
-  - Falta de hint → 🔴 ERROR.
+  | type | Hints requeridos | Hints opcionales |
+  |---|---|---|
+  | `uniqueness` | `field` (o `fields[]` para clave compuesta) + `errorCode` | `constraintName` en snake_case |
+  | `statePrecondition` | `condition` + `errorCode` | — |
+  | `terminalState` | `state` + `errorCode` | — |
+  | `sideEffect` | `description` | — (sin `errorCode`) |
+  | `deleteGuard` | `targetAggregate` + `targetRepositoryMethod` + `errorCode` | — |
+  | `crossAggregateConstraint` | `targetAggregate` + `field` + `expectedStatus` + `errorCode` | — |
+  - Falta de hint requerido → 🔴 ERROR.
+
+- **uniqueness sin `field` → 🔴 ERROR.** El reader exige `field` (o `fields[]`) para
+  saber qué columna del almacenamiento debe recibir la restricción de unicidad y para
+  vincular la excepción de violación de integridad de datos del runtime al error
+  correcto. Esto aplica **siempre**, incluso cuando `constraintName` está declarado:
+  el constraint name es opcional, el field no.
 
 - **`errorCode` obligatorio en toda domainRule excepto `sideEffect`**:
   - domainRule sin `errorCode` (y no es sideEffect) → 🔴 ERROR.
@@ -483,15 +492,27 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
 
 #### E2 — Aggregates: validaciones declarativas en `properties[].validations`
 
-Vocabulario válido (whitelist) — solo estas claves son procesadas por el generador:
-`notEmpty`, `minLength`, `maxLength`, `pattern`, `min`, `max`, `positive`,
-`positiveOrZero`, `minSize`, `maxSize`.
+Vocabulario válido (whitelist) — claves procesadas por el generador (ver
+`../ddd-step2-tactical-design/references/validation.md` para la referencia completa):
+`notEmpty`, `minLength`, `pattern`, `min`, `max`, `positive`, `positiveOrZero`,
+`negative`, `negativeOrZero`, `future`, `futureOrPresent`, `past`, `pastOrPresent`,
+`minSize`, `maxSize`.
 
-- Constraint con nombre fuera del whitelist → 🔴 ERROR (incluye `future`, `past`, `email`, `url`: para esos casos usar tipos canónicos `Date`/`DateTime`/`Email`/`Url`).
+- Constraint con nombre fuera del whitelist → 🟡 ALERTA. El generador la ignora
+  silenciosamente (no aborta), pero el efecto declarativo no se aplica — típicamente
+  un typo o un nombre de otra plataforma (`email`, `url`, `notBlank`, `maxLength`).
+  Casos típicos:
+  - `email`, `url`: usar los tipos canónicos `Email` / `Url` — ya validan el formato.
+  - `notBlank`: cubierto por `required: true` aplicado sobre tipos String.
+  - `maxLength`: ya implícito en `String(n)`.
 - `pattern` sobre propiedad con `type: Email` o `type: Url` → 🔵 SUGERENCIA: redundante, el tipo canónico ya valida.
 - `min`/`max` sobre tipo no numérico → 🔴 ERROR.
-- `minLength`/`maxLength` sobre tipo no `String` → 🔴 ERROR.
+- `minLength` sobre tipo no `String` → 🔴 ERROR.
 - `minSize`/`maxSize` sobre tipo no `List` → 🔴 ERROR.
+- `future` / `futureOrPresent` / `past` / `pastOrPresent` sobre tipo no temporal
+  (`Date`, `DateTime`) → 🔴 ERROR.
+- `negative` / `negativeOrZero` sobre tipo no numérico → 🔴 ERROR.
+- `positive` y `negative` simultáneos en la misma propiedad → 🔴 ERROR (contradictorios).
 
 #### E3 — Aggregates: relaciones de entidades hijas
 
@@ -551,31 +572,62 @@ Vocabulario válido (whitelist) — solo estas claves son procesadas por el gene
   423, 429, 503, 504`. Fuera de whitelist → 🔴 ERROR.
 - **`errorType`** (opcional): si está, debe ser PascalCase con sufijo `Error`. Si
   es PascalCase pero rompe ese patrón → 🔵 SUGERENCIA.
-- **`kind`** ∈ `{business, infrastructure}`. `triggeredBy` (FQN Java) solo permitido
-  si `kind: infrastructure`. `triggeredBy` con `kind: business` → 🔴 ERROR.
+- **`kind`** ∈ `{business, infrastructure}`. `triggeredBy` (identificador completamente
+  cualificado de la clase de excepción del runtime de la plataforma destino) solo
+  permitido si `kind: infrastructure`. `triggeredBy` con `kind: business` → 🔴 ERROR.
 - **`messageTemplate` + `args[]`**:
   - Si `messageTemplate` declara placeholders `{x}, {y}`, los nombres deben coincidir
     con los `args[].name`. Mismatch → 🔴 ERROR.
   - `args[]` sin `messageTemplate` → 🔵 SUGERENCIA: eliminar args huérfanos.
-- **`chainable: true`**: el `errorType` resultante hereda con un constructor
-  `(message, cause)`. No requiere validación adicional aquí.
+- **`chainable: true`**: el `errorType` resultante se genera con capacidad de envolver
+  la causa original (la excepción del runtime que disparó el error). No requiere
+  validación adicional aquí.
 - **`usedFor`** ∈ `{auto, manual}`. Default: auto.
-- **`constraintName`** solo en errores referenciados desde domainRule
-  `type: uniqueness`. En otros tipos → 🔴 ERROR.
+- **`constraintName` en `errors[]` → 🔴 ERROR.** El validador aplica whitelist estricta
+  a las claves de `errors[]`: `{code, httpStatus, description, message, title,
+  errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}`.
+  `constraintName` no está en esa lista — es **detalle de infraestructura** (nombre
+  físico del índice único en el almacenamiento) y va en
+  `aggregates[].domainRules[].constraintName` cuando `type: uniqueness`. El generador
+  empareja automáticamente el `errorCode` de la rule con su error y mapea la excepción
+  de violación de integridad del runtime al error correcto. Esto cumple la regla #7 de
+  AGENTS.md (separación intención/implementación).
+- **`triggeredBy` apunta a clases de excepción del runtime de la plataforma destino**,
+  no a domain rules. Solo válido si `kind: infrastructure`.
 
 #### E6 — UseCases: nuevas capacidades
 
 - **`returns:` en commands**: tipos válidos `Void`, `Optional[X]`, o un VO/projection.
   Tipos canónicos crudos en commands → 🟡 ALERTA: usar `Optional[X]` o VO con nombre.
 
-- **`derived_from` obligatorio en cada UC**: identifica la fuente (operationId del
-  OpenAPI o evento del AsyncAPI). Si falta → 🔴 ERROR.
+- **`returns:` en queries — nombre del agregado a secas → 🔴 ERROR.** El generador
+  solo reconoce `{AggregateName}Response` (ej: `CategoryResponse`, `ProductResponse`)
+  como referencia al DTO del agregado; lo mapea a `{AggregateName}ResponseDto`.
+  Escribir el nombre del agregado sin el sufijo `Response` (ej: `returns: Category`)
+  genera un import a una clase `dtos.Category` que no existe y provoca un error de
+  compilación en el proyecto destino. Corrección: `returns: CategoryResponse`.
+  Lo mismo aplica a colecciones: `Page[Category]` → 🔴 ERROR; `Page[CategoryResponse]` ✅.
+  Las projections nombradas (con nombre en `projections[]`) se usan directamente por
+  su nombre sin sufijo — la convención `Response` aplica **solo** cuando se referencia
+  el DTO principal del agregado, no una projection.
+
+- **`derived_from` / `derivedFrom` en useCases → 🔴 ERROR.** El generador valida
+  con whitelist estricta de claves en `useCases[]` y rechaza cualquier clave desconocida
+  (regla #1 de AGENTS.md: el generador no toma decisiones de dominio; un typo silencioso
+  como `triger:` no debe pasar desapercibido). Un UC ya queda identificado por su `id`
+  y por `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.event` (eventos); la
+  documentación del origen va en `description:` o se enlaza vía `rules: [RULE-ID, ...]`.
+  `derivedFrom` solo es válido en `aggregates[].domainMethods[]`,
+  `repositories[].queryMethods[]`, `aggregates[].properties[]` (`source: derived`),
+  `projections[].properties[]` y `domainEvents[].payload[]` (`source: derived`).
 
 - **`validations[]` (array)**: cada item con `id`, `expression`, `errorCode`, `description`.
   - `errorCode` debe existir en `errors[]` → si no, 🔴 ERROR.
-  - `expression` debe ser sintácticamente Java-boolean (`==`, `!=`, `&&`, `||`, `!`,
-    métodos sobre vars del scope). Si parece pseudocódigo → 🟡 ALERTA: el generador
-    emitirá un `if(...)` literal — verificar compilable.
+  - `expression` debe ser una expresión booleana sintácticamente válida en el
+    lenguaje de implementación destino (operadores de igualdad/lógicos, invocaciones
+    a métodos sobre variables en scope). Si parece pseudocódigo → 🟡 ALERTA: el
+    generador la emite literalmente dentro de la guarda — verificar que sea
+    interpretable por el compilador del lenguaje destino.
 
 - **`lookups[]`**: cada entry con `param` + (`aggregate` o `nestedIn`) + `errorCode`.
   - `errorCode` y `notFoundError` declarados simultáneamente para el mismo param
@@ -595,7 +647,11 @@ Vocabulario válido (whitelist) — solo estas claves son procesadas por el gene
   - `defaultSort.field` debe estar en `sortable[]` → si no, 🔴 ERROR.
   - `sortable[]` items deben ser propiedades del agregado o de la projection que
     retorna el UC. Item ajeno → 🔴 ERROR.
-  - `direction` ∈ `{asc, desc}`.
+  - `direction` ∈ `{ASC, DESC}` — **mayúsculas estrictas**. El generador mapea
+    el valor literalmente al identificador del enum de dirección de ordenamiento
+    del runtime de la plataforma destino, sin normalización. `asc`/`desc` en
+    minúsculas → 🔴 ERROR (regla #1 de AGENTS.md: el generador no normaliza inputs
+    implícitamente para evitar typos silenciosos).
 
 - **`fkValidations[].bc`** (cross-BC): si está, requiere `integrations.outbound[]`
   hacia ese BC (ver B23, ahora extendido).
@@ -652,8 +708,11 @@ Vocabulario válido (whitelist) — solo estas claves son procesadas por el gene
 - **`returns` whitelist**: `void, Boolean, Int, Long, T, T?, List[T], Page[T],
   Slice[T], Stream[T]`. Otros → 🔴 ERROR.
 
-- **`derivedFrom`**: si referencia `domainRule:{RULE-ID}`, ese RULE-ID debe existir
-  en `aggregates[].domainRules[].id`. Falta → 🔴 ERROR.
+- **`derivedFrom`** — whitelist exacta del reader (sin normalización de prefijos):
+  `<RULE-ID>` literal (p. ej. `PRD-001`, **sin** prefijo `domainRule:`),
+  `openapi:<operationId>`, o `implicit`. Si referencia un RULE-ID, ese ID debe
+  existir en `aggregates[].domainRules[].id`. Cualquier otra forma
+  (incluido `domainRule:PRD-001`) → 🔴 ERROR.
 
 - **Multi-field finders**: `findByXAndY` requiere todos los params en el método.
 
@@ -669,9 +728,9 @@ Vocabulario válido (whitelist) — solo estas claves son procesadas por el gene
   `save({Aggregate})` ni `delete(Uuid)` — solo `findById`, `findBy{unique}`, y
   `upsert(...)`. Violación → 🔴 ERROR.
 
-- **Phase 2 features**: `defaultSort`, `sortable[]`, `@Transactional` (anotaciones a
-  través de `transactional: true`). Verificar consistencia con `pagination` del UC
-  asociado.
+- **Phase 2 features**: `defaultSort`, `sortable[]`, `transactional: true` (la
+  transaccionalidad se materializa en la anotación correspondiente del runtime
+  destino). Verificar consistencia con `pagination` del UC asociado.
 
 - **Phase 3 opt-ins**: `existsBy*`, `deleteBy*`, `bulkOperations`, `findByIdForUpdate`.
   - `deleteBy*` sobre agregado con `softDelete: true` → 🔴 ERROR (ver soft-delete arriba).

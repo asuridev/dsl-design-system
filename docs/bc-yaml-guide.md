@@ -1439,10 +1439,12 @@ errors:
     triggeredBy: feign.RetryableException    # FQN — solo si kind: infrastructure
 
   # Relacionado con un domainRule de tipo uniqueness
+  # NOTA: `constraintName` NO va aquí — declararlo en aggregates[].domainRules[].constraintName.
+  # El generador empareja errorCode ↔ rule automáticamente y traduce
+  # DataIntegrityViolationException al error correcto.
   - code: PRODUCT_SKU_DUPLICATED
     httpStatus: 409
     message: "SKU already exists"
-    constraintName: idx_product_sku          # solo en errores de uniqueness
 
   # Manualmente lanzado (sin auto-mapeo desde domainRule)
   - code: CUSTOM_FAILURE
@@ -1656,7 +1658,7 @@ Sin `operator` declarado: `filterOn` ⇒ `LIKE_CONTAINS`; resto ⇒ `EQ`.
 
 ```yaml
 - name: findBySku
-  derivedFrom: domainRule:PRD-001         # uniqueness rule
+  derivedFrom: PRD-001                    # RULE_ID directo (sin prefijo `domainRule:`)
 - name: validateProductsAndPrices
   derivedFrom: openapi:validateProductsAndPrices
 - name: findByName

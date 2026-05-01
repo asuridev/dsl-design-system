@@ -66,7 +66,7 @@ en cualquier agregado que lo utilice, sin duplicar la declaración.
 **Notas:**
 - `maxLength` **no se usa** — ya está implícito en `String(n)`.
 - `notBlank` **no se usa** — ya está implícito en `required: true` sobre un String.
-- `pattern` debe usar sintaxis ECMA-262 / Java (los dos son compatibles para patrones básicos).
+- `pattern` debe usar sintaxis de expresión regular estándar (ECMA-262 / PCRE compatibles para patrones básicos).
 - En `Email` y `Url` no tiene sentido agregar `pattern` — el tipo ya valida el formato.
 
 **Ejemplos:**
@@ -199,70 +199,19 @@ en cualquier agregado que lo utilice, sin duplicar la declaración.
 El generador aplica estas constraints automáticamente según el tipo canónico.
 Declararlas en `validations` es un error de diseño (redundancia).
 
-| Tipo | Constraint implícita | Traducción Java | Traducción TS |
-|---|---|---|---|
-| `String(n)` | `maxLength: n` | `@Size(max=n)` | `@MaxLength(n)` |
-| `Email` | formato email válido | `@Email` | `@IsEmail()` |
-| `Url` | formato URL absoluta | `@URL` | `@IsUrl()` |
-| `Uuid` | formato UUID v4 | anotación en deserialización | `@IsUUID('4')` |
-| `required: true` en String/Text/Email/Url | no nulo y no vacío | `@NotBlank` | `@IsNotEmpty()` |
-| `required: true` en otros tipos | no nulo | `@NotNull` | `@IsDefined()` |
-| `Decimal` con `precision`/`scale` | dígitos exactos | `@Digits(integer=p-s, fraction=s)` | — |
-
----
-
-## Traducción por plataforma
-
-### Java (Spring Boot + Jakarta Validation)
-
-| Constraint DSL | Annotation Java |
+| Tipo | Constraint implícita |
 |---|---|
-| `minLength: N` | `@Size(min = N)` |
-| `pattern: "REGEXP"` | `@Pattern(regexp = "REGEXP")` |
-| `notEmpty: true` | `@NotEmpty` |
-| `min: N` | `@Min(N)` (Integer/Long) / `@DecimalMin("N")` (Decimal) |
-| `max: N` | `@Max(N)` (Integer/Long) / `@DecimalMax("N")` (Decimal) |
-| `positive: true` | `@Positive` |
-| `positiveOrZero: true` | `@PositiveOrZero` |
-| `negative: true` | `@Negative` |
-| `negativeOrZero: true` | `@NegativeOrZero` |
-| `future: true` | `@Future` |
-| `futureOrPresent: true` | `@FutureOrPresent` |
-| `past: true` | `@Past` |
-| `pastOrPresent: true` | `@PastOrPresent` |
-| `minSize: N` | `@Size(min = N)` |
-| `maxSize: N` | `@Size(max = N)` |
-| `minLength: N` + `String(n)` | `@Size(min = N, max = n)` (combinadas en una sola annotation) |
+| `String(n)` | longitud máxima `n` |
+| `Email` | formato email válido |
+| `Url` | formato URL absoluta |
+| `Uuid` | formato UUID v4 |
+| `required: true` en String/Text/Email/Url | no nulo y no vacío |
+| `required: true` en otros tipos | no nulo |
+| `Decimal` con `precision`/`scale` | dígitos exactos según `precision`/`scale` |
 
-**Ejemplo generado:**
-```java
-public record CreateProductCommand(
-    @NotBlank @Size(min = 3, max = 200) String name,
-    String description,
-    @NotBlank @Pattern(regexp = "^[A-Z0-9\\-]+$") @Size(min = 3, max = 100) String sku,
-    @NotNull @Positive BigDecimal priceAmount,
-    @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String priceCurrency,
-    @NotBlank String categoryId
-) implements Command {}
-```
-
-### TypeScript (class-validator)
-
-| Constraint DSL | Decorator TypeScript |
-|---|---|
-| `minLength: N` | `@MinLength(N)` |
-| `pattern: "REGEXP"` | `@Matches(/REGEXP/)` |
-| `notEmpty: true` | `@IsNotEmpty()` |
-| `min: N` | `@Min(N)` |
-| `max: N` | `@Max(N)` |
-| `positive: true` | `@IsPositive()` |
-| `positiveOrZero: true` | `@Min(0)` |
-| `negative: true` | `@IsNegative()` |
-| `negativeOrZero: true` | `@Max(0)` |
-| `future: true` | `@MinDate(new Date())` |
-| `past: true` | `@MaxDate(new Date())` |
-| `minSize: N` | `@ArrayMinSize(N)` |
-| `maxSize: N` | `@ArrayMaxSize(N)` |
+> El generador de cada plataforma destino traduce estas constraints implícitas al
+> mecanismo de validación nativo correspondiente (anotaciones, decoradores, schemas, etc.).
+> El DSL permanece agnóstico al runtime.
 
 ---
 

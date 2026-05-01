@@ -7,25 +7,29 @@ Nunca usar tipos de lenguajes de programación (`String`, `int`, `number` de TS,
 
 ## Tabla Completa de Tipos
 
-| Tipo canónico | Descripción | Java mapping | TypeScript mapping | PostgreSQL mapping | Validación implícita |
-|---------------|-------------|-------------|-------------------|-------------------|--------------------|
-| `Uuid` | Identificador único universal | `java.util.UUID` | `string` (UUID format) | `uuid` | formato UUID |
-| `String` | Texto sin límite de longitud conocido | `String` | `string` | `text` | — |
-| `String(n)` | Texto con longitud máxima n caracteres | `String` (+ @Size) | `string` | `varchar(n)` | `maxLength: n` |
-| `Text` | Texto largo, sin restricción de longitud | `String` | `string` | `text` | — |
-| `Integer` | Entero con signo, 32 bits | `int` / `Integer` | `number` | `integer` | — |
-| `Long` | Entero con signo, 64 bits | `long` / `Long` | `number` | `bigint` | — |
-| `Decimal` | Número decimal de precisión exacta | `java.math.BigDecimal` | `string` (decimal) | `numeric(p, s)` | dígitos según `precision`/`scale` |
-| `Boolean` | Verdadero / falso | `boolean` / `Boolean` | `boolean` | `boolean` | — |
-| `Date` | Fecha sin hora (año-mes-día) | `java.time.LocalDate` | `string` (ISO 8601 date) | `date` | formato ISO 8601 date |
-| `DateTime` | Fecha y hora con timezone UTC | `java.time.Instant` | `string` (ISO 8601 datetime) | `timestamptz` | formato ISO 8601 datetime |
-| `Duration` | Duración de tiempo | `java.time.Duration` | `string` (ISO 8601 duration) | `interval` | formato ISO 8601 duration |
-| `Email` | Dirección de correo electrónico válida | `String` (+ @Email) | `string` | `varchar(254)` | formato email + `maxLength: 254` |
-| `Url` | URL absoluta válida | `java.net.URI` | `string` | `text` | formato URL absoluta |
-| `Money` | Monto monetario (VO compuesto) | VO class | VO interface | `numeric(19,4)` + `varchar(3)` | ver sección Money |
-| `List[T]` | Lista ordenada de elementos tipo T | `List<T>` | `T[]` | `json` o tabla relacional | — |
-| `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | `Page<T>` | `Page<T>` | N/A | — |
-| `Map[K,V]` | Mapa clave-valor con tipos K y V | `Map<K,V>` | `Record<K,V>` | `jsonb` | — |
+| Tipo canónico | Descripción | Validación implícita |
+|---------------|-------------|--------------------|
+| `Uuid` | Identificador único universal | formato UUID |
+| `String` | Texto sin límite de longitud conocido | — |
+| `String(n)` | Texto con longitud máxima n caracteres | longitud máxima `n` |
+| `Text` | Texto largo, sin restricción de longitud | — |
+| `Integer` | Entero con signo, 32 bits | — |
+| `Long` | Entero con signo, 64 bits | — |
+| `Decimal` | Número decimal de precisión exacta | dígitos según `precision`/`scale` |
+| `Boolean` | Verdadero / falso | — |
+| `Date` | Fecha sin hora (año-mes-día) | formato ISO 8601 date |
+| `DateTime` | Fecha y hora con timezone UTC | formato ISO 8601 datetime |
+| `Duration` | Duración de tiempo | formato ISO 8601 duration |
+| `Email` | Dirección de correo electrónico válida | formato email + longitud máxima 254 |
+| `Url` | URL absoluta válida | formato URL absoluta |
+| `Money` | Monto monetario (VO compuesto) | ver sección Money |
+| `List[T]` | Lista ordenada de elementos tipo T | — |
+| `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | — |
+| `Map[K,V]` | Mapa clave-valor con tipos K y V | — |
+
+> El generador de cada plataforma destino traduce estos tipos canónicos al
+> sistema de tipos nativo del runtime (lenguaje + ORM/almacenamiento). El DSL
+> permanece agnóstico a esa traducción.
 
 > **Regla:** nunca declarar en `validations` lo que ya está en la columna "Validación implícita".
 > Por ejemplo, no escribir `maxLength: 200` en un campo `String(200)` — ya está implícito.
@@ -90,15 +94,15 @@ Estos tipos están prohibidos — siempre usar el equivalente canónico:
 
 | Prohibido | Usar en su lugar | Por qué |
 |-----------|-----------------|--------|
-| `string` | `String` o `String(n)` | minúscula es TypeScript/Java primitivo |
+| `string` | `String` o `String(n)` | minúscula es primitivo de lenguaje, no tipo del DSL |
 | `int`, `number`, `float` | `Integer`, `Long`, `Decimal` | primitivos de lenguaje |
 | `bool` | `Boolean` | primitivo de lenguaje |
-| `date`, `timestamp` | `Date`, `DateTime` | primitivos SQL/lenguaje |
+| `date`, `timestamp` | `Date`, `DateTime` | primitivos del almacenamiento o del lenguaje |
 | `any`, `object`, `{}` | Definir un VO específico | no tipado |
-| `varchar(n)` | `String(n)` | SQL puro |
-| `bigint` | `Long` | SQL puro |
-| `Page<X>`, `List<X>`, `Map<K,V>` (con `<>`) | `Page[X]`, `List[X]`, `Map[K,V]` (con `[]`) | sintaxis Java genérica — el generador comprueba `startsWith('Page[')` |
-| `Enum<X>` | el nombre del enum directamente (ej: `CustomerStatus`) | wrapper Java — en el DSL los enums se referencian por nombre |
+| `varchar(n)` | `String(n)` | tipo del almacenamiento, no del DSL |
+| `bigint` | `Long` | tipo del almacenamiento, no del DSL |
+| `Page<X>`, `List<X>`, `Map<K,V>` (con `<>`) | `Page[X]`, `List[X]`, `Map[K,V]` (con `[]`) | sintaxis con `<>` ajena al DSL — el generador comprueba `startsWith('Page[')` |
+| `Enum<X>` | el nombre del enum directamente (ej: `CustomerStatus`) | wrapper de lenguaje — en el DSL los enums se referencian por nombre |
 
 > **Regla mnemotécnica:** El DSL usa **corchetes** `[T]` para genéricos, nunca ángulos `<T>`.
 > `Enum<X>` no existe en el DSL — se usa el nombre del tipo directamente.

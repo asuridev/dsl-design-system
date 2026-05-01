@@ -239,7 +239,7 @@ integrations:
   auth:
     type: oauth2-cc                  # none | api-key | bearer | oauth2-cc | mTLS
     tokenEndpoint: https://idp.example.com/oauth2/token
-    credentialKey: payment-gateway   # registrationId en spring-security
+    credentialKey: payment-gateway   # identificador de credencial registrada en el runtime destino
 ```
 
 | `auth.type` | Cómo se inyecta | Configuración requerida |

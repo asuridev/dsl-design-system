@@ -110,21 +110,21 @@ Si existe `arch/{bc-name}/` con archivos:
 
 ### 1.3 Capacidades soportadas por el generador (LEER ANTES DE DISEÑAR)
 
-El generador SpringBoot soporta un vocabulario extendido para cada sección del BC.
+El generador soporta un vocabulario extendido para cada sección del BC.
 **No usar capacidades fuera de este inventario** — el generador rechazará el YAML.
 
 #### Aggregates
 - `concurrencyControl: optimistic` (único valor admitido).
 - Propiedades:
   - Flags: `readOnly`, `hidden`, `internal`, `unique`, `indexed`, `defaultValue`, `source: authContext`.
-  - `validations[]` declarativas — vocabulario soportado por el generador (whitelist exacta): `notEmpty`, `minLength`, `maxLength`, `pattern`, `min`, `max`, `positive`, `positiveOrZero`, `minSize`, `maxSize`. Para semánticas como email, url, fecha futura/pasada: usar los tipos canónicos `Email`, `Url`, `Date`, `DateTime` (ellos validan en su constructor) — NO existen claves `email`, `url`, `future`, `past`.
+  - `validations[]` declarativas — vocabulario soportado por el generador (whitelist exacta): `notEmpty`, `minLength`, `pattern`, `min`, `max`, `positive`, `positiveOrZero`, `negative`, `negativeOrZero`, `future`, `futureOrPresent`, `past`, `pastOrPresent`, `minSize`, `maxSize`. `maxLength` no se declara explícitamente: ya está implícito en `String(n)`. Para semanticas ya cubiertas por tipos canónicos (email, url) usar los tipos `Email`, `Url` (validan en su constructor) en vez de claves `email`/`url`. Ver `references/validation.md` para la referencia completa.
 - Entidades hijas: `relationship: composition|aggregation` + `cardinality: oneToOne|oneToMany`. **`manyToMany` NO soportado**. IDs solo `Uuid`.
 - `softDelete: true` (en agregado o entidad). Inyecta `deletedAt`. Resolución vía `softDelete` qualifier (`countNonDeletedBy*`).
 - Auto equals/hashCode/toString por id (no declarar manualmente).
 - `domainRules[].type` whitelist:
-  - `uniqueness` — opcional `constraintName: snake_case_index`.
+  - `uniqueness` — **obligatorios `field` (o `fields[]`) + `errorCode`**; opcional `constraintName: snake_case_index`. Sin `field` el reader aborta el build (no sabe qué columna lleva la restricción de unicidad).
   - `statePrecondition` — siempre con `errorCode`.
-  - `terminalState` — `errorCode` traduce a `InvalidStateTransitionException`.
+  - `terminalState` — `errorCode` traduce al error de transición inválida del runtime destino.
   - `sideEffect` — sin error visible al cliente; documentado en flows.md.
   - `deleteGuard` — requiere `targetAggregate` + `targetRepositoryMethod`.
   - `crossAggregateConstraint` — requiere `targetAggregate` + `field` + `expectedStatus`.
@@ -144,20 +144,21 @@ El generador SpringBoot soporta un vocabulario extendido para cada sección del 
 #### Errors
 - `code` SCREAMING_SNAKE_CASE.
 - `httpStatus` whitelist: `400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
-- `errorType` (override de la clase Java; PascalCase con sufijo `Error`).
-- `chainable: true` — añade ctor `(message, cause)`.
+- `errorType` (override del nombre de la clase de error generada; PascalCase con sufijo `Error`).
+- `chainable: true` — habilita envolver la causa original (la excepción del runtime que disparó el error).
 - `usedFor: auto|manual` (default auto).
-- `messageTemplate` + `args[]` — ctor parametrizado. Placeholders deben coincidir con `args[].name`.
-- `kind: business|infrastructure`. `triggeredBy: <FQN>` solo válido si `kind: infrastructure`.
-- `constraintName` solo en errores de domainRule `uniqueness`.
+- `messageTemplate` + `args[]` — mensaje parametrizado. Placeholders deben coincidir con `args[].name`.
+- `kind: business|infrastructure`. `triggeredBy: <identificador completamente cualificado de la clase de excepción del runtime destino>` solo válido si `kind: infrastructure` (clase de excepción de la plataforma, no de domain rule).
+- **NO declarar `constraintName` en `errors[]`** — el validador rechaza la clave (whitelist estricta `{code, httpStatus, description, message, title, errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}`). El nombre del índice único es detalle de infraestructura del almacenamiento: va en `aggregates[].domainRules[].constraintName` cuando `type: uniqueness`. El generador empareja `errorCode` ↔ rule automáticamente.
 
 #### UseCases — capacidades extendidas
 - Commands: `returns: Void | Optional[X] | <VO|projection>`.
-- `derived_from` obligatorio (operationId del OpenAPI o evento del AsyncAPI).
-- `validations[]` (array): `id`, `expression` (Java-boolean), `errorCode`, `description`.
+- **Queries: `returns` usa `{AggregateName}Response` para el DTO del agregado, o el nombre de una projection.** Escribir solo el nombre del agregado (ej: `Category`) genera un import inválido → error de compilación en el proyecto destino. Colecciones: `Page[{AggregateName}Response]`, `Page[{ProjectionName}]`.
+- **No declarar `derived_from` ni `derivedFrom` en useCases** — el generador rechaza claves desconocidas en `useCases[]`. La trazabilidad del UC ya viene dada por su `id` (UC-XXX-NNN) y por `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.event` (eventos). Para enlazar a reglas de PRD usar `rules: [RULE-ID, ...]`. `derivedFrom` solo aplica a artefactos derivados: `aggregates[].domainMethods[]`, `repositories[].queryMethods[]`, `aggregates[].properties[]` con `source: derived`, `projections[].properties[]` y `domainEvents[].payload[]` con `source: derived`.
+- `validations[]` (array): `id`, `expression` (expresión booleana en el lenguaje de implementación destino), `errorCode`, `description`.
 - `lookups[]`: `param` + (`aggregate` o `nestedIn`) + `errorCode`. Mutuamente excluyente con `notFoundError`.
 - `input[]` extendido: `default`, `max`, `source: header` + `headerName`.
-- `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`.
+- `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
 - `fkValidations[].bc` — cross-BC; requiere `integrations.outbound[]`.
 - `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: database|redis`.
 - `authorization`: `rolesAnyOf[]`, `ownership: { field, claim, allowRoleBypass }`.
@@ -172,7 +173,7 @@ El generador SpringBoot soporta un vocabulario extendido para cada sección del 
 #### Repositories — capacidades extendidas
 - Operadores whitelist: `EQ, LIKE_CONTAINS, LIKE_STARTS, LIKE_ENDS, GTE, LTE, IN`.
 - Returns whitelist: `void, Boolean, Int, Long, T, T?, List[T], Page[T], Slice[T], Stream[T]`.
-- `derivedFrom: domainRule:{RULE-ID}` o `openapi:{operationId}` o `implicit`.
+- `derivedFrom: <RULE-ID>` (ID literal del domainRule, **sin prefijo `domainRule:`**) o `openapi:{operationId}` o `implicit`. El reader exige que `<RULE-ID>` exista en `aggregates[].domainRules[].id`.
 - Multi-field: `findByXAndY`.
 - `defaultSort`, `sortable[]`, `transactional: true`.
 - Phase 3 opt-ins: `existsBy*`, `deleteBy*`, `bulkOperations: true`, `findByIdForUpdate`.
@@ -527,9 +528,9 @@ Reglas de aplicación:
   | `updatedAt: DateTime` | ❌ | Timestamp del servidor — inyectado por `auditable: true`, no declarar manualmente |
 
   > **Consecuencia en el generador:** un campo con `source: authContext` nunca aparece en el
-  > request body del OpenAPI. El generador lo inyecta desde el `SecurityContext` en el
-  > application service. **No agregar `fkValidations` sobre estos campos** — ver regla de la
-  > sección de useCases sobre `fkValidations` con `source: authContext`.
+  > request body del OpenAPI. El generador lo inyecta desde el contexto de autenticación de
+  > la plataforma destino en el application service. **No agregar `fkValidations` sobre estos
+  > campos** — ver regla de la sección de useCases sobre `fkValidations` con `source: authContext`.
 
 - Campos write-only → `hidden: true` (ej: password, refresh token)
 - Campos puramente internos al dominio → `internal: true` (ej: attemptCount)
@@ -1196,7 +1197,7 @@ Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`
      - `param`: nombre del `input[]` que contiene el UUID de FK
      - `error`: código de error si el FK no existe
      - `conditional` (opcional, boolean): `true` si la validación solo aplica cuando el campo está presente en el request (PATCH con campos opcionales). Omitir si siempre requerida.
-     - **Regla: nunca declarar `fkValidations` sobre un `input[]` con `source: authContext`.** Esos campos provienen del `SecurityContext` — la FK validation es redundante y produce un puerto sin implementador en Spring → fallo de startup.
+     - **Regla: nunca declarar `fkValidations` sobre un `input[]` con `source: authContext`.** Esos campos provienen del contexto de autenticación — la FK validation es redundante y produce un puerto sin implementador → fallo en el arranque del servicio.
      - **Regla: si la FK referencia un BC externo, debe existir la entrada en `integrations.outbound`** — sin ella el generador produce la interfaz pero no el adaptador.
    - `outgoingCalls[]` (opcional): llamadas explícitas a puertos externos requeridas para resolver parámetros del `domainMethod`. Omitir si no hay llamadas externas.
      - `port`: nombre del puerto (debe existir en `integrations.outbound[]`)
