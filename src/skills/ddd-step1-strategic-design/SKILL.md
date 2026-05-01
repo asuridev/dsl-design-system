@@ -656,28 +656,49 @@ cuando aporten valor concreto al diseño — no añadirlos por completar.
 
 #### `externalSystems[].operations[]` — OBLIGATORIO si el sistema externo es referenciado
 
-Cuando un `externalSystem` aparece como `from` o `to` en `integrations[]`, debe declarar
-qué operaciones expone, para que el generador pueda crear los ACL adapters:
+Cuando un `externalSystem` aparece como `to` en `integrations[]`, debe declarar
+qué operaciones expone para que el generador produzca los ACL adapters. Sin `operations[]`
+el generador emite INT-008 (warn) y salta la generación del adaptador.
 
 ```yaml
 externalSystems:
   - name: payment-gateway
     type: external
     description: Third-party payment processor
+    baseUrlProperty: integration.payment-gateway.base-url  # default: integration.{name}.base-url
     operations:
-      - name: chargePayment
-        description: Charge a credit card and return authorization code
-        direction: outbound        # outbound: nuestra app llama al externo
+      - name: chargePayment             # camelCase — nombre del método generado (INT-009)
+        method: POST                    # GET | POST | PUT | PATCH | DELETE (default: GET)
+        path: /v1/charges               # path HTTP; variables {varName} → @PathVariable
+        request:
+          fields:
+            - name: cardToken
+              type: String
+            - name: amount
+              type: Decimal             # → BigDecimal en Java
+        response:
+          fields:
+            - name: chargeId
+              type: String
+            - name: status
+              type: String
+        domain:                         # opcional: modelo de dominio destino (ACL)
+          returnType: ChargeResult      # nombre del Java record generado
+          fields:
+            - name: id
+              type: UUID                # → java.util.UUID
+              source: chargeId          # campo del ResponseDto de origen
+            - name: status
+              type: String
+              source: status
       - name: refundPayment
-        description: Refund a previously authorized payment
-        direction: outbound
-      - name: webhookPaymentEvent
-        description: Receive async notification of payment status changes
-        direction: inbound         # inbound: el externo nos llama
+        method: POST
+        path: /v1/charges/{chargeId}/refund   # path variable extraído automáticamente
 ```
 
-- `direction: outbound` — operaciones que nuestro BC inicia hacia el externo.
-- `direction: inbound` — webhooks o callbacks que el externo nos envía.
+Campos del generador por operación: `name`, `method`, `path`, `request.fields[]`, `response.fields[]`, `domain.returnType`, `domain.fields[]`. El campo `direction` no es leído por el generador.
+
+Tipos wire-format en `request.fields[].type` / `response.fields[].type`: `String`, `Integer`, `Long`, `Boolean`, `Decimal` (→ `BigDecimal`), `Instant`, `UUID` (→ `String` en DTO, `java.util.UUID` en domain record).
 
 #### `infrastructure.reliability` — patrón outbox y consumer idempotency
 
@@ -699,35 +720,15 @@ Cuándo activar `consumerIdempotency: true`:
 - **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe
   ejecutar el paso dos veces.
 
-#### `infrastructure.integrations.defaults` — `auth` y `resilience` globales
+#### `infrastructure.integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
 
-```yaml
-infrastructure:
-  integrations:
-    defaults:
-      auth:
-        type: bearer              # none | api-key | bearer | oauth2-cc | mTLS
-        valueProperty: api.token
-        header: Authorization
-        # solo oauth2-cc:
-        # tokenEndpoint: https://auth.provider.com/token
-        # credentialKey: oauth.client.secret
-      resilience:
-        timeoutMs: 5000
-        connectTimeoutMs: 1000
-        retries:
-          maxAttempts: 3
-          waitDurationMs: 500
-        circuitBreaker:
-          failureRateThreshold: 50    # %
-```
+> **Este bloque no está implementado en el generador.** El resolver de auth y resiliencia
+> (`resilience-auth-resolver.js`) no lee `infrastructure.integrations.defaults`.
+> Declararlo en `system.yaml` no produce ningún efecto en el código generado.
+> Para que `auth`/`resilience` apliquen a una integración, deben declararse directamente
+> en `integrations[].auth/resilience` (BC→BC) o en `externalSystems[].auth/resilience` (externo).
 
-- Estos valores aplican a TODAS las integraciones salvo override en `bc.yaml`.
-- Precedencia: `bc.yaml integrations[].auth/resilience` > `system.yaml.infrastructure.integrations.defaults`.
-- **INT-015 (validador bloqueante)**: `auth.type: oauth2-cc` requiere `tokenEndpoint` + `credentialKey`. El skill `ddd-step1-refine` lo verifica.
-- Recomendación: declarar resilience al menos para integraciones con sistemas externos — sin timeout/retries el comportamiento depende de defaults del runtime.
-
-#### Integraciones internas: `auth` y `resilience` opcionales por integración
+#### Integraciones internas: `auth` y `resilience` por integración
 
 ```yaml
 integrations:
@@ -739,15 +740,21 @@ integrations:
     auth:
       type: bearer
       valueProperty: orders.token
-      header: Authorization
     resilience:
-      timeoutMs: 3000
-      retries: { maxAttempts: 2, waitDurationMs: 200 }
+      circuitBreaker:
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s   # string con unidad — NO "waitDurationMs"
+      retries:
+        maxAttempts: 3
+        waitDuration: 500ms            # string con unidad — NO "waitDurationMs"
+      connectTimeoutMs: 5000
+      timeoutMs: 15000
 ```
 
-Si la integración no declara `auth`/`resilience` localmente, el generador aplica los
-defaults globales. Para integraciones críticas (ej: payments) suele convenir override
-local con timeouts más estrictos.
+- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience`.
+- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para ACL, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
+- **INT-015 (validador bloqueante)**: `auth.type: oauth2-cc` requiere `tokenEndpoint` + `credentialKey`. El skill `ddd-step1-refine` lo verifica.
+- Si una integración no declara `auth`/`resilience`, el adaptador se genera sin anotaciones Resilience4j ni interceptor de auth.
 ### 3.2 system-spec.md
 
 Para cada BC, escribe una sección con esta estructura exacta:

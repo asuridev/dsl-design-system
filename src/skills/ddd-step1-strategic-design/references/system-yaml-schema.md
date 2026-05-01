@@ -91,7 +91,7 @@ integrations:
                         #   - name: PedidoConfirmado         ← PascalCase
                         #     channel: orders.order.confirmed ← nombre exacto del canal AsyncAPI
       - ""
-    auth:               # OPCIONAL — override de defaults globales
+    auth:               # OPCIONAL — autenticación para este cliente HTTP
       type: ""          # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
       valueProperty: "" # nombre de propiedad Spring con el valor del secreto (api-key | bearer)
       header: ""        # nombre del header — solo api-key (default: X-Api-Key)
@@ -146,7 +146,9 @@ infrastructure:
     consumerIdempotency: false   # idempotencia automática en consumidores
                                  # ACTIVAR siempre que existan sagas[]
 
-  integrations:         # OPCIONAL — defaults globales para todas las integraciones
+  integrations:         # NO IMPLEMENTADO EN EL GENERADOR (reservado para uso futuro)
+                        # El campo infrastructure.integrations.defaults NO es leído por
+                        # resilience-auth-resolver.js. Declararlo no tiene efecto en generación.
     defaults:
       auth:
         type: ""        # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt

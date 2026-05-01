@@ -476,13 +476,13 @@ integrations:
           triggersOn: {UC-ID | evento}
           responseEvents:           # opcional
             - {NombreEvento}
-      auth:                         # OPCIONAL — override del auth declarado en system.yaml
+      auth:                         # OPCIONAL — solo si system.yaml NO declara auth para esta integración
         type: {none|api-key|bearer|oauth2-cc|mTLS|internal-jwt}
         valueProperty: {clave de configuración Spring con el secreto}  # solo api-key | bearer
         header: {nombre del header}          # solo api-key (default: X-Api-Key)
         tokenEndpoint: {url}                 # solo oauth2-cc
         credentialKey: {clave de credencial} # solo oauth2-cc
-      resilience:                   # OPCIONAL — override del resilience declarado en system.yaml
+      resilience:                   # OPCIONAL — solo si system.yaml NO declara resilience para esta integración
         circuitBreaker:             # presencia del objeto → @CircuitBreaker(name="{name}") en el adaptador
           failureRateThreshold: 50           # % de fallos para abrir el circuito (1–100)
           waitDurationInOpenState: 30s       # tiempo en estado OPEN (string con unidad: "30s", "60s")

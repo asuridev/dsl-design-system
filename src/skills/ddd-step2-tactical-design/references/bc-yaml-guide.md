@@ -1733,9 +1733,28 @@ cachear datos de otros BCs sin acoplamiento síncrono.
 
 ### Integrations — auth y resilience por integración
 
+> **Regla de diseño:** los campos `auth` y `resilience` en `outbound[]` son de uso
+> **exclusivamente manual**. Solo deben declararse en `{bc}.yaml` cuando la integración
+> correspondiente en `system.yaml` **no** tiene configuración de `auth`/`resilience`.
+> Si `system.yaml integrations[from={este-bc}, to={target}]` ya declara `auth` o
+> `resilience`, deja esos campos **ausentes** en `{bc}.yaml` — el generador los toma
+> directamente del `system.yaml`. Declarar ambos no produce error, pero introduce
+> duplicación innecesaria y hace que el artefacto estratégico deje de ser la fuente
+> de verdad.
+
+**¿Cuándo declarar en `{bc}.yaml`?**
+
+| Situación | Acción |
+|---|---|
+| `system.yaml` ya tiene `resilience`/`auth` para esta integración | Omitir los campos en `{bc}.yaml` |
+| `system.yaml` tiene la entrada de integración pero **sin** `resilience`/`auth` | Declarar en `{bc}.yaml` como configuración manual específica del BC |
+| La integración existe solo en `{bc}.yaml outbound` y no tiene entrada en `system.yaml` | No permitido — INT-006 falla (la entrada debe existir en `system.yaml`) |
+
 ```yaml
 integrations:
   outbound:
+    # ✅ CORRECTO: system.yaml no declara auth/resilience para esta integración específica
+    #    → se declara manualmente en bc.yaml
     - name: payments
       auth:
         type: bearer                      # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
@@ -1754,6 +1773,7 @@ integrations:
         connectTimeoutMs: 3000            # timeout de conexión TCP en ms (campo plano)
         timeoutMs: 10000                  # timeout de lectura en ms (campo plano)
 
+    # ✅ CORRECTO: system.yaml tampoco declara auth/resilience para payment-gateway
     - name: payment-gateway
       auth:
         type: oauth2-cc
@@ -1768,6 +1788,12 @@ integrations:
           waitDuration: 1000ms
         connectTimeoutMs: 5000
         timeoutMs: 30000                  # default externo: 30000 ms
+
+    # ❌ INCORRECTO: system.yaml ya tiene resilience para esta integración
+    #    → omitir auth y resilience aquí
+    # - name: catalog
+    #   resilience:    ← NO — ya está en system.yaml
+    #     circuitBreaker: ...
 ```
 
 **Efecto en el generador (Resilience4j):**
@@ -1786,8 +1812,10 @@ integrations:
 **INT-015 (validador bloqueante):** `auth.type: oauth2-cc` requiere `tokenEndpoint`
 + `credentialKey`.
 
-**Precedencia:** valores locales en `bc.yaml` > defaults globales en
-`system.yaml.infrastructure.integrations.defaults`.
+**Precedencia del generador:** `bc.yaml outbound[].resilience/auth` sustituye completamente
+(no fusiona) el bloque equivalente en `system.yaml`. Por esta razón, si se usa el override
+en `bc.yaml`, debe declararse el bloque completo que se desea — los sub-campos ausentes
+no heredan del `system.yaml`.
 
 External systems referenciados deben existir en `system.yaml.externalSystems[]` con
 `operations[]` declaradas (INT-008 / INT-009).

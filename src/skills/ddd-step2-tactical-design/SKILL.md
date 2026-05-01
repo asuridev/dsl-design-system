@@ -193,9 +193,10 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 #### Integrations — capacidades de plataforma
 - `auth.type: none|api-key|bearer|oauth2-cc|mTLS` con campos auxiliares (`valueProperty`, `header`, `tokenEndpoint`, `credentialKey`).
   - **INT-015**: `oauth2-cc` requiere `tokenEndpoint` + `credentialKey`.
-- `resilience: { timeoutMs, connectTimeoutMs, retries: { maxAttempts, waitDurationMs }, circuitBreaker: { failureRateThreshold } }`.
-- Precedencia: bc.yaml `auth/resilience` > system.yaml.
-- External systems referenciados deben existir en `system.yaml externalSystems[]` con `operations[]`.
+- `resilience` schema real: `{ circuitBreaker: { failureRateThreshold, waitDurationInOpenState, slidingWindowSize, minimumNumberOfCalls, permittedNumberOfCallsInHalfOpenState }, retries: { maxAttempts, waitDuration }, connectTimeoutMs, timeoutMs }`. Los valores de tiempo son **strings con unidad** (`"30s"`, `"500ms"`), no enteros.
+- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience`.
+- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para sistemas externos, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
+- External systems referenciados deben existir en `system.yaml externalSystems[]` con `operations[]` (INT-008/INT-009).
 
 > **Validación cruzada con AsyncAPI (INT-016..INT-021):**
 > - Cada evento publicado/consumido tiene canal en el AsyncAPI con schema que coincide con `payload[]`.

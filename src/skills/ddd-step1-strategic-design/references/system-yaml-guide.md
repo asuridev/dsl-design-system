@@ -225,8 +225,8 @@ integrations:
 | `channel` | enum | Mecanismo de transporte. |
 | `contracts` | lista | Operaciones (HTTP) o eventos (message-broker) del contrato. |
 | `notes` | texto | Por qué existe esta integración y decisiones de diseño relevantes. |
-| `auth` | objeto | **Opcional** — credenciales para el cliente saliente. Override de `infrastructure.integrations.defaults.auth`. |
-| `resilience` | objeto | **Opcional** — timeouts, retries y circuit breaker. Override de defaults globales. |
+| `auth` | objeto | **Opcional** — credenciales para el cliente saliente. Si se declara aquí, el `{from}.yaml` **no debe** declarar `auth` en su `outbound[name={to}]`. |
+| `resilience` | objeto | **Opcional** — timeouts, retries y circuit breaker. Si se declara aquí, el `{from}.yaml` **no debe** declarar `resilience` en su `outbound[name={to}]`. |
 
 ### Bloque `auth` (opcional, por integración)
 
@@ -284,9 +284,14 @@ resilience:
 > Si se declara `circuitBreaker: {}` (sin sub-campos), la anotación se genera igual pero
 > no se crea bloque `instances` en `resilience.yaml` — la instancia hereda `configs.default`.
 
-Si una integración no declara `resilience`, el generador aplica los defaults
-de `infrastructure.integrations.defaults.resilience`. Para integraciones críticas
-(payments, identity-provider) suele convenir override local con timeouts más estrictos.
+Si una integración no declara `resilience`, el adaptador se genera sin ninguna anotación
+Resilience4j ni archivo `resilience.yaml`. No hay fallback automático a ningún bloque de
+defaults globales.
+
+> **Fuente de verdad:** al declarar `auth` o `resilience` en esta entrada de `system.yaml`,
+> el BC `from` no debe repetirlos en su `{from}.yaml outbound[name={to}]`. El `system.yaml`
+> es el artefacto estratégico que se diseña primero; el `{bc}.yaml` solo declara
+> `auth`/`resilience` en `outbound[]` cuando esta entrada en `system.yaml` los omite.
 
 ### Patrones válidos
 
@@ -510,39 +515,16 @@ infrastructure:
 | `outbox: true` | Hay alguna integración `channel: message-broker` y se requiere garantía at-least-once. **Activar siempre que existan `sagas[]`** — sin outbox, una falla entre commit y publish puede romper la cadena del saga. |
 | `consumerIdempotency: true` | Hay UCs disparados por evento (`trigger.kind: event` en algún BC). **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe ejecutar el paso dos veces. |
 
-### `integrations.defaults` (opcional)
+### `integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
 
-Defaults globales de `auth` y `resilience` aplicados a todas las integraciones que
-no declaren los suyos localmente.
+> **Este bloque no está implementado en el generador (`dsl-springboot-generator`).** El resolver
+> de resiliencia y auth (`resilience-auth-resolver.js`) no lee `infrastructure.integrations.defaults`.
+> Declarar este bloque no produce ningún efecto en el código generado.
+>
+> Si necesitas `resilience` o `auth` en todas las integraciones, debes declararlos
+> individualmente en cada entrada de `integrations[]` o `externalSystems[]`.
 
-```yaml
-infrastructure:
-  integrations:
-    defaults:
-      auth:
-        type: bearer
-        valueProperty: integration.default.token
-        # header: X-Api-Key  ← solo para type: api-key; no aplica a bearer
-      resilience:
-        circuitBreaker:
-          failureRateThreshold: 50
-          waitDurationInOpenState: 30s
-          slidingWindowSize: 20
-          minimumNumberOfCalls: 10
-          permittedNumberOfCallsInHalfOpenState: 3
-        retries:          # PLURAL
-          maxAttempts: 3
-          waitDuration: 500ms
-        connectTimeoutMs: 5000
-        timeoutMs: 15000
-```
-
-**Precedencia:** valores locales en `integrations[].auth` / `integrations[].resilience` >
-defaults globales en `infrastructure.integrations.defaults`.
-
-> Para integraciones con sistemas externos críticos suele convenir declarar al menos
-> `resilience` (global o local) — sin timeout ni retries explícitos el comportamiento
-> depende de los defaults del runtime.
+El campo `infrastructure.integrations.defaults` está reservado para una implementación futura.
 
 ---
 
