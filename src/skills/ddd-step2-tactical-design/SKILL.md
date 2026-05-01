@@ -466,7 +466,7 @@ Reglas de diseño:
 - `name` — camelCase. Debe coincidir con el valor `method` del UC que lo referencia.
 - `params` — solo los parámetros que el método necesita que **no sean el agregado mismo**. El agregado cargado vía `loadAggregate: true` **no es un param**: el generador lo inyecta implícitamente. Omitir `params` si el método no recibe parámetros externos.
 - `returns` — `void` si el método no retorna nada; tipo del agregado si es una factory (crea la entidad raíz).
-- `emits` — nombre del evento publicado al completarse. `null` si no emite. No declarar `null` explícitamente si se omite el campo — usar `emits: null` solo cuando sea el valor real (no para omitir).
+- `emits` — nombre del evento publicado al completarse, o **lista de nombres** si el método emite múltiples eventos (ej: `emits: [ProductActivated, CategoryUpdated]`). `null` si no emite. No declarar `null` explícitamente si se omite el campo — usar `emits: null` solo cuando sea el valor real (no para omitir).
 - El generador resuelve cada `params[]` desde estas fuentes en orden: `input[]` del UC (por nombre), luego `outgoingCalls[].bindsTo` del UC, luego constantes del dominio (para `implementation: scaffold`).
 
 Ejemplo:
@@ -640,11 +640,12 @@ Cuando un BC tiene integraciones outbound hacia sistemas externos (ej: `payments
 
 Todo evento publicado debe incluir `payload[]` no vacío con al menos:
 - El ID del agregado raíz que generó el evento (`{aggregate}Id: Uuid`)
-- El timestamp `occurredAt: DateTime` — permite al consumidor ordenar eventos y detectar mensajes fuera de orden
+
+Los campos de metadata canónica (`eventId`, `occurredAt`, `eventType`, `sourceBC`, `correlationId`, `causationId`) son **auto-inyectados** por el generador como `EventMetadata` — **no declararlos en `payload[]`**. Si se declaran, el generador los filtra y emite un WARN de deprecación.
 
 Un evento sin payload es un contrato vacío: el consumidor no puede actuar sobre él sin hacer un lookup adicional al BC emisor, lo que crea acoplamiento sincrónico encubierto.
 
-> **Mínimo siempre presente:** `{aggregate}Id` + `occurredAt`. Añadir todos los campos que el consumidor necesita para actuar sin consultar de vuelta al BC emisor (ver reglas del payload en `references/bc-yaml-guide.md`).
+> **Mínimo siempre presente:** `{aggregate}Id`. Añadir todos los campos que el consumidor necesita para actuar sin consultar de vuelta al BC emisor (ver reglas del payload en `references/bc-yaml-guide.md`).
 
 #### `consumed` — UC o `acknowledgeOnly: true`
 
@@ -671,9 +672,9 @@ Todo evento en `domainEvents.consumed[]` que tiene un UC asociado **debe declara
 
 | Tipo de UC | Campos mínimos obligatorios |
 |---|---|
-| **Saga handler** (UC con `sagaStep`) | ID del agregado que el handler debe cargar (ej: `orderId: Uuid`) + `occurredAt: DateTime` |
+| **Saga handler** (UC con `sagaStep`) | ID del agregado que el handler debe cargar (ej: `orderId: Uuid`) |
 | **LRM handler** (UC sobre agregado `readModel: true`) | **Todos los campos** que la proyección necesita replicar — el handler usa el evento como única fuente de verdad, sin llamar al BC fuente |
-| **Otros event-triggered UCs** | ID del agregado afectado + campos que la lógica del UC necesita + `occurredAt: DateTime` |
+| **Otros event-triggered UCs** | ID del agregado afectado + campos que la lógica del UC necesita |
 
 > **Regla práctica para LRM handlers:** el `payload[]` del evento consumido en este BC debe ser
 > idéntico (o subconjunto) al `payload[]` del evento correspondiente en `domainEvents.published[]`

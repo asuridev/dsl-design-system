@@ -589,7 +589,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Cada `domainRule` tiene `type` y `errorCode` (si aplica)
 - [ ] Las propiedades con unicidad tienen `unique: true`; las filtradas por OpenAPI tienen `indexed: true`
 - [ ] Cada operación del OpenAPI tiene exactamente un `useCase` con `trigger.operationId` correspondiente
-- [ ] Cada `useCase` referencia un `repositoryMethod` que existe en `repositories`
+- [ ] Cada `useCase` de tipo `command` declara `method` con el nombre del método en `aggregates[].domainMethods[]` (excepto `readModel: true` que usa `upsert`/`delete`)
 - [ ] `repositories` tiene `findById` y `save` para cada agregado
 - [ ] `repositories` tiene `findBy{Campo}` para cada regla de tipo `uniqueness`
 - [ ] `repositories` tiene `list` (no `findAll`) para cada query param GET del OpenAPI

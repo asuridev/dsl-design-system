@@ -630,10 +630,6 @@ useCases:
         required: true
         source: event.orderId
         loadAggregate: true       # carga Order via repository.findById(orderId)
-      - name: occurredAt
-        type: DateTime
-        required: true
-        source: event.occurredAt
     rules: [ORD-RULE-005]
     notFoundError: [ORDER_NOT_FOUND]
     fkValidations: []
@@ -1082,9 +1078,6 @@ domainEvents:
         - name: price           # snapshot del precio en el momento del evento
           type: Money
           required: true
-        - name: occurredAt      # siempre incluir timestamp UTC del evento
-          type: DateTime
-          required: true
 
     - name: ProductDiscontinued
       description: >
@@ -1093,9 +1086,6 @@ domainEvents:
       payload:
         - name: productId
           type: Uuid
-          required: true
-        - name: occurredAt
-          type: DateTime
           required: true
 ```
 
@@ -1129,9 +1119,6 @@ Campos de cada evento consumido:
         - name: available
           type: Boolean
           required: true
-        - name: occurredAt
-          type: DateTime
-          required: true
 
     # Evento sin UC — el BC solo necesita suscribirse, sin lógica de dominio
     - name: StockReleased
@@ -1147,7 +1134,7 @@ Campos de cada evento consumido:
 ### Reglas del payload
 
 1. **Siempre incluir `productId` (o el ID del agregado)** — el consumidor necesita saber de qué entidad habla el evento.
-2. **Siempre incluir `occurredAt: DateTime`** — permite ordenar eventos y detectar mensajes llegados fuera de orden.
+2. **NO declarar `occurredAt`, `eventId`, `eventType`, `sourceBC` ni `correlationId` en `payload[]`** — forman parte de `EventMetadata` y el generador los inyecta automáticamente como la primera sección de cada registro de evento. Declararlos produce conflicto (el generador los filtra con un WARN de deprecación). El consumidor accede a ellos vía `event.metadata().occurredAt()` etc.
 3. **Incluir todos los datos que el consumidor necesita sin hacer lookups posteriores** — si el consumidor necesita consultar el BC publicador para completar el procesamiento, falta información en el payload.
 4. **No incluir datos internos** — el payload es un contrato público. No exponer campos `internal: true` ni datos que no tengan sentido fuera del BC.
 5. **Usar snapshots para valores que cambian** — si el precio de un producto puede cambiar, el evento `OrderPlaced` debe incluir `unitPrice` como snapshot, no solo `productId`.
@@ -1440,10 +1427,10 @@ errors:
     triggeredBy: payment.gateway.RetryableException  # identificador de clase de excepción del runtime destino — solo si kind: infrastructure
 
   # Relacionado con un domainRule de tipo uniqueness
+  # (el constraintName va en domainRules[type: uniqueness], NO aquí)
   - code: PRODUCT_SKU_DUPLICATED
     httpStatus: 409
     message: "SKU already exists"
-    constraintName: idx_product_sku          # solo en errores de uniqueness
 
   # Manualmente lanzado (sin auto-mapeo desde domainRule)
   - code: CUSTOM_FAILURE

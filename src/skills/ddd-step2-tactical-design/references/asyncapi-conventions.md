@@ -295,13 +295,16 @@ components:
 
 ## Principios de Diseño de Eventos
 
-**El payload es un snapshot inmutable.** Incluir todos los datos que los consumidores
-necesitan para procesar el evento **sin tener que hacer lookups posteriores**. Si un
-consumidor necesitaría consultar el BC publicador para completar el procesamiento,
-falta información en el payload.
+**El payload es el snapshot del dominio; los metadatos del evento van en `EventMetadata`.**
+Incluir en `payload[]` todos los datos de negocio que los consumidores necesitan para
+procesar el evento **sin hacer lookups posteriores**. Si un consumidor necesitaría
+consultar el BC publicador para completar el procesamiento, falta información en el payload.
 
-**Incluir siempre `occurredAt` en el payload** (además de en los headers). Los
-consumidores pueden necesitar ordenar eventos por tiempo de ocurrencia.
+**NO declarar `occurredAt`, `eventId`, `eventType`, `sourceBC` ni `correlationId` en
+`payload[]`.** Estos campos forman parte de `EventMetadata` y el generador los auto-inyecta
+en todos los mensajes. Declararlos manualmente provoca campos duplicados en el contrato y
+el generador emite una advertencia. Los consumidores acceden a ellos vía el objeto
+`EventMetadata`, no a través del payload de negocio.
 
 **El `eventId` permite idempotencia.** Los consumidores deben poder recibir el mismo
 evento múltiples veces (red retry) sin efectos secundarios. El `eventId` es la clave.
