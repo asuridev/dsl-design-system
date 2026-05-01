@@ -237,7 +237,7 @@ integrations:
   channel: http
   contracts: [chargePayment, refundPayment]
   auth:
-    type: oauth2-cc                  # none | api-key | bearer | oauth2-cc | mTLS
+    type: oauth2-cc                  # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
     tokenEndpoint: https://idp.example.com/oauth2/token
     credentialKey: payment-gateway   # identificador de credencial registrada en el runtime destino
 ```
@@ -249,6 +249,7 @@ integrations:
 | `bearer` | `Authorization: Bearer <token>` | `valueProperty` |
 | `oauth2-cc` | `OAuth2AuthorizedClientManager` resuelve y refresca tokens | `tokenEndpoint`, `credentialKey` |
 | `mTLS` | Configuración externa (truststore/keystore) | — |
+| `internal-jwt` | Intención declarativa — **no genera interceptor**. La propagación del JWT debe resolverse con un interceptor global en la infraestructura compartida. | — |
 
 > **Validador INT-015 (bloqueante):** si `auth.type: oauth2-cc`, los campos
 > `tokenEndpoint` y `credentialKey` son obligatorios.
@@ -521,7 +522,7 @@ infrastructure:
       auth:
         type: bearer
         valueProperty: integration.default.token
-        header: Authorization
+        # header: X-Api-Key  ← solo para type: api-key; no aplica a bearer
       resilience:
         circuitBreaker:
           failureRateThreshold: 50

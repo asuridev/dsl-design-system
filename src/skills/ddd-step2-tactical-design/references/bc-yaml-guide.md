@@ -1738,9 +1738,9 @@ integrations:
   outbound:
     - name: payments
       auth:
-        type: bearer                      # none | api-key | bearer | oauth2-cc | mTLS
-        valueProperty: integration.payments.token
-        header: Authorization             # default Authorization (bearer) o X-Api-Key (api-key)
+        type: bearer                      # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
+        valueProperty: integration.payments.token  # clave de la property Spring con el token
+        # header: solo para api-key (default X-Api-Key) — no aplica a bearer
       resilience:
         circuitBreaker:                   # presencia del objeto → @CircuitBreaker(name="payments")
           failureRateThreshold: 50        # % de fallos para abrir el circuito (1–100)

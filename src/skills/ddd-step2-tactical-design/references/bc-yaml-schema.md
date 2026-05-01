@@ -477,9 +477,9 @@ integrations:
           responseEvents:           # opcional
             - {NombreEvento}
       auth:                         # OPCIONAL — override del auth declarado en system.yaml
-        type: {none|api-key|bearer|oauth2-cc|mTLS}
-        valueProperty: {clave de configuración con el secreto}
-        header: {nombre del header}          # solo api-key | bearer
+        type: {none|api-key|bearer|oauth2-cc|mTLS|internal-jwt}
+        valueProperty: {clave de configuración Spring con el secreto}  # solo api-key | bearer
+        header: {nombre del header}          # solo api-key (default: X-Api-Key)
         tokenEndpoint: {url}                 # solo oauth2-cc
         credentialKey: {clave de credencial} # solo oauth2-cc
       resilience:                   # OPCIONAL — override del resilience declarado en system.yaml

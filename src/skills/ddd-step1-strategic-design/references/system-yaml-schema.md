@@ -55,9 +55,9 @@ externalSystems:
         direction: ""   # outbound (nuestra app llama al externo) |
                         # inbound (el externo nos llama: webhooks/callbacks)
     auth:               # OPCIONAL — autenticación saliente para este sistema externo
-      type: ""          # none | api-key | bearer | oauth2-cc | mTLS
-      valueProperty: "" # nombre de propiedad de configuración con el secreto
-      header: ""        # nombre del header (api-key | bearer)
+      type: ""          # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
+      valueProperty: "" # nombre de propiedad Spring con el valor del secreto (api-key | bearer)
+      header: ""        # nombre del header — solo api-key (default: X-Api-Key)
       tokenEndpoint: "" # solo oauth2-cc — URL del endpoint de tokens
       credentialKey: "" # solo oauth2-cc — clave del secret con client_id/secret
     resilience:         # OPCIONAL — configuración Resilience4j para este cliente HTTP
@@ -92,9 +92,9 @@ integrations:
                         #     channel: orders.order.confirmed ← nombre exacto del canal AsyncAPI
       - ""
     auth:               # OPCIONAL — override de defaults globales
-      type: ""          # none | api-key | bearer | oauth2-cc | mTLS
-      valueProperty: "" # nombre de propiedad de configuración con el secreto
-      header: ""        # nombre del header (api-key | bearer)
+      type: ""          # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
+      valueProperty: "" # nombre de propiedad Spring con el valor del secreto (api-key | bearer)
+      header: ""        # nombre del header — solo api-key (default: X-Api-Key)
       tokenEndpoint: "" # solo oauth2-cc — URL del endpoint de tokens
       credentialKey: "" # solo oauth2-cc — clave del secret con client_id/secret
     resilience:         # OPCIONAL — configuración Resilience4j para este cliente HTTP
@@ -149,9 +149,9 @@ infrastructure:
   integrations:         # OPCIONAL — defaults globales para todas las integraciones
     defaults:
       auth:
-        type: ""        # none | api-key | bearer | oauth2-cc | mTLS
-        valueProperty: ""
-        header: ""
+        type: ""        # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
+        valueProperty: ""    # solo api-key | bearer
+        header: ""           # solo api-key — nombre del header (default: X-Api-Key)
         tokenEndpoint: ""    # solo oauth2-cc
         credentialKey: ""    # solo oauth2-cc
       resilience:       # defaults aplicados a integraciones que no declaran resilience local
