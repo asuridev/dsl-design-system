@@ -48,12 +48,44 @@ externalSystems:
     type: ""            # payment-gateway | notification-provider |
                         # identity-provider | erp | logistics | tax-authority |
                         # crm | analytics | storage | other
+    schemas:            # OPCIONAL — tipos compuestos reutilizables para operaciones con objetos anidados
+                        # Usar cuando la API externa envía/recibe objetos complejos (no solo escalares)
+                        # Cada entrada genera un Java record {SchemaName}Dto en adapters/{ext}/dtos/
+                        # Los schemas son locales al sistema externo — no compartibles entre externos
+      NombreSchema:     # PascalCase → genera NombreSchemaDto.java
+        - name: ""      # camelCase — nombre del campo
+          type: ""      # String | Integer | Long | Boolean | Decimal | Instant | UUID |
+                        # NombreOtroSchema (referencia a otro schema del mismo ext) |
+                        # List<String> | List<Integer> | List<NombreOtroSchema>
+          optional: false   # si true → campo opcional en el DTO. Default: false
     operations:         # OBLIGATORIO si el sistema externo es referenciado en integrations
       - name: ""        # camelCase — identificador de la operación
         description: >  # propósito de la operación
           ...
         direction: ""   # outbound (nuestra app llama al externo) |
                         # inbound (el externo nos llama: webhooks/callbacks)
+        method: ""      # GET | POST | PUT | PATCH | DELETE (solo direction: outbound)
+                        # Default: GET. Solo relevante para channel: http
+        path: ""        # path HTTP relativo, ej: /v1/charges o /v1/charges/{chargeId}/refund
+                        # Variables {param} → @PathVariable en el cliente generado
+        request:        # OPCIONAL — body de petición (solo efectivo si method: POST|PUT|PATCH)
+          fields:
+            - name: ""  # camelCase
+              type: ""  # escalar | NombreSchema (declarado en schemas) | List<X>
+              optional: false
+        response:       # OPCIONAL — body de respuesta
+          fields:
+            - name: ""  # camelCase
+              type: ""  # escalar | NombreSchema | List<X>
+              optional: false
+        domain:         # OPCIONAL — modelo de dominio al que el ACL mapper traduce la respuesta
+                        # Si se omite, AclMapper se genera con métodos // TODO para completar a mano
+          returnType: "" # PascalCase — Java record generado en domain/models/{extPackage}/
+          fields:
+            - name: ""  # camelCase — campo del domain record
+              type: ""  # UUID → java.util.UUID; otros valores → nombre de tipo literal (VO, record)
+              source: "" # campo del ResponseDto de origen → comentario // source: dto.{source}
+              derivedFrom: "" # expresión derivada → comentario // derived_from: {expr}
     auth:               # OPCIONAL — autenticación saliente para este sistema externo
       type: ""          # none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
       valueProperty: "" # nombre de propiedad Spring con el valor del secreto (api-key | bearer)

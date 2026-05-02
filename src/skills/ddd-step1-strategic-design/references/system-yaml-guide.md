@@ -146,6 +146,7 @@ externalSystems:
 | `name` | kebab-case | Debe coincidir exactamente con los valores `from`/`to` en `integrations`. |
 | `description` | texto | Qué hace este sistema externo. |
 | `type` | enum | Clasificación del sistema externo. |
+| `schemas` | mapa | **Opcional** — tipos compuestos reutilizables para campos con objetos anidados. Ver sección siguiente. |
 | `operations` | lista | **Obligatorio** si el sistema es referenciado en `integrations`. Operaciones que el ACL adapter expondrá. |
 
 ### Campos de `operations[]`
@@ -155,12 +156,114 @@ externalSystems:
 | `name` | camelCase | Identificador de la operación. |
 | `description` | texto | Propósito de la operación. |
 | `direction` | `outbound` \| `inbound` | `outbound`: nuestra app llama al externo. `inbound`: webhook/callback que recibimos. |
+| `method` | `GET` \| `POST` \| `PUT` \| `PATCH` \| `DELETE` | Verbo HTTP. Default: `GET`. Solo para `direction: outbound`. |
+| `path` | string | Path HTTP relativo. Variables `{param}` se extraen como `@PathVariable`. Default: `/{name}`. |
+| `request.fields[]` | lista | Campos del body de petición. Generan `{OpName}RequestDto`. Solo efectivo con `POST`/`PUT`/`PATCH`. |
+| `response.fields[]` | lista | Campos del body de respuesta. Generan `{OpName}ResponseDto`. |
+| `domain` | objeto | **Opcional** — modelo de dominio al que el ACL mapper traduce la respuesta. Si se omite, se generan métodos `// TODO` en el mapper. |
+| `domain.returnType` | PascalCase | Java record generado en `domain/models/{extPackage}/`. |
+| `domain.fields[].name` | camelCase | Campo del domain record. |
+| `domain.fields[].type` | tipo | `UUID` → `java.util.UUID`; otros → nombre de tipo literal (VO propio, record). |
+| `domain.fields[].source` | camelCase | Campo del `ResponseDto` de origen → comentario `// source: dto.{source}`. |
+| `domain.fields[].derivedFrom` | string | Expresión derivada → comentario `// derived_from: {expr}`. |
+
+**Tipos wire-format para `request.fields[].type` y `response.fields[].type`:**
+
+Estos tipos representan lo que el contrato HTTP externo realmente envía/recibe (primitivos JSON).
+No son los tipos canónicos de dominio (`Money`, `Email`, etc.) — esos se usan en `domain.fields[]`.
+
+| Tipo en YAML | Java en Dto generado |
+|---|---|
+| `String` | `String` |
+| `Integer` | `Integer` |
+| `Long` | `Long` |
+| `Boolean` | `Boolean` |
+| `Decimal` | `BigDecimal` |
+| `Instant` | `Instant` |
+| `UUID` | `String` (llega como string en JSON) |
+| `NombreSchema` | `{NombreSchema}Dto` (record local al adaptador) |
+| `List<String>` | `List<String>` |
+| `List<NombreSchema>` | `List<{NombreSchema}Dto>` |
 
 > **Validador INT-008:** todo contrato HTTP hacia un `externalSystem` debe matchear
 > una operación declarada en `operations[]`. Además, **INT-009** verifica que cada
 > operación declarada en `outbound[type=externalSystem]` exista en
 > `system.externalSystems[].operations[]`. Sin `operations[]` el generador no puede
 > crear el ACL adapter.
+
+---
+
+### `schemas` — Tipos compuestos para objetos anidados
+
+**Cuándo declarar `schemas`:** cuando la API externa envía o recibe campos que son objetos
+anidados (no solo escalares). Por ejemplo: una pasarela de pago que devuelve una lista de
+`splits` de pago, o un ERP que recibe `address` como objeto.
+
+Sin `schemas`, cualquier campo con tipo no escalar quedará como `Object` en el DTO generado.
+Con `schemas`, el generador produce Java records específicos y los importa automáticamente.
+
+**Ejemplo con objeto anidado:**
+
+```yaml
+externalSystems:
+  - name: payment-gateway
+    schemas:
+      SplitDetail:                    # PascalCase → genera SplitDetailDto.java
+        - name: merchantId
+          type: String
+        - name: amount
+          type: Decimal
+        - name: percentage
+          type: Decimal
+          optional: true              # campo opcional en el record
+      ChargeResult:                   # puede referenciar otros schemas del mismo ext
+        - name: chargeId
+          type: String
+        - name: status
+          type: String
+        - name: splits
+          type: "List<SplitDetail>"   # lista de otro schema → List<SplitDetailDto>
+    operations:
+      - name: chargeCard
+        method: POST
+        path: /v1/charges
+        request:
+          fields:
+            - name: cardToken
+              type: String
+            - name: amount
+              type: Decimal
+        response:
+          fields:
+            - name: result
+              type: ChargeResult      # referencia al schema → ChargeResultDto
+```
+
+**Artefactos generados para el ejemplo:**
+```
+adapters/paymentgateway/dtos/
+├── SplitDetailDto.java          ← record con merchantId, amount, percentage
+├── ChargeResultDto.java         ← record con chargeId, status, List<SplitDetailDto>
+└── ChargeCardResponseDto.java   ← record con ChargeResultDto result
+```
+
+**Campos de `schemas`:**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `{SchemaName}` | PascalCase (clave del mapa) | Nombre del schema. Genera `{SchemaName}Dto.java`. |
+| `{SchemaName}[].name` | camelCase | Nombre del campo en el record. |
+| `{SchemaName}[].type` | escalar \| nombre de schema \| `List<X>` | Mismos tipos wire-format que `operations[].request\|response.fields[].type`. |
+| `{SchemaName}[].optional` | boolean | Si `true`, campo opcional. Default: `false`. |
+
+**Restricciones:**
+- Los schemas son **locales** al sistema externo — no se pueden compartir entre diferentes `externalSystems`.
+- Los schemas se referencian por nombre exacto (PascalCase) desde `operations[].request|response.fields[].type` o desde otros schemas del mismo sistema.
+- No se permiten referencias circulares (`A → B → A`).
+
+**Validaciones activadas:**
+- **INT-022** (error): campo en `operations[].request|response.fields[]` con tipo no escalar no declarado en `schemas`.
+- **INT-023** (error): campo dentro de `schemas[X]` que referencia un tipo no escalar no declarado en `schemas`.
 
 ### Valores válidos de `type`
 

@@ -432,6 +432,17 @@ referencia como `from` o `to`. Cada operación contiene:
 - ExternalSystem referenciado en `integrations[]` sin `operations[]` declaradas → 🔴 ERROR (INT-008 / INT-009): el generador no puede crear el ACL adapter sin saber qué métodos exponer; cada contrato HTTP hacia el externo debe matchear una operación.
 - ExternalSystem con `operations[]` pero ninguna integración que lo referencie → 🟡 ALERTA: posible sistema externo huérfano.
 
+**G2b — `schemas` y tipos de campos en `externalSystems[].operations[]`**
+
+Cuando `operations[].request|response.fields[]` declaran tipos no escalares, deben estar declarados en `schemas` del mismo sistema externo. Los escalares válidos son: `String`, `Integer`, `Long`, `Boolean`, `Decimal`, `Instant`, `UUID`. Cualquier otro valor de `type` debe coincidir con una clave PascalCase en `schemas`.
+
+- **INT-022**: campo en `operations[].request|response.fields[]` con tipo no escalar no declarado en `schemas` → 🔴 ERROR: el generador no puede resolver el tipo.
+- **INT-023**: campo dentro de `schemas[schemaName]` que referencia un tipo no escalar no declarado en `schemas` del mismo sistema externo → 🔴 ERROR: referencia de schema no resuelta.
+- Schema declarado en `schemas` con clave que no es PascalCase → 🔵 SUGERENCIA: usar PascalCase para seguir la convención de Java records.
+- Referencias circulares en `schemas` (`A → B → A`) → 🔴 ERROR: INT-023 las detecta como tipo no declarado.
+- `type: "List<X>"` donde X es un schema declarado → ✅ válido; genera `List<{X}Dto>` en Java.
+- Campo `type` en `schemas` o `operations.fields` con un nombre de schema de **otro** sistema externo → 🔴 ERROR: los schemas son locales al sistema externo donde se declaran.
+
 **G3 — `auth` y `resilience` por integración o global**
 
 Bloque `auth` opcional en `system.yaml.integrations[]` o globalmente bajo `infrastructure.integrations.defaults`:
