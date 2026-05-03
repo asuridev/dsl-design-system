@@ -408,7 +408,7 @@ Las invariantes que el sistema debe hacer cumplir siempre, independientemente de
 | `statePrecondition` | Guard en el método de dominio que verifica la condición antes de transicionar. |
 | `uniqueness` | Índice UNIQUE en DB + método `findBy{Campo}` en el repositorio. |
 | `terminalState` | Documenta que el estado no tiene salidas; sin método de transición. |
-| `sideEffect` | Lógica adicional en el método de dominio (ej: registrar historial). |
+| `sideEffect` | **Ninguno** — el generador no emite código para esta regla (`emptyResult()`). Es una anotación de diseño: documenta la intención del efecto secundario para Fase 3. Implementar manualmente en el handler o vía evento de dominio con `emits`. |
 | `deleteGuard` | Guard en el use case de delete + método `delete` en el repositorio. |
 | `crossAggregateConstraint` | Método de query en el repositorio del otro agregado. |
 

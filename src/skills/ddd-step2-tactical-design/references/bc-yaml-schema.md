@@ -574,7 +574,7 @@ bc → type → description → enums → valueObjects → projections → aggre
 | `statePrecondition` | Condición para transición de estado (DRAFT → ACTIVE) | Guard en método de dominio |
 | `uniqueness` | Campo debe ser único en todo el repositorio | Índice UNIQUE en DB + `findBy{Campo}` en repositorio |
 | `terminalState` | Estado sin transiciones salientes | Sin método de transición |
-| `sideEffect` | Acción que ocurre como consecuencia (ej: registrar historial) | Lógica adicional en el método de dominio |
+| `sideEffect` | Acción que ocurre como consecuencia (ej: registrar historial) | **Ninguno** — el generador no emite código (`emptyResult()`). Anotación de diseño para Fase 3. |
 | `deleteGuard` | Condición para permitir eliminación física | Guard en use case de delete + método `delete` en repositorio |
 | `crossAggregateConstraint` | Invariante que requiere consultar otro agregado | Método de query en repositorio del otro agregado |
 
