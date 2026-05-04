@@ -138,7 +138,8 @@ El generador soporta un vocabulario extendido para cada sección del BC.
   - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `occurredAt`, `eventType`, `sourceBC`, `correlationId`.
   - `allowHiddenLeak: true` — opt-in cuando un campo `hidden: true` aparece en payload de evento `integration` o `both`.
 - `consumed[]`:
-  - `retry`, `dlq` (mismas keys que en published.broker).
+  - `retry` y `dlq` **NO se declaran aquí** — son configuración de infraestructura.
+    Configurar en `system.yaml` o archivos de entorno. El generador ignora estos campos con `GEN-WARN`.
   - `acknowledgeOnly: true` — suscribirse sin lógica de dominio.
 
 #### Errors
@@ -329,7 +330,7 @@ una entidad `OrderLine`. Este sufijo cumple tres funciones:
 2. **Determina `source:` de forma inequívoca** para el payload del evento (ver §3.7).
 3. **Comunica al lector** que el campo es una foto inmutable, no una referencia viva.
 
-**Estructura del VO snapshot:**
+**Estructura del VO snapshot (perspectiva del BC publicador):**
 
 ```yaml
 valueObjects:
@@ -351,6 +352,12 @@ valueObjects:
 - Incluir solo los campos que el BC consumidor necesita para actuar, no todos los de la entidad.
 - `immutable: true` es obligatorio — el generador genera `List.copyOf()` defensivo en listas.
 
+> **Perspectiva del BC consumidor:** El BC que recibe el evento con `OrderLineSnapshot`
+> **no** debe re-declarar este tipo en su `valueObjects[]`. Debe declararlo en `eventDtos[]`
+> con `sourceBc: orders`. Esto genera un Java `record` en `application.dtos.incoming/`
+> (no en `domain.valueobject/`), lo que mantiene el modelo de dominio del consumidor libre
+> de conceptos ajenos.
+
 **Señales para aplicar esta convención:** el evento lleva "líneas", "ítems", "productos",
 "detalles" o cualquier campo cuyo nombre coincida con una entidad hija del agregado
 (`lines`, `items`, `products`, `attachments`, `variants`…).
@@ -370,13 +377,15 @@ el generador falla sin poder inferirlo.
 |---|---|
 | Tipo canónico | Existe en `references/canonical-types.md` (`Uuid`, `String`, `Money`, `DateTime`, etc.) |
 | Enum propio | Existe en `enums[]` de este mismo archivo |
-| Value Object propio | Existe en `valueObjects[]` de este mismo archivo |
+| Value Object propio | Existe en `valueObjects[]` de este mismo archivo (conceptos del dominio propio) |
+| Event DTO externo | Existe en `eventDtos[]` de este mismo archivo (shapes de eventos de otros BCs) |
 | Agregado o Entidad (solo para `references:`) | Existe en `aggregates[]` o en `entities[]` del mismo BC |
 
 **Esta regla aplica sin excepción a:**
 - `aggregates[].properties[].type`
 - `aggregates[].entities[].properties[].type`
 - `valueObjects[].properties[].type`
+- `eventDtos[].properties[].type`
 - `domainEvents.published[].payload[].type`
 - `domainEvents.consumed[].payload[].type`
 - `repositories[].methods[].params[].type`
@@ -385,14 +394,16 @@ el generador falla sin poder inferirlo.
 **Antes de escribir cualquier `type:` que no sea un primitivo canónico, verifica:**
 1. ¿Está declarado en `enums[]`? Si no → declararlo primero.
 2. ¿Está declarado en `valueObjects[]`? Si no → declararlo primero.
-3. ¿Es un tipo compuesto de payload que agrupa campos del mismo agregado (ej: `OrderLineSummary`)?
+3. ¿Es un tipo compuesto que viene del payload de un evento de **otro** BC?
+   → Declararlo en `eventDtos[]` (NO en `valueObjects[]`) con sus propiedades.
+4. ¿Es un tipo compuesto de payload que agrupa campos del **mismo** BC?
    → Declararlo en `valueObjects[]` con sus propiedades antes de usarlo en el payload.
 
 > **Patrón frecuente de omisión en payloads de eventos:** los eventos suelen necesitar
 > resumir una colección de líneas (ej: `OrderLineSummary`, `CartItemSnapshot`). Es fácil
-> escribir `type: OrderLineSummary` en el payload sin haber declarado ese VO. Siempre
-> declarar el VO en `valueObjects[]` primero, con las propiedades exactas que el
-> consumidor del evento necesita — ni más ni menos.
+> escribir `type: OrderLineSummary` en el payload sin haber declarado ese tipo. Determinar
+> si pertenece a `eventDtos[]` (shape externo consumido) o `valueObjects[]` (concepto del
+> dominio propio) antes de declararlo.
 
 ### 3.3.2 Reglas de diseño de Proyecciones
 
@@ -526,7 +537,7 @@ domainMethods:
       - name: addressSnapshotId
         type: Uuid
       - name: catalogPrices
-        type: List[ProductPriceSnapshot]  # VO declarado en valueObjects[] — no un Dto ni proyección
+        type: List[ProductPriceSnapshot]  # Si viene de un evento externo → declarar en eventDtos[]. Si es del dominio propio → valueObjects[]
     returns: void
     emits: OrderPlaced
 ```
@@ -1234,7 +1245,7 @@ interno (no sistema externo):
 Crear el directorio `arch/{bc-name}/` y el subdirectorio `diagrams/`. Generar:
 
 1. `{bc-name}.yaml` v1 — siguiendo la Fase 3 de este skill:
-   - Secciones: `bc`, `type`, `description`, `enums`, `valueObjects`, `aggregates`, `integrations`, `domainEvents`
+   - Secciones: `bc`, `type`, `description`, `enums`, `valueObjects`, `eventDtos`, `aggregates`, `integrations`, `domainEvents`
    - `domainRules`: incluir `id` y `description`. Incluir `type` si es inequívoco (uniqueness, terminalState).
    - **No incluir aún**: `useCases`, `repositories`, `errors` — se agregan en Etapa C
 

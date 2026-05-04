@@ -419,7 +419,7 @@ Si `infrastructure.reliability` está declarado, sus valores válidos son:
 - Valor fuera del booleano → 🔴 ERROR.
 - Si `outbox: true` pero no hay ninguna integración `channel: message-broker` → 🔵 SUGERENCIA: outbox sin eventos es overhead innecesario.
 - Si hay sagas (`sagas[]`) y `consumerIdempotency: false` → 🟡 ALERTA: las cadenas de saga requieren idempotencia para tolerar redelivery; recomendar activarla.
-- Si `outbox: true` y algún BC ya tiene diseño táctico con `consumed[].dlq` declarado, verificar consistencia con la configuración del entorno (`rabbitmq.yaml` / `kafka.yaml`) → 🟡 ALERTA.
+- Si `outbox: true` y alguna BC ya tiene diseño táctico con eventos consumidos, verificar que el retry/DLQ del entorno (`rabbitmq.yaml` / `kafka.yaml`) sea coherente con los consumers generados → 🟡 ALERTA.
 
 **G2 — `externalSystems[].operations[]` declaradas**
 

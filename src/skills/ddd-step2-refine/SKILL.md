@@ -345,12 +345,14 @@ Para cada uno verificar:
 | `aggregates[].properties[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
 | `aggregates[].entities[].properties[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
 | `valueObjects[].properties[].type` | ¿Es tipo canónico? (los VOs no pueden referenciar otros VOs salvo composición real) |
+| `eventDtos[].properties[].type` | ¿Es tipo canónico, enum, otro eventDto o VO de este BC? |
 | `domainEvents.published[].payload[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
-| `domainEvents.consumed[].payload[].type` | ¿Existe en `enums[]` o `valueObjects[]`? |
+| `domainEvents.consumed[].payload[].type` | ¿Existe en `enums[]`, `valueObjects[]` o `eventDtos[]`? |
 | `repositories[].methods[].params[].type` | ¿Existe en `enums[]`, `valueObjects[]` o agregados del BC? |
 | `repositories[].methods[].returns` | ¿El tipo base (sin `?`, `[]` o `Page[...]`) está declarado? |
 
-- Tipo referenciado que no existe en `enums[]` ni `valueObjects[]` ni es canónico → 🔴 ERROR: bloquea la generación de código. Declarar el VO/enum faltante con sus propiedades.
+- Tipo referenciado que no existe en `enums[]`, `valueObjects[]`, `eventDtos[]` ni es canónico → 🔴 ERROR: bloquea la generación de código. Declarar el VO/enum/eventDto faltante con sus propiedades.
+- Tipo en `consumed[].payload[]` que es objeto compuesto de un BC externo y está declarado en `valueObjects[]` → 🟡 ALERTA: mover a `eventDtos[]` para no contaminar el modelo de dominio propio.
 
 **B16b — Snapshot VO: convención de sufijo para VOs de evento**
 - Para cada campo en `domainEvents.published[].payload[]` cuyo tipo es un VO o `List[VO]`
@@ -592,11 +594,9 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   - Si el broker del build es RabbitMQ, se ignora silenciosamente (no genera error).
   - Si en `published[]` aparece un bloque `broker:` (schema obsoleto) → 🔴 ERROR: indicar que debe eliminarse y usar `partitionKey: true` en el payload.
 
-- **`consumed[].retry` y `consumed[].dlq`** (opcionales):
-  - `retry.maxAttempts` entero ≥ 1; `retry.backoff` ∈ `{fixed, exponential}`;
-    `retry.initialMs`, `retry.maxMs` enteros ≥ 0 → si no, 🔴 ERROR.
-  - `dlq.afterAttempts` entero ≥ 1 → si no, 🔴 ERROR. El campo `dlq.target` es opcional; si se omite, el nombre del DLQ se deriva por convención como `{channel}.dlq`.
-  - Claves no reconocidas en `retry` o `dlq` → 🔴 ERROR.
+- **`consumed[].retry` y `consumed[].dlq`** — estos campos son **ignorados** por el generador.
+  Si aparecen en el YAML, el generador emite un `GEN-WARN` pero NO genera ningún artefacto a partir de ellos.
+  → 🟡 ALERTA al humano: indicar que los elimine del YAML y configure retry/DLQ en `system.yaml` o en los archivos de entorno.
 
 - **`payload[].source`** ∈ `{aggregate, param, timestamp, constant, derived}`.
   `auth-context` **NO es un valor válido** en el payload de un evento — el agregado debe ser
@@ -1093,7 +1093,7 @@ Desde la **Voz de Ingeniería**:
 - Usar `replace_string_in_file` o `multi_replace_string_in_file` para ediciones precisas
 - **Nunca recrear un archivo completo** para un cambio puntual — editar solo lo necesario
 - Mantener el orden de secciones del bc.yaml:
-  `bc` → `type` → `description` → `enums` → `valueObjects` → `aggregates` →
+  `bc` → `type` → `description` → `enums` → `valueObjects` → `eventDtos` → `aggregates` →
   `integrations` → `domainEvents` → `useCases` → `repositories` → `errors`
 - Mantener la estructura de cada sección (no reordenar listas no relacionadas al cambio)
 

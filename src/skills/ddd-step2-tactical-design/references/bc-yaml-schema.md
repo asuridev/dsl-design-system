@@ -83,6 +83,43 @@ valueObjects:
           - maxSize: {N}           # solo para List[T]
 
 
+# ─── EVENT DTOS ──────────────────────────────────────────────────────────────
+
+# eventDtos: shapes de eventos consumidos de BCs externos.
+# Úsalos cuando consumed[].payload[] incluye tipos de objetos complejos (VO o List[VO])
+# que pertenecen al BC productor — no al dominio propio de este BC.
+# El generador produce un Java record en application.dtos.incoming/ (NO en domain.valueobject/).
+#
+# Regla: si el snapshot existe SOLO para transportar datos de un evento externo → eventDtos[].
+#        Si el concepto tiene semántica propia en el dominio de ESTE BC → valueObjects[].
+
+eventDtos:
+
+  - name: {SnapshotName}           # PascalCase — ej: OrderLineSnapshot, ProductSnapshot
+    sourceBc: {bc-name}            # BC que publica el evento — solo documentación, no validado
+    properties:
+      - name: {field}
+        type: {canonical-type | EnumName | ValueObjectName | OtherEventDtoName}
+        # type puede referenciar:
+        #   - tipos canónicos (Uuid, String, Decimal, Money, ...)
+        #   - enums declarados en enums[] de este BC
+        #   - otros eventDtos[] de este BC (mismo paquete)
+        #   - valueObjects[] de este BC (para tipos de dominio propios como Money)
+
+
+# Ejemplo real:
+# eventDtos:
+#   - name: OrderLineSnapshot
+#     sourceBc: orders
+#     properties:
+#       - name: productId
+#         type: Uuid
+#       - name: quantity
+#         type: Integer
+#       - name: unitPrice
+#         type: Money    # Money sí es un VO del dominio propio (billing tiene Money)
+
+
 # ─── PROJECTIONS ─────────────────────────────────────────────────────────────
 
 # Proyecciones: shapes de lectura usados como `returns` en use cases de tipo query.
@@ -562,7 +599,7 @@ domainEvents:
 ## Orden canónico de secciones
 
 ```
-bc → type → description → enums → valueObjects → projections → aggregates → useCases → repositories → errors → integrations → domainEvents
+bc → type → description → enums → valueObjects → eventDtos → projections → aggregates → useCases → repositories → errors → integrations → domainEvents
 ```
 
 ---
@@ -602,6 +639,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Los eventos en `domainEvents.consumed` corresponden a los `contracts` de `system.yaml`
 - [ ] Las operaciones en `integrations` coinciden con los contratos de `system.yaml`
 - [ ] Todos los tipos son canónicos (ver canonical-types.md)
+- [ ] Si `consumed[].payload[]` incluye tipos de objetos complejos (ej: `List[OrderLineSnapshot]`): el tipo está declarado en `eventDtos[]` (NO en `valueObjects[]`)
 
 **Nuevos campos (Etapa C):**
 - [ ] Cada `domainRule` tiene `type` y `errorCode` (si aplica)

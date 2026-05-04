@@ -126,6 +126,11 @@ Sin ciclo de vida — solo un conjunto cerrado de valores.
 Un Value Object es un tipo compuesto definido por sus propiedades, sin identidad propia.
 Ejemplos canónicos: `Money`, `Slug`, `ShippingAddress`, `DateRange`.
 
+> **Regla clave — qué va en `valueObjects[]` y qué en `eventDtos[]`:**
+> - `valueObjects[]` → conceptos **del dominio propio** de este BC. Tienen semántica, invariantes y razón de ser dentro del negocio de este BC (ej: `Money`, `ShippingAddress`).
+> - `eventDtos[]` → shapes que **llegan de eventos externos** y no pertenecen al dominio propio. Se usan solo como carriers de datos entrantes (ej: `OrderLineSnapshot` que viene del BC `orders`).
+> Confundirlos contamina el modelo de dominio con conceptos ajenos.
+
 ```yaml
 valueObjects:
 
@@ -164,6 +169,80 @@ valueObjects:
 | `Email` | Email validado | Genera validación automática. |
 | `Url` | URL absoluta validada | |
 | `Money` | VO monetario | Siempre declarar como Value Object, no como primitivo. |
+
+---
+
+## `eventDtos` — Shapes de eventos externos
+
+Declara los tipos de objetos complejos que llegan en `consumed[].payload[]` de otros BCs.
+El generador los produce como Java `record` en `application.dtos.incoming/` — **no** en `domain.valueobject/`.
+
+### ¿Cuándo usar `eventDtos[]`?
+
+Cuando el payload de un evento consumido incluye un campo con un tipo que es un objeto compuesto
+(no un primitivo como `Uuid`, `String`, `Integer`) y ese objeto **no tiene significado semántico
+propio en el dominio de este BC** — solo existe porque lo envió el BC productor.
+
+Ejemplos típicos: `OrderLineSnapshot`, `ProductSnapshot`, `AddressSnapshot`.
+
+**Diferencia con `valueObjects[]`:**
+
+| Criterio | `valueObjects[]` | `eventDtos[]` |
+|---|---|---|
+| ¿Tiene invariantes propias del dominio? | Sí (`Money` siempre tiene currency) | No — solo carrier de datos |
+| ¿Tiene semántica en el negocio de ESTE BC? | Sí | No — viene del BC productor |
+| ¿Tiene lógica de validación? | Sí — se valida en constructor | No — solo deserialización |
+| ¿Dónde genera el código? | `domain.valueobject/` — clase final | `application.dtos.incoming/` — Java record |
+
+```yaml
+eventDtos:
+
+  - name: OrderLineSnapshot          # PascalCase — ej: OrderLineSnapshot, ProductSnapshot
+    sourceBc: orders                 # BC que publica el evento (solo documentación)
+    properties:
+      - name: productId
+        type: Uuid
+      - name: quantity
+        type: Integer
+      - name: unitPrice
+        type: Money                  # puede referenciar valueObjects[] del dominio propio
+```
+
+### Tipos permitidos en `eventDtos[].properties[]`
+
+| Tipo | Resolución |
+|---|---|
+| Tipos canónicos (`Uuid`, `String`, `Decimal`, `Money`, …) | Via `mapType()` normal |
+| Enum declarado en `enums[]` de este BC | Importa desde `domain.enums` |
+| Otro `eventDto` de este mismo BC | Mismo paquete, sin import |
+| VO declarado en `valueObjects[]` de este BC | Importa desde `domain.valueobject` |
+
+### Referencia en `domainMethods` y `useCases`
+
+Cuando un use case event-triggered recibe un `eventDto` en su `input[]`, se usa igual que un VO:
+
+```yaml
+useCases:
+  - id: uc-billing-001
+    name: GenerateInvoice
+    type: command
+    trigger:
+      kind: event
+      event: OrderPlaced
+    input:
+      - name: lines
+        type: List[OrderLineSnapshot]   # resuelve contra eventDtos[]
+```
+
+Y el `domainMethod` del agregado también usa el mismo tipo:
+
+```yaml
+domainMethods:
+  - name: generate
+    params:
+      - name: lines
+        type: List[OrderLineSnapshot]   # resuelve contra eventDtos[] → genera import correcto
+```
 
 ---
 
@@ -1138,6 +1217,7 @@ Campos de cada evento consumido:
 3. **Incluir todos los datos que el consumidor necesita sin hacer lookups posteriores** — si el consumidor necesita consultar el BC publicador para completar el procesamiento, falta información en el payload.
 4. **No incluir datos internos** — el payload es un contrato público. No exponer campos `internal: true` ni datos que no tengan sentido fuera del BC.
 5. **Usar snapshots para valores que cambian** — si el precio de un producto puede cambiar, el evento `OrderPlaced` debe incluir `unitPrice` como snapshot, no solo `productId`.
+6. **Tipos complejos en `payload[]` → declararlos en `eventDtos[]`** — si un campo del payload es un objeto compuesto (ej: `OrderLineSnapshot`, `ProductSnapshot`), declara ese tipo en `eventDtos[]` de este BC. El generador resuelve el import correctamente a `application.dtos.incoming`. **No declarar estos shapes externos en `valueObjects[]`** — contaminaría el modelo de dominio propio.
 
 ---
 
@@ -1367,8 +1447,10 @@ domainEvents:
   consumed:
     - name: PaymentCaptured
       fromBc: payments
-      retry: { maxAttempts: 3, backoff: fixed, initialMs: 500 }
-      dlq: { afterAttempts: 3, target: orders.dlq.payment.captured }
+      channel: payments.payment.captured
+      payload:
+        - { name: paymentId, type: Uuid }
+        - { name: amount, type: Money }
 
     - name: AuditOrderEvent
       fromBc: audit
