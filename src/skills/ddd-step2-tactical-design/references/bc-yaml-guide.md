@@ -1430,7 +1430,8 @@ domainEvents:
           maxMs: 5000
         dlq:
           afterAttempts: 5
-          target: orders.dlq.order.confirmed
+          routingKey: orders.order.confirmed.dead    # routing key del DLX hacia la DLQ
+          queueName: orders-confirmed-poison         # nombre físico de la DLQ (opcional; default = routingKey)
 
     - name: OrderConfirmedInternal
       scope: internal                       # solo se publica por bus interno (no broker)

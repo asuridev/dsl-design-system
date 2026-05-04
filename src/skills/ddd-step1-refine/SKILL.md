@@ -491,7 +491,7 @@ Aunque el `scope` del evento es declarado en `bc.yaml domainEvents.published[]`,
   el evento tiene `scope: internal` → 🔴 ERROR: contradicción (un evento internal nunca
   cruza fronteras de BC).
 
-- En `bc.yaml`, el campo que actúa como clave de partición Kafka se declara con `partitionKey: true` directamente en el elemento del `payload[]` — no en un bloque `broker`. Verificar que solo un campo por evento tiene `partitionKey: true`, y que su tipo es `Uuid`, `String`, `Integer` o `Long`; verificación cruzada con bc.yaml si existe.
+- En `bc.yaml`, la clave de partición Kafka se declara en el bloque `broker.partitionKey` del evento publicado — como **string** con el nombre del campo del payload (ej: `broker.partitionKey: customerId`). Verificar que el campo referenciado existe en `payload[]` y que su tipo es `Uuid`, `String`, `Integer` o `Long`; verificación cruzada con bc.yaml si existe.
 
 **G6 — Convención de versionado de eventos**
 

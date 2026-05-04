@@ -588,11 +588,16 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`published[].version`**: entero ≥ 1. Default: 1.
   - Versión decrementada vs commit anterior → 🟡 ALERTA: posible breaking change accidental.
 
-- **`partitionKey: true` en `payload[]`** (opcional, solo Kafka):
-  - Solo un campo por evento puede tener `partitionKey: true` → si hay más de uno, 🔴 ERROR.
-  - El campo marcado debe ser `Uuid`, `String`, `Integer` o `Long` → otro tipo produce 🟡 ALERTA.
-  - Si el broker del build es RabbitMQ, se ignora silenciosamente (no genera error).
-  - Si en `published[]` aparece un bloque `broker:` (schema obsoleto) → 🔴 ERROR: indicar que debe eliminarse y usar `partitionKey: true` en el payload.
+- **Bloque `broker:` en `published[]`** (opcional):
+  - Claves válidas: `partitionKey`, `headers`, `retry`, `dlq`. Clave fuera de este set → 🔴 ERROR.
+  - **`broker.partitionKey`** (string, solo Kafka): nombre de un campo declarado en `payload[]`.
+    - Debe ser string — si es boolean u otro tipo → 🔴 ERROR.
+    - El campo referenciado debe existir en `payload[]` → si no existe → 🔴 ERROR.
+    - Tipo recomendado del campo: `Uuid`, `String`, `Integer` o `Long` → otro tipo produce 🟡 ALERTA.
+    - Si el broker del build es RabbitMQ, se ignora silenciosamente (no genera error).
+  - **`broker.headers`**: mapa string→string. Debe ser objeto (no lista) → si es lista → 🔴 ERROR.
+  - **`broker.retry`**: claves válidas: `maxAttempts`, `backoff`, `initialMs`, `maxMs`. Actualmente validado y almacenado pero no propagado a ningún artefacto generado.
+  - **`broker.dlq`**: claves válidas: `afterAttempts`, `routingKey`, `queueName`. `routingKey` y `queueName` sí se propagan a la topología del consumidor. `target` no existe — usar `routingKey` → si aparece `target` → 🔴 ERROR.
 
 - **`consumed[].retry` y `consumed[].dlq`** — estos campos son **ignorados** por el generador.
   Si aparecen en el YAML, el generador emite un `GEN-WARN` pero NO genera ningún artefacto a partir de ellos.
