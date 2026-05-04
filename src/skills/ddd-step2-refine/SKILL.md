@@ -968,6 +968,39 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   efectos secundarios no idempotentes. Si el UC carga agregado y aplica método,
   el dominio debe garantizar idempotencia (ej: chequeo de estado antes de mutar).
 
+#### E12 — eventDtos[]: validación estructural
+
+- **Keys whitelist por entry**: `name`, `sourceBc`, `properties`.
+  - Key fuera de la whitelist → 🔴 ERROR: el reader aborta el build.
+
+- **`name`**: PascalCase. Requerido. Sin duplicados en `eventDtos[]`.
+  - Entry sin `name` → 🔴 ERROR.
+  - Nombres duplicados → 🔴 ERROR.
+
+- **`properties[]`**: requerido, no puede estar vacío.
+  - Ausente o vacío → 🔴 ERROR.
+
+- **Keys whitelist por propiedad**: `name`, `type`, `precision`, `scale`, `required`, `description`.
+  - Key fuera de la whitelist → 🔴 ERROR.
+  - Propiedad sin `name` o sin `type` → 🔴 ERROR.
+
+- **`Decimal` requiere `precision` + `scale`**: igual que en `aggregates[].properties[]`.
+  - `Decimal` sin ambos → 🔴 ERROR.
+
+- **Resolución de tipos** en `eventDtos[].properties[]`:
+  - Tipo canónico → ✅
+  - Enum declarado en `enums[]` del mismo BC → ✅
+  - Otro `eventDto` declarado en `eventDtos[]` del mismo BC → ✅
+  - VO declarado en `valueObjects[]` del mismo BC → ✅
+  - Tipo no resolvible → 🔴 ERROR: bloquea la generación de código.
+
+- **`sourceBc`** (opcional): solo documentación. Verificar que el BC exista en `system.yaml boundedContexts[]`
+  para detectar typos → 🔵 SUGERENCIA si no existe.
+
+- **Cuándo `valueObjects[]` debería ser `eventDtos[]`** (ver B16):
+  - Tipo compuesto de un BC externo declarado en `valueObjects[]` → 🟡 ALERTA:
+    mover a `eventDtos[]` para no contaminar el modelo de dominio propio.
+
 ---
 
 ### Checklist D — Cuando arch/system/ Requiere Ajuste

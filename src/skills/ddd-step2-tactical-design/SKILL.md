@@ -142,6 +142,24 @@ El generador soporta un vocabulario extendido para cada sección del BC.
     Configurar en `system.yaml` o archivos de entorno. El generador ignora estos campos con `GEN-WARN`.
   - `acknowledgeOnly: true` — suscribirse sin lógica de dominio.
 
+#### Event DTOs — shapes de eventos externos
+- `eventDtos[]` — sección de nivel superior para shapes de eventos consumidos de BCs externos.
+  Genera Java `record` en `{bc}/application/dtos/incoming/` (NO en `domain/valueobject/`).
+- **Campos de cada entry:**
+  - `name` (requerido, PascalCase, sin duplicados).
+  - `sourceBc` (opcional — solo documentación, no valida la integración).
+  - `properties[]` (requerido, al menos uno): claves `name`, `type`, `precision`, `scale`, `required`, `description`.
+- **Resolución de tipos en `properties[]`** (en orden de precedencia):
+  1. Tipo canónico (mismo vocabulario que `aggregates[]`).
+  2. Enum declarado en `enums[]` del mismo BC.
+  3. Otro `eventDto` declarado en `eventDtos[]` del mismo BC.
+  4. VO declarado en `valueObjects[]` del mismo BC.
+- `Decimal` requiere `precision` + `scale` — igual que en `aggregates[].properties[]`.
+- Los listeners (RabbitMQ/Kafka) y UC handlers importan estos records desde `application.dtos.incoming`.
+- **Cuándo usar `eventDtos[]` en lugar de `valueObjects[]`:**
+  - El tipo existe SOLO para transportar datos de un evento de otro BC → `eventDtos[]`.
+  - El concepto tiene semántica propia en el dominio de ESTE BC → `valueObjects[]`.
+
 #### Errors
 - `code` SCREAMING_SNAKE_CASE.
 - `httpStatus` whitelist: `400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
@@ -251,6 +269,7 @@ type:             → core | supporting | generic
 description:      → propósito en 1-2 oraciones (inglés)
 enums:            → enums con valores y transiciones si aplica
 valueObjects:     → VOs con sus propiedades tipadas
+eventDtos:        → shapes de eventos de BCs externos (application.dtos.incoming)
 aggregates:       → agregados con entidades, propiedades y reglas
 integrations:     → integraciones sincrónicas (inbound y outbound)
 domainEvents:     → eventos publicados y consumidos
