@@ -314,6 +314,49 @@ en todos los commands que incluyan ese campo — sin necesidad de repetirlos en 
 > Leer `references/validation.md` para el vocabulario completo de constraints y las reglas
 > de qué declarar y qué no.
 
+### 3.3b Convención: sufijo `Snapshot` para VOs que representan estado de entidades en eventos
+
+Cuando un evento de dominio necesita llevar el **estado de una entidad** en su payload,
+ese estado debe viajar como un VO inmutable — no como la entidad misma. La entidad tiene
+identidad, ciclo de vida y comportamiento; el VO captura una foto congelada en el momento
+exacto del evento.
+
+**Nombrar ese VO como `{NombreEntidad}Snapshot`** — por ejemplo, `OrderLineSnapshot` para
+una entidad `OrderLine`. Este sufijo cumple tres funciones:
+
+1. **Evita colisión de nombres** entre la entidad del dominio y el VO del evento (distintos
+   namespaces en el generador; nombres iguales generan ambigüedad).
+2. **Determina `source:` de forma inequívoca** para el payload del evento (ver §3.7).
+3. **Comunica al lector** que el campo es una foto inmutable, no una referencia viva.
+
+**Estructura del VO snapshot:**
+
+```yaml
+valueObjects:
+  - name: OrderLineSnapshot      # {NombreEntidad}Snapshot
+    immutable: true              # siempre true
+    properties:
+      - name: productId
+        type: Uuid
+      - name: sku
+        type: String(50)
+      - name: quantity
+        type: Integer
+      - name: unitPrice
+        type: Money              # VOs escalares son válidos como propiedades
+```
+
+**Reglas de las propiedades del Snapshot:**
+- Solo tipos escalares o VOs escalares — no listas, no referencias a otras entidades.
+- Incluir solo los campos que el BC consumidor necesita para actuar, no todos los de la entidad.
+- `immutable: true` es obligatorio — el generador genera `List.copyOf()` defensivo en listas.
+
+**Señales para aplicar esta convención:** el evento lleva "líneas", "ítems", "productos",
+"detalles" o cualquier campo cuyo nombre coincida con una entidad hija del agregado
+(`lines`, `items`, `products`, `attachments`, `variants`…).
+
+---
+
 ### 3.3.1 Resolución de tipos — Regla de cierre del vocabulario de tipos
 
 Todo valor en el campo `type` de cualquier propiedad del YAML **debe estar declarado**
@@ -637,7 +680,110 @@ Cuando un BC tiene integraciones outbound hacia sistemas externos (ej: `payments
 
 ### 3.7 Reglas de diseño de `domainEvents`
 
-#### `published` — payload obligatorio
+#### `published` — decisión de `source:` cuando el payload lleva estado de una entidad
+
+Cuando un campo del payload representa el estado de una entidad hija del agregado,
+el valor correcto de `source:` depende de **lo que el agregado almacena**, no del tipo
+del payload (que siempre debe ser un VO con sufijo `Snapshot`):
+
+| Lo que el agregado almacena | Tipo en payload | `source:` correcto | Qué genera el generador |
+|---|---|---|---|
+| `lines: List[OrderLineSnapshot]` (VO) | `List[OrderLineSnapshot]` | `source: aggregate` | `this.getLines()` — sin transformación ✅ |
+| `lines: List[OrderLine]` (entidad mutable) | `List[OrderLineSnapshot]` | `source: param` | handler convierte entidad→VO y lo pasa como parámetro |
+
+Cuando el agregado guarda entidades mutables (`List[OrderLine]`) y el evento necesita
+snapshots (`List[OrderLineSnapshot]`), declarar el param en `domainMethods[].params[]`
+con `type: List[OrderLineSnapshot]` — ese `typeHint` explícito gana sobre la inferencia
+por nombre de propiedad en el generador.
+
+#### `published` — validaciones de payload bloqueantes en el generador (INT-025 / INT-026)
+
+Estas dos reglas se verifican **durante el diseño**. Si el YAML llega al generador con
+alguna de estas violaciones, la build se detiene — corregirlas aquí evita el ciclo
+diseño → generador → error → vuelta al diseño.
+
+**INT-025 — `source: auth-context` está prohibido en `domainEvents.published[].payload[]`**
+
+El agregado nunca puede resolver el contexto de seguridad — ese es responsabilidad de
+la capa de aplicación. Un campo con `source: auth-context` en el payload de un evento
+hace que el generador detenga la build.
+
+Patrón correcto:
+1. Declarar el campo como `source: param` en el payload del evento.
+2. Añadir el parámetro correspondiente en `domainMethods[].params[]` del método que emite el evento.
+3. El handler de aplicación extrae el valor de `SecurityContext` y lo pasa al método del dominio como argumento ordinario.
+
+```yaml
+# ❌ INVÁLIDO — INT-025 detiene la build
+domainEvents:
+  published:
+    - name: ProductActivated
+      payload:
+        - name: activatedBy
+          type: Uuid
+          source: auth-context   # ← prohibido
+
+# ✅ CORRECTO
+domainEvents:
+  published:
+    - name: ProductActivated
+      payload:
+        - name: activatedBy
+          type: Uuid
+          source: param          # ← el handler resuelve SecurityContext
+
+aggregates:
+  - name: Product
+    domainMethods:
+      - name: activate
+        params:
+          - name: activatedBy   # ← mismo nombre que el campo del payload (o usar 'param:' para alias)
+            type: Uuid
+        emits: ProductActivated
+```
+
+**INT-026 — `source: param` debe tener su parámetro en `domainMethods[].params[]`**
+
+Para cada campo del payload con `source: param`, el nombre del parámetro que el generador
+busca es `field.param` si está declarado, o `field.name` si no. Si ningún `domainMethod`
+que emita ese evento declara ese parámetro, el generador emitiría `null` silenciosamente
+en el evento publicado — pérdida de datos en runtime sin error de compilación.
+
+**Cómo verificar al diseñar:**
+1. Listar todos los campos del payload con `source: param`.
+2. Para cada uno, resolver el nombre del parámetro: `param` si existe, `name` si no.
+3. Para cada `domainMethod[].emits` que incluya este evento, verificar que existe en `params[]`
+   un parámetro con ese nombre.
+4. Si falta → añadir el parámetro en `domainMethods[].params[]` con el tipo correcto.
+
+```yaml
+# ❌ INVÁLIDO — INT-026 detiene la build
+domainEvents:
+  published:
+    - name: OrderShipped
+      payload:
+        - name: trackingNumber
+          type: String
+          source: param          # parámetro resuelto: 'trackingNumber'
+
+aggregates:
+  - name: Order
+    domainMethods:
+      - name: ship
+        params: []               # ← 'trackingNumber' no está aquí → INT-026
+
+# ✅ CORRECTO
+aggregates:
+  - name: Order
+    domainMethods:
+      - name: ship
+        params:
+          - name: trackingNumber  # ← coincide con el campo del payload
+            type: String
+        emits: OrderShipped
+```
+
+
 
 Todo evento publicado debe incluir `payload[]` no vacío con al menos:
 - El ID del agregado raíz que generó el evento (`{aggregate}Id: Uuid`)

@@ -419,7 +419,7 @@ Si `infrastructure.reliability` está declarado, sus valores válidos son:
 - Valor fuera del booleano → 🔴 ERROR.
 - Si `outbox: true` pero no hay ninguna integración `channel: message-broker` → 🔵 SUGERENCIA: outbox sin eventos es overhead innecesario.
 - Si hay sagas (`sagas[]`) y `consumerIdempotency: false` → 🟡 ALERTA: las cadenas de saga requieren idempotencia para tolerar redelivery; recomendar activarla.
-- Si `outbox: true` y algún BC ya tiene diseño táctico con `broker.dlq` declarado, alertar inconsistencia → 🟡 ALERTA.
+- Si `outbox: true` y algún BC ya tiene diseño táctico con `consumed[].dlq` declarado, verificar consistencia con la configuración del entorno (`rabbitmq.yaml` / `kafka.yaml`) → 🟡 ALERTA.
 
 **G2 — `externalSystems[].operations[]` declaradas**
 
@@ -491,7 +491,7 @@ Aunque el `scope` del evento es declarado en `bc.yaml domainEvents.published[]`,
   el evento tiene `scope: internal` → 🔴 ERROR: contradicción (un evento internal nunca
   cruza fronteras de BC).
 
-- El campo `partitionKey` del bloque `broker` (cuando se hereda de `system.yaml.infrastructure.broker.defaults`) debe ser un nombre de campo presente en el payload del evento; verificación cruzada con bc.yaml si existe.
+- En `bc.yaml`, el campo que actúa como clave de partición Kafka se declara con `partitionKey: true` directamente en el elemento del `payload[]` — no en un bloque `broker`. Verificar que solo un campo por evento tiene `partitionKey: true`, y que su tipo es `Uuid`, `String`, `Integer` o `Long`; verificación cruzada con bc.yaml si existe.
 
 **G6 — Convención de versionado de eventos**
 

@@ -352,6 +352,27 @@ Para cada uno verificar:
 
 - Tipo referenciado que no existe en `enums[]` ni `valueObjects[]` ni es canónico → 🔴 ERROR: bloquea la generación de código. Declarar el VO/enum faltante con sus propiedades.
 
+**B16b — Snapshot VO: convención de sufijo para VOs de evento**
+- Para cada campo en `domainEvents.published[].payload[]` cuyo tipo es un VO o `List[VO]`
+  y cuyo nombre coincide con una entidad declarada en `aggregates[].entities[]` del BC
+  (ej: campo `lines` con tipo `List[OrderLine]`, entidad `OrderLine`):
+  - El tipo del payload **no debe ser el nombre de la entidad** — las entidades son mutables
+    y no serializables como contrato del evento.
+  - Si el VO de payload NO tiene sufijo `Snapshot` y se llama igual que una entidad → 🟡 ALERTA:
+    renombrar el VO a `{NombreEntidad}Snapshot` para evitar colisión de namespaces y hacer
+    explícita la semántica de foto inmutable.
+  - Si el tipo del payload ES directamente el nombre de una entidad (no un VO declarado en
+    `valueObjects[]`) → 🔴 ERROR: las entidades no son tipos válidos en el payload de un evento
+    — declarar un `{Entidad}Snapshot` VO en `valueObjects[]` con solo los campos que el
+    consumidor necesita.
+- Para cada campo con `source: aggregate` en `domainEvents.published[].payload[]`:
+  - Verificar que el `field` (o `name`) referenciado existe en `aggregates[].properties[]`.
+  - Verificar que el tipo del campo en el agregado coincida con el tipo declarado en el payload.
+    - Tipos distintos (ej: agregado guarda `List[OrderLine]` pero el payload declara
+      `List[OrderLineSnapshot]`) → 🔴 ERROR: `source: aggregate` emite `this.getField()` sin
+      transformación; el código no compila. Usar `source: param` y declarar el parámetro en
+      `domainMethods[].params[]` con el tipo Snapshot.
+
 **B17 — Sintaxis Java genérica prohibida**
 
 El generador parsea los tipos literalmente. Cualquier uso de sintaxis con ángulos (`<>`) — habitual en lenguajes de implementación, ajena al DSL — produce fallos silenciosos en generación:
@@ -555,7 +576,7 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 
 - ID de entidades hijas: solo `Uuid` (otros tipos no soportados) → 🔴 ERROR.
 
-#### E4 — Domain Events: `scope`, `broker`, `payload.source`
+#### E4 — Domain Events: `scope`, `partitionKey`, `payload.source`
 
 - **`published[].scope`** ∈ `{internal, integration, both}`. Default: `both`.
   - Valor fuera del enum → 🔴 ERROR.
@@ -565,30 +586,55 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`published[].version`**: entero ≥ 1. Default: 1.
   - Versión decrementada vs commit anterior → 🟡 ALERTA: posible breaking change accidental.
 
-- **`broker` block** (opcional, en `published[]`):
-  - `partitionKey` debe ser un campo presente en el `payload[]` → si no, 🔴 ERROR.
-  - `retry: { maxAttempts ≥1, backoff ∈ {fixed, exponential}, initialMs ≥0, maxMs ≥ initialMs }`.
-  - `dlq: { afterAttempts ≥1, target: "<topic>" }`.
-  - Campos fuera de este vocabulario → 🔴 ERROR.
+- **`partitionKey: true` en `payload[]`** (opcional, solo Kafka):
+  - Solo un campo por evento puede tener `partitionKey: true` → si hay más de uno, 🔴 ERROR.
+  - El campo marcado debe ser `Uuid`, `String`, `Integer` o `Long` → otro tipo produce 🟡 ALERTA.
+  - Si el broker del build es RabbitMQ, se ignora silenciosamente (no genera error).
+  - Si en `published[]` aparece un bloque `broker:` (schema obsoleto) → 🔴 ERROR: indicar que debe eliminarse y usar `partitionKey: true` en el payload.
 
-- **`consumed[].retry` y `consumed[].dlq`** (opcionales): se validan con las mismas
-  reglas que `published[].broker.retry` y `published[].broker.dlq` respectivamente.
+- **`consumed[].retry` y `consumed[].dlq`** (opcionales):
   - `retry.maxAttempts` entero ≥ 1; `retry.backoff` ∈ `{fixed, exponential}`;
     `retry.initialMs`, `retry.maxMs` enteros ≥ 0 → si no, 🔴 ERROR.
-  - `dlq.afterAttempts` entero ≥ 1; `dlq.target` string → si no, 🔴 ERROR.
+  - `dlq.afterAttempts` entero ≥ 1 → si no, 🔴 ERROR. El campo `dlq.target` es opcional; si se omite, el nombre del DLQ se deriva por convención como `{channel}.dlq`.
   - Claves no reconocidas en `retry` o `dlq` → 🔴 ERROR.
 
-- **`payload[].source`** ∈ `{aggregate, param, timestamp, constant, auth-context, derived}`.
+- **`payload[].source`** ∈ `{aggregate, param, timestamp, constant, derived}`.
+  `auth-context` **NO es un valor válido** en el payload de un evento — el agregado debe ser
+  agnóstico a la seguridad (INT-025).
   Campos auxiliares según source:
   | source | Campo auxiliar requerido |
   |---|---|
   | `aggregate` | `field` |
-  | `param` | `param` |
+  | `param` | `param` (opcional; si se omite, el generador usa `name` del campo) |
   | `constant` | `value` |
-  | `auth-context` | `claim` |
   | `derived` | `derivedFrom` o `expression` |
   | `timestamp` | (ninguno) |
+  | `auth-context` | ❌ **Prohibido — INT-025** (ver abajo) |
   - Combinación inconsistente → 🔴 ERROR.
+
+- **INT-025 — `source: auth-context` en payload de evento → 🔴 ERROR.**
+  Un campo de `domainEvents.published[].payload[]` que declara `source: auth-context`
+  hace que el generador detenga la build. El agregado nunca puede resolver el contexto
+  de seguridad — esa es responsabilidad de la capa de aplicación.
+  - Corrección: cambiar a `source: param`, añadir el parámetro al `domainMethods[].params[]`
+    del método que emite el evento, y resolver `SecurityContext` en el handler de aplicación.
+
+- **INT-026 — `source: param` sin parámetro correspondiente en `domainMethods` → 🔴 ERROR.**
+  Para cada campo del payload con `source: param`:
+  - El nombre del parámetro resuelto es `field.param` si está declarado, o `field.name` si no.
+  - Para cada `domainMethod` que declare `emits: <este-evento>` (o incluya el evento en `emits[]`):
+    - ¿Existe en `domainMethods[].params[]` un parámetro cuyo `name` coincide con el nombre resuelto?
+  - Si ningún `domainMethod` que emite el evento declara ese parámetro → 🔴 ERROR: el generador
+    emitiría `null` silenciosamente en el evento publicado, causando pérdida de datos en runtime.
+  - Corrección: añadir el parámetro en `domainMethods[].params[]` con el tipo correcto, o corregir
+    el nombre del campo en el payload (`param:` o `name:`).
+
+  > **Cómo verificar INT-026:** recopilar todos los eventos con al menos un campo `source: param`.
+  > Para cada evento, recorrer todos los `aggregates[].domainMethods[]` que lo listan en `emits`.
+  > Construir el conjunto de `params[].name` del método. Verificar que cada nombre de param
+  > resuelto del payload esté en ese conjunto. Si hay múltiples métodos que emiten el mismo evento
+  > (raro pero posible), el param debe estar en **todos** ellos — o declarar `param:` explícito
+  > para apuntar al nombre correcto.
 
 - **`EventMetadata` canónica**: NO declarar manualmente `eventId`, `occurredAt`,
   `eventType`, `sourceBC`, `correlationId` en `payload[]`. El generador los inyecta.
@@ -892,6 +938,13 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   - Schema del mensaje en AsyncAPI debe coincidir con `payload[]` del evento (campos
     + tipos). Mismatch → 🔴 ERROR.
   - Hidden field leak → ver E4.
+
+- **INT-025 — `source: auth-context` en payload → 🔴 ERROR.** Ver E4 para detalle
+  completo y corrección. Validación ejecutada también por el generador antes de producir código.
+
+- **INT-026 — `source: param` sin param en `domainMethods` → 🔴 ERROR.** Ver E4 para
+  el procedimiento de verificación y corrección. El generador detecta este error en build
+  y detiene la generación para evitar pérdida silenciosa de datos en el evento publicado.
 
 #### E10 — Projections persistentes (Local Read Model alimentado por eventos)
 
