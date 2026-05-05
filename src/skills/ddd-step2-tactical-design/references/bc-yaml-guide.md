@@ -1179,8 +1179,7 @@ Campos de cada evento consumido:
 | `name` | PascalCase en tiempo pasado. Nombre del evento tal como lo publica el BC emisor. Debe coincidir con el `name` en `contracts` de `system.yaml` para las integraciones `channel: message-broker` donde este BC es el `to`. |
 | `sourceBc` | kebab-case. BC que publica este evento. Debe existir en `system.yaml`. |
 | `description` | Qué efecto produce este evento en este BC — qué agregado se actualiza o qué use case se dispara. |
-| `payload` | Campos que llegan con el evento. Deben reflejar exactamente el payload del evento en el BC emisor. Obligatorio salvo que `acknowledgeOnly: true`. |
-| `acknowledgeOnly` | `true` (opcional). El BC suscribe al canal pero no ejecuta lógica de dominio — no hay UC asociado. El generador solo produce el canal `subscribe` en el AsyncAPI. Usar para acuses de compensación de saga o señales de fin de paso donde el BC no cambia ningún agregado. Si está ausente se asume `false`. |
+| `payload` | Campos que llegan con el evento. Deben reflejar exactamente el payload del evento en el BC emisor. Siempre obligatorio — todo evento consumido debe tener un UC asociado. |
 
 ```yaml
   consumed:
@@ -1199,13 +1198,7 @@ Campos de cada evento consumido:
           type: Boolean
           required: true
 
-    # Evento sin UC — el BC solo necesita suscribirse, sin lógica de dominio
-    - name: StockReleased
-      sourceBc: inventory
-      acknowledgeOnly: true     # acuse de compensación — saga solo necesita saber que ocurrió
-      description: >
-        Inventory confirms stock was released after order cancellation.
-        No domain logic executed — orders has already emitted OrderCancelled.
+
 ```
 
 ---
@@ -1213,7 +1206,7 @@ Campos de cada evento consumido:
 ### Reglas del payload
 
 1. **Siempre incluir `productId` (o el ID del agregado)** — el consumidor necesita saber de qué entidad habla el evento.
-2. **NO declarar `occurredAt`, `eventId`, `eventType`, `sourceBC` ni `correlationId` en `payload[]`** — forman parte de `EventMetadata` y el generador los inyecta automáticamente como la primera sección de cada registro de evento. Declararlos produce conflicto (el generador los filtra con un WARN de deprecación). El consumidor accede a ellos vía `event.metadata().occurredAt()` etc.
+2. **NO declarar `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId` ni `causationId` en `payload[]`** — forman parte de `EventMetadata` y el generador los inyecta automáticamente como la primera sección de cada registro de evento. Declararlos produce conflicto (el generador los filtra con un WARN de deprecación). El consumidor accede a ellos vía `event.metadata().occurredAt()` etc.
 3. **Incluir todos los datos que el consumidor necesita sin hacer lookups posteriores** — si el consumidor necesita consultar el BC publicador para completar el procesamiento, falta información en el payload.
 4. **No incluir datos internos** — el payload es un contrato público. No exponer campos `internal: true` ni datos que no tengan sentido fuera del BC.
 5. **Usar snapshots para valores que cambian** — si el precio de un producto puede cambiar, el evento `OrderPlaced` debe incluir `unitPrice` como snapshot, no solo `productId`.
@@ -1452,11 +1445,6 @@ domainEvents:
       payload:
         - { name: paymentId, type: Uuid }
         - { name: amount, type: Money }
-
-    - name: AuditOrderEvent
-      fromBc: audit
-      acknowledgeOnly: true                 # se suscribe sin lógica de dominio
-                                            # (útil para warm-up / observabilidad)
 ```
 
 #### `payload[].source` — whitelist
@@ -1472,8 +1460,7 @@ domainEvents:
 
 #### `EventMetadata` canónica (NO declarar manualmente)
 
-El generador inyecta automáticamente: `eventId`, `occurredAt`, `eventType`, `sourceBC`,
-`correlationId`. Declararlos manualmente en `payload[]` produce conflicto.
+El generador inyecta automáticamente: `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`. Declararlos manualmente en `payload[]` produce conflicto.
 
 ---
 

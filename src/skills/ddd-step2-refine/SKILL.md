@@ -393,16 +393,15 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 - Para cada evento en `domainEvents.published[]`:
   - ¿Tiene `payload[]` con al menos un campo?
   - ¿Incluye el ID del agregado raíz (`{aggregate}Id: Uuid`)?
-  - ¿Declara manualmente `occurredAt`, `eventId`, `eventType`, `sourceBC`, `correlationId` en `payload[]`?
+  - ¿Declara manualmente `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId` en `payload[]`?
   - Evento sin `payload` (campo ausente o lista vacía) → 🔴 ERROR: el consumidor no puede actuar sin datos — rompe el contrato del evento
   - Evento con alguno de esos campos en `payload[]` → 🟡 ALERTA: forman parte de `EventMetadata` y el generador los auto-inyecta — eliminar del `payload[]` (ver E4)
 
-**B19 — domainEvents.consumed: UC o `acknowledgeOnly: true` + payload**
+**B19 — domainEvents.consumed: UC obligatorio + payload**
 - Para cada evento en `domainEvents.consumed[]`:
   - ¿Existe un UC en `useCases[]` con `trigger.kind: event` y `trigger.event` igual al `name` de este evento?
-  - Si no hay UC: ¿tiene `acknowledgeOnly: true`?
-  - Evento consumido sin UC **y** sin `acknowledgeOnly: true` → 🔴 ERROR: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Opciones: (a) añadir un UC con la lógica de dominio correspondiente, o (b) marcar `acknowledgeOnly: true` si el BC solo necesita suscribirse sin ejecutar lógica (típico en acuses de compensación de saga)
-- Para cada evento en `domainEvents.consumed[]` que tiene un UC asociado (`trigger.kind: event`):
+  - Evento consumido sin UC → 🔴 ERROR: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Añadir un UC con la lógica de dominio correspondiente.
+- Para cada evento en `domainEvents.consumed[]`:
   - ¿Tiene `payload[]` con al menos un campo?
   - Evento consumido con UC pero sin `payload` (campo ausente o lista vacía) → 🔴 ERROR: el generador no puede construir el message handler sin saber qué campos leer del mensaje — falla en tiempo de generación de código
   - Verificar que el payload incluye al mínimo:
@@ -411,9 +410,6 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
     - Para cualquier otro event-triggered UC: el ID del agregado afectado + campos usados en la lógica del UC (`occurredAt` disponible vía `EventMetadata` — no declararlo en `payload[]`)
   - Payload incompleto que falta el ID del agregado a cargar → 🔴 ERROR: el handler no puede ejecutar `repositoryMethod: findById`
   - Payload incompleto en LRM handler (faltan campos que la proyección usa) → 🔴 ERROR: la proyección quedará desincronizada — el dato que el LRM no recibe en el evento tendrá que buscarlo en el BC fuente (acoplamiento sincrónico encubierto)
-- Para cada evento con `acknowledgeOnly: true`:
-  - ¿Tiene `payload[]` declarado?
-  - Evento `acknowledgeOnly` con payload → 🔵 SUGERENCIA: el payload no tiene efecto (no hay handler) — eliminarlo evita confusión en el lector del diseño
 
 **B20 — repositories.list: params sin mapeo a propiedad necesitan `filterOn` y `operator`**
 - Para cada método en `repositories[].methods[]` de tipo listado (`returns: Page[...]` o `List[...]`):
@@ -641,8 +637,7 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   > (raro pero posible), el param debe estar en **todos** ellos — o declarar `param:` explícito
   > para apuntar al nombre correcto.
 
-- **`EventMetadata` canónica**: NO declarar manualmente `eventId`, `occurredAt`,
-  `eventType`, `sourceBC`, `correlationId` en `payload[]`. El generador los inyecta.
+- **`EventMetadata` canónica**: NO declarar manualmente `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId` en `payload[]`. El generador los inyecta.
   - Declaración manual → 🟡 ALERTA: eliminar.
 
 - **`allowHiddenLeak`**: si una propiedad con `hidden: true` aparece en el `payload[]`

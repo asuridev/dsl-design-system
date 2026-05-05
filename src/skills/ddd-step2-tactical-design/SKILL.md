@@ -135,12 +135,11 @@ El generador soporta un vocabulario extendido para cada sección del BC.
   - `scope: internal|integration|both` (default `both`).
   - `broker: { partitionKey, headers, retry: { maxAttempts, backoff: fixed|exponential, initialMs, maxMs }, dlq: { afterAttempts, target } }`.
   - `payload[].source: aggregate|param|timestamp|constant|auth-context|derived` con sus campos auxiliares (`field`, `param`, `value`, `claim`, `derivedFrom`/`expression`).
-  - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `occurredAt`, `eventType`, `sourceBC`, `correlationId`.
+  - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`.
   - `allowHiddenLeak: true` — opt-in cuando un campo `hidden: true` aparece en payload de evento `integration` o `both`.
 - `consumed[]`:
   - `retry` y `dlq` **NO se declaran aquí** — son configuración de infraestructura.
     Configurar en `system.yaml` o archivos de entorno. El generador ignora estos campos con `GEN-WARN`.
-  - `acknowledgeOnly: true` — suscribirse sin lógica de dominio.
 
 #### Event DTOs — shapes de eventos externos
 - `eventDtos[]` — sección de nivel superior para shapes de eventos consumidos de BCs externos.
@@ -207,7 +206,32 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - Projections vacías (`properties: []`) prohibidas.
 - Inline `returns:` en UC sintetiza `${UC}Result`.
 - `source: aggregate:<Name>` o `readModel:<Name>` (opcional).
-- `persistent: true` (Local Read Model) requiere `source: { kind: event, event, from }` + `keyBy` + `upsertStrategy: lastWriteWins|versionGuarded`.
+- `persistent: true` — Local Read Model basado en eventos. Genera JPA entity + Spring Data repository + broker listener automáticamente, sin necesidad de declarar use cases explícitos.
+  - **Campos obligatorios:** `source: { kind: event, event: <Name>, from: <bc> }` + `keyBy: <propertyName>` + `upsertStrategy: lastWriteWins|versionGuarded`.
+  - **`tableName`** (opcional): nombre de la tabla SQL. Default: `proj_{snake_case_de_name}`.
+  - **`eventVersionField`** (opcional, solo con `upsertStrategy: versionGuarded`): nombre del campo en `properties[]` que contiene la versión del evento. Si se omite, el generador busca una propiedad llamada exactamente `version`; si no existe, el build falla.
+  - **`additionalSources[]`** — eventos adicionales que actualizan solo un subconjunto de campos sin insertar filas nuevas. Genera un `{Name}On{Event}ProjectionUpdater.java` por cada entrada. Cada entry: `{ kind: event, event: <Name>, from: <bc>, updatesFields: [campo1, campo2] }`. Restricciones:
+    - `keyBy` **nunca** puede aparecer en `updatesFields[]`.
+    - Los campos en `updatesFields[]` deben estar declarados en `properties[]`.
+    - El evento referenciado debe estar en `domainEvents.published[]` del BC `from`.
+    - **El evento debe incluir el campo `keyBy` en su `payload[]` en el BC productor.** El partial updater lo necesita para localizar la fila con `findById`. Si no está en el payload, el evento se descarta silenciosamente en runtime con `WARN` — sin error de build ni de compilación.
+
+#### Regla de diseño — `versionGuarded` y versión en el productor
+
+Cuando una projection declara `upsertStrategy: versionGuarded`, el campo de versión
+(`eventVersionField` o `version`) **debe estar declarado en el `payload[]` del evento fuente**
+(`source.event`) del BC productor. Si no lo está, el guard degenerará silenciosamente a
+`lastWriteWins` en runtime (el generador emitirá INT-027 warn, no error — el código compila).
+
+**Verificar antes de escribir el YAML del BC consumidor:**
+1. El BC productor tiene el campo `version: Long` (u otro tipo numérico) declarado en el
+   `fields[]` (o `properties[]`) del agregado fuente.
+2. Ese campo está incluido en el `payload[]` del evento `source.event` en el productor.
+3. El mismo campo aplica a cada evento en `additionalSources[]` que use el mismo
+   `versionGuarded` (heredado del padre).
+
+Si el BC productor no incluye la versión en el evento, **cambiar a `upsertStrategy: lastWriteWins`**
+o pedir que el productor agregue la versión al payload del evento antes de usar `versionGuarded`.
 
 #### Integrations — capacidades de plataforma
 - `auth.type: none|api-key|bearer|oauth2-cc|mTLS` con campos auxiliares (`valueProperty`, `header`, `tokenEndpoint`, `credentialKey`).
@@ -818,30 +842,19 @@ aggregates:
 Todo evento publicado debe incluir `payload[]` no vacío con al menos:
 - El ID del agregado raíz que generó el evento (`{aggregate}Id: Uuid`)
 
-Los campos de metadata canónica (`eventId`, `occurredAt`, `eventType`, `sourceBC`, `correlationId`, `causationId`) son **auto-inyectados** por el generador como `EventMetadata` — **no declararlos en `payload[]`**. Si se declaran, el generador los filtra y emite un WARN de deprecación.
+Los campos de metadata canónica (`eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`) son **auto-inyectados** por el generador como `EventMetadata` — **no declararlos en `payload[]`**. Si se declaran, el generador los filtra y emite un WARN de deprecación.
 
 Un evento sin payload es un contrato vacío: el consumidor no puede actuar sobre él sin hacer un lookup adicional al BC emisor, lo que crea acoplamiento sincrónico encubierto.
 
 > **Mínimo siempre presente:** `{aggregate}Id`. Añadir todos los campos que el consumidor necesita para actuar sin consultar de vuelta al BC emisor (ver reglas del payload en `references/bc-yaml-guide.md`).
 
-#### `consumed` — UC o `acknowledgeOnly: true`
+#### `consumed` — siempre asociado a un UC
 
-Todo evento en `domainEvents.consumed[]` pertenece a exactamente una de estas dos categorías:
+Todo evento en `domainEvents.consumed[]` **debe tener un UC** en `useCases[]` con `trigger.kind: event` y `trigger.event` igual al nombre del evento. Un evento consumido sin UC es un gap de diseño: la intención es ambigua y el generador no puede crear el handler.
 
-| Categoría | Cuándo aplica | Qué genera el generador |
-|---|---|---|
-| **Con UC** (`trigger.kind: event`) | El BC ejecuta lógica de dominio al recibir el evento: actualiza un agregado, transiciona un estado o emite otro evento | UC con `actor: system` y el handler correspondiente |
-| **`acknowledgeOnly: true`** | El BC solo necesita suscribirse al canal — sin lógica de dominio. El evento llega, el sistema lo registra, no ocurre nada más. | Solo el canal `subscribe` en el AsyncAPI, sin UC |
+#### `consumed` — payload obligatorio
 
-**Candidatos típicos a `acknowledgeOnly: true`:**
-- Confirmaciones de compensación completada en una saga (ej: `StockReleased`, `PaymentRefunded`) cuando el BC ya emitió su evento de cancelación y la compensación ocurre en otro BC
-- Señales de cierre de saga que el BC solo necesita para desbloquear un estado futuro, sin cambiar ningún agregado en el momento
-
-Un evento consumido sin UC **y** sin `acknowledgeOnly: true` es un gap de diseño: la intención es ambigua y el generador no puede crear el handler.
-
-#### `consumed` — payload obligatorio cuando hay UC
-
-Todo evento en `domainEvents.consumed[]` que tiene un UC asociado **debe declarar `payload[]`** con los campos que ese UC necesita para ejecutar su lógica de dominio.
+Todo evento en `domainEvents.consumed[]` **debe declarar `payload[]`** con los campos que el UC necesita para ejecutar su lógica de dominio.
 
 **Por qué el generador falla sin payload:** el generador construye el message handler a partir del payload declarado. Sin payload, no sabe qué campos leer del mensaje entrante para: (1) localizar el agregado a cargar del repositorio, (2) pasar los datos al método de dominio. El resultado es un handler vacío que no compila o que falla silenciosamente en runtime.
 
@@ -858,9 +871,7 @@ Todo evento en `domainEvents.consumed[]` que tiene un UC asociado **debe declara
 > del BC fuente — si `CustomerAddressAdded` en `customers.yaml` publica 11 campos, el handler
 > en `orders.yaml` los necesita todos para mantener `CustomerAddressSnapshot` actualizado.
 
-> **Excepción:** eventos con `acknowledgeOnly: true` **no deben tener payload** — no hay handler
-> que los procese. Si se declara payload en un `acknowledgeOnly`, el generador lo ignora y produce
-> confusión en el lector del diseño.
+Todo evento consumido sin `payload[]` (campo ausente o lista vacía) → gap de diseño: el generador no puede construir el message handler sin saber qué campos leer del mensaje.
 
 ---
 

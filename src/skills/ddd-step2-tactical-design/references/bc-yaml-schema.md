@@ -143,6 +143,57 @@ projections:
         description: {descripción}
 
 
+# ─── PERSISTENT PROJECTIONS (Local Read Model automático) ────────────────────
+#
+# persistent: true genera automáticamente: JPA entity + JPA repository + broker listener.
+# NO requiere use cases explícitos ni entradas en spec.md.
+# Ver references/local-read-model.md §Mecanismo B para el análisis completo.
+
+  - name: {ProjectionName}
+    description: >
+      {qué proyecta y de qué BC fuente}
+    persistent: true                     # activa generación automática
+    source:
+      kind: event                        # único valor soportado
+      event: {SourceEventName}           # evento principal (upsert completo)
+      from: {source-bc-name}             # BC fuente — debe existir en arch/
+    keyBy: {propertyName}                # campo clave del upsert — NO puede ser el PK interno
+    tableName: proj_{snake_name}         # opcional; default: proj_{snake_case_de_name}
+    upsertStrategy: lastWriteWins        # lastWriteWins | versionGuarded
+    # eventVersionField: version         # solo con versionGuarded
+    #                                    # default: campo llamado 'version' en properties[]
+    #                                    # PRECONDICIÓN versionGuarded: ver nota abajo
+    properties:
+      - name: {keyField}                 # campo referenciado por keyBy
+        type: Uuid
+        required: true
+      - name: {field}
+        type: {canonical-type | EnumName}  # solo escalares — NO List[T] ni referencias a agregados
+        required: true | false
+    # additionalSources: eventos que actualizan SOLO un subconjunto de campos (sin insertar)
+    # REGLA: el BC productor de cada evento adicional DEBE incluir el campo keyBy
+    # en el payload[] de ese evento. Sin él, el partial updater descarta el mensaje
+    # silenciosamente en runtime (log WARN) — no hay error de build ni de compilación.
+    additionalSources:
+      - kind: event
+        event: {PartialUpdateEventName}
+        from: {source-bc-name}
+        updatesFields:
+          - {field1}                     # campo en properties[]; NUNCA puede ser keyBy
+          - {field2}
+          # payload de {PartialUpdateEventName} en {source-bc-name} DEBE incluir:
+          # keyBy (para findById) + cada campo de updatesFields (para la actualización)
+
+# PRECONDICIÓN para upsertStrategy: versionGuarded
+# El campo de versión (eventVersionField o 'version') DEBE estar en el payload[]
+# del evento fuente del BC productor. Si no está, el guard degenera silenciosamente
+# a lastWriteWins en runtime. El generador emite INT-027 warn (no error).
+# Verificar antes de declarar versionGuarded:
+#   1. El agregado productor tiene el campo 'version: Long' en sus properties[].
+#   2. El evento fuente incluye ese campo en su payload[].
+#   3. Cada evento en additionalSources[] también incluye el campo versión en su payload[].
+
+
 # ─── AGGREGATES ──────────────────────────────────────────────────────────────
 
 aggregates:
@@ -625,6 +676,19 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Cada `returns` de tipo query referencia un nombre en `projections[]`, el nombre de un agregado del BC, o es lista inline de propiedades
 - [ ] Ningún nombre en `projections[]` tiene sufijo `*Response`, `*Dto`, `*Request` o `*Payload`
 - [ ] Ninguna propiedad en `aggregates[]` ni `entities[]` usa un nombre de `projections[]` como `type`
+
+**Proyecciones persistentes (`persistent: true`):**
+- [ ] Cada proyección con `persistent: true` tiene `source: { kind: event, event, from }` + `keyBy` + `upsertStrategy`
+- [ ] `keyBy` referencia un campo declarado en `properties[]`
+- [ ] `keyBy` no aparece en ningún `additionalSources[].updatesFields[]`
+- [ ] Cada `additionalSources[]` entry tiene `kind: event`, `event`, `from`, y `updatesFields[]` no vacío
+- [ ] Todos los campos en `additionalSources[].updatesFields[]` existen en `properties[]`
+- [ ] En el BC productor: cada evento de `additionalSources[]` incluye el campo `keyBy` en su `payload[]` (sin él el partial updater descarta el evento silenciosamente en runtime)
+- [ ] Si `upsertStrategy: versionGuarded`: el campo `eventVersionField` (o `version`) existe en `properties[]`
+- [ ] Si `upsertStrategy: versionGuarded`: el evento fuente (`source.event`) incluye el campo versión en su `payload[]` en el BC productor (precondición INT-027)
+- [ ] Si `upsertStrategy: versionGuarded` + `additionalSources[]`: cada evento adicional también incluye el campo versión en su `payload[]`
+- [ ] Los eventos referenciados en `source.event` y en `additionalSources[].event` están en `domainEvents.published[]` del BC `from`
+- [ ] Si hay `{bc-consumidor}-async-api.yaml`: tiene canales `subscribe` para cada evento fuente de proyecciones persistentes
 
 **Secciones base:**
 - [ ] `bc` coincide exactamente con el nombre en `system.yaml`

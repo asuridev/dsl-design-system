@@ -448,3 +448,233 @@ momento del checkout — también desde el servidor, también sin aceptarlo del 
 |---|---|
 | `catalog.yaml` | + evento `ProductPriceChanged` en `domainEvents.published[]`; + domainRule `sideEffect` |
 | `catalog-async-api.yaml` | + canal `publish` para `catalog.product.price-changed` |
+
+---
+
+## Dos Mecanismos para Local Read Models
+
+El generador soporta **dos formas** de implementar un Local Read Model. Elegir según el
+nivel de control necesario sobre la lógica de proyección.
+
+### Mecanismo A — `readModel: true` en `aggregates[]` (manual)
+
+El patrón descrito en las secciones anteriores. El diseñador declara un agregado con
+`readModel: true` y escribe explícitamente:
+- Los use cases de tipo `trigger.kind: event` que manejan cada evento fuente.
+- Los métodos de dominio (`upsert`, `delete`) sobre el agregado.
+- Los flows Given/When/Then para cada caso de sincronización.
+
+**Cuándo usarlo:**
+- La lógica de proyección es no trivial (transformaciones, enriquecimiento, lógica
+  condicional al actualizar campos).
+- Se necesita control explícito sobre el flujo de manejo de errores del event handler.
+- Los casos de uso necesitan documentación en `spec.md` y `flows.md` para la Fase 3.
+
+### Mecanismo B — `persistent: true` en `projections[]` (automático)
+
+El diseñador declara la proyección en `projections[]` con `persistent: true`. El generador
+produce automáticamente, **sin necesidad de use cases explícitos**:
+- Entidad JPA (`{Name}Jpa.java`) con su tabla `{tableName}`.
+- Spring Data JPA repository (`{Name}JpaRepository.java`).
+- Broker listener (`{Name}ProjectionUpdater.java`) con lógica de upsert por `keyBy`.
+- Listener adicional por cada entrada en `additionalSources[]`.
+
+**Cuándo usarlo:**
+- La proyección es un mapeo 1:1 directo de campos del evento fuente sin transformaciones.
+- Consistencia eventual simple con upsert por clave es suficiente.
+- Se quiere minimizar el número de artefactos de diseño explícitos.
+
+---
+
+## Mecanismo B — Schema Completo de `persistent: true`
+
+```yaml
+projections:
+  - name: CatalogProductSnapshot        # PascalCase, sin sufijos Dto/Response/Request
+    description: >
+      Local read model of catalog products for checkout. Fed by ProductActivated,
+      ProductPriceChanged, and ProductDiscontinued events.
+    persistent: true                    # activa la generación automática
+    source:
+      kind: event                       # único valor soportado
+      event: ProductActivated           # evento que inserta/actualiza la fila completa
+      from: catalog                     # BC fuente (debe existir en arch/catalog/)
+    keyBy: productId                    # campo clave para upsert — NO el PK interno
+    tableName: proj_catalog_product_snapshots  # opcional; default: proj_{snake(name)}
+    upsertStrategy: lastWriteWins       # lastWriteWins | versionGuarded
+    # eventVersionField: version        # solo con versionGuarded; default: campo 'version'
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: price
+        type: Money
+        required: true
+      - name: status
+        type: ProductSnapshotStatus     # enum declarado en enums[] de ESTE BC
+        required: true
+    # additionalSources: eventos que actualizan solo un subconjunto de campos
+    # OBLIGATORIO: cada evento aquí debe incluir el campo keyBy (productId) en su payload[]
+    # en el BC productor. Sin él, el partial updater descarta el evento silenciosamente en runtime.
+    additionalSources:
+      - kind: event
+        event: ProductPriceChanged      # solo actualiza price, no reemplaza toda la fila
+        from: catalog
+        updatesFields:
+          - price
+          # payload de ProductPriceChanged DEBE incluir: productId (keyBy) + price (updatesFields)
+      - kind: event
+        event: ProductDiscontinued      # solo actualiza status
+        from: catalog
+        updatesFields:
+          - status
+          # payload de ProductDiscontinued DEBE incluir: productId (keyBy) + status (updatesFields)
+```
+
+### Campos del schema
+
+| Campo | Requerido | Descripción |
+|---|---|---|
+| `persistent` | Sí | `true` activa la generación automática |
+| `source.kind` | Sí | Siempre `event` |
+| `source.event` | Sí | Evento que controla el upsert completo de la fila |
+| `source.from` | Sí | BC fuente — debe existir en `arch/` |
+| `keyBy` | Sí | Nombre del campo en `properties[]` que se usa como clave de upsert |
+| `tableName` | No | Nombre de la tabla SQL. Default: `proj_{snake_case_de_name}` |
+| `upsertStrategy` | Sí | `lastWriteWins` o `versionGuarded` |
+| `eventVersionField` | Condicional | Solo con `versionGuarded`. Nombre del campo versión en `properties[]`. Default: campo llamado `version`. |
+| `additionalSources[]` | No | Eventos adicionales que actualizan solo `updatesFields`. Nunca insertan. |
+| `additionalSources[].kind` | Sí | Siempre `event` |
+| `additionalSources[].event` | Sí | Nombre del evento — debe estar en `domainEvents.published[]` del BC `from` |
+| `additionalSources[].from` | Sí | BC fuente del evento adicional |
+| `additionalSources[].updatesFields` | Sí | Campos a actualizar — ninguno puede ser `keyBy` |
+
+> **Obligación en el BC productor para cada `additionalSources` entry:** el evento declarado
+> debe incluir **el campo `keyBy` en su `payload[]`** además de los campos en `updatesFields`.
+> El partial updater usa `keyBy` para localizar la fila con `findById`. Si el campo falta en
+> el payload, el updater descarta el mensaje en runtime con un log `WARN` — la actualización
+> se pierde silenciosamente sin error de build ni de compilación.
+
+### Restricciones obligatorias
+
+1. `keyBy` debe existir en `properties[]`.
+2. `keyBy` **nunca** puede aparecer en `updatesFields[]` de ningún `additionalSources` entry.
+3. Todos los campos en `updatesFields[]` deben estar en `properties[]`.
+4. El evento en `source.event` y en cada `additionalSources[].event` debe estar publicado
+   por el BC `from` correspondiente (INT-010 / INT-012 lo verifican como error).
+5. `properties[]` solo puede contener tipos escalares canónicos, enums, y VOs escalares.
+   No se admiten tipos `List[...]` ni referencias a agregados.
+6. **El evento de cada `additionalSources` entry debe incluir el campo `keyBy` en su `payload[]`
+   en el BC productor.** El partial updater lo necesita para localizar la fila con `findById`.
+   Si el campo está ausente del payload, el updater descarta el evento en runtime con un
+   log `WARN` — la actualización se pierde silenciosamente sin ningún error de build ni de compilación.
+
+---
+
+## `upsertStrategy: versionGuarded` — Precondición en el Productor
+
+Cuando `upsertStrategy: versionGuarded`, el generador lee `data.get("<versionField>")`
+del payload del mensaje y lo compara con la versión almacenada. Si el payload no incluye
+el campo, `data.get(...)` retorna `null` y el guard **silenciosamente degenerará a
+`lastWriteWins`** — el código compila y corre sin error, pero la protección de orden
+no está activa (INT-027 emitirá un `warn` durante el build del generador).
+
+### Verificación obligatoria antes de declarar `versionGuarded`
+
+**En el BC productor (`source.from`):**
+
+1. El agregado fuente tiene el campo versión declarado en sus `properties[]`:
+   ```yaml
+   # En catalog.yaml → aggregates[Product].properties[]
+   - name: version
+     type: Long
+     readOnly: true
+     internal: true
+     description: Monotonically increasing version counter. Incremented on every state change.
+   ```
+
+2. El evento fuente incluye ese campo en su `payload[]`:
+   ```yaml
+   # En catalog.yaml → domainEvents.published[ProductActivated].payload[]
+   - name: version
+     type: Long
+     source: aggregate
+     field: version
+   ```
+
+3. Lo mismo aplica a cada evento en `additionalSources[]`: si `versionGuarded` está
+   activo en la proyección padre, el guard se aplica también en los partial updaters.
+   Cada evento adicional debe incluir el campo versión en su payload.
+
+### Ejemplo completo con `versionGuarded`
+
+```yaml
+# En orders.yaml
+projections:
+  - name: CatalogProductSnapshot
+    persistent: true
+    source:
+      kind: event
+      event: ProductActivated
+      from: catalog
+    keyBy: productId
+    upsertStrategy: versionGuarded
+    eventVersionField: version        # usa el campo 'version' de properties[]
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: price
+        type: Money
+        required: true
+      - name: version
+        type: Long                    # debe existir; eventVersionField lo referencia
+        required: true
+    additionalSources:
+      - kind: event
+        event: ProductPriceChanged
+        from: catalog
+        updatesFields:
+          - price
+          - version                   # versión DEBE estar en updatesFields también
+                                      # para que el partial updater pueda guardarla
+```
+
+---
+
+## Artefactos Generados por el Mecanismo B (sin intervención del diseñador)
+
+El diseñador **no necesita** escribir use cases, spec.md entries ni flows.md entries
+para las proyecciones persistentes. El generador produce automáticamente:
+
+| Artefacto generado | Ubicación |
+|---|---|
+| `{Name}Jpa.java` | `infrastructure/persistence/projections/` |
+| `{Name}JpaRepository.java` | `infrastructure/persistence/projections/` |
+| `{Name}ProjectionUpdater.java` | `infrastructure/projectionUpdaters/` |
+| `{Name}On{EventName}ProjectionUpdater.java` | `infrastructure/projectionUpdaters/` (1 por additionalSources entry) |
+| Migración SQL `V2__projections.sql` | `resources/db/migration/` |
+
+Los archivos de diseño **que sí requiere** el Mecanismo B:
+- `{bc-consumidor}-async-api.yaml`: canales `subscribe` para cada evento fuente (igual que
+  en el Mecanismo A — el broker topology lo requiere).
+- No se necesitan entradas en `spec.md`, `flows.md` ni use cases en `.yaml`.
+
+---
+
+## Cuándo Usar Cada Mecanismo
+
+| Situación | Mecanismo A (`readModel: true`) | Mecanismo B (`persistent: true`) |
+|---|---|---|
+| Mapeo 1:1 directo de campos del evento | ❌ Verbose | ✅ Recomendado |
+| Lógica de transformación o enriquecimiento | ✅ Control total | ❌ No soportado |
+| Múltiples eventos con lógica diferente por evento | ✅ Un UC por evento | ✅ `additionalSources[]` (solo updates simples) |
+| Necesita flujos Given/When/Then documentados | ✅ | ❌ No aplica |
+| Mínimo artefactos de diseño | ❌ | ✅ |
+| Versión de consistencia de orden | A través de métodos del dominio | `versionGuarded` declarativo |

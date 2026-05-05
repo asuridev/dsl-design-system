@@ -300,7 +300,7 @@ Incluir en `payload[]` todos los datos de negocio que los consumidores necesitan
 procesar el evento **sin hacer lookups posteriores**. Si un consumidor necesitaría
 consultar el BC publicador para completar el procesamiento, falta información en el payload.
 
-**NO declarar `occurredAt`, `eventId`, `eventType`, `sourceBC` ni `correlationId` en
+**NO declarar `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId` ni `causationId` en
 `payload[]`.** Estos campos forman parte de `EventMetadata` y el generador los auto-inyecta
 en todos los mensajes. Declararlos manualmente provoca campos duplicados en el contrato y
 el generador emite una advertencia. Los consumidores acceden a ellos vía el objeto
