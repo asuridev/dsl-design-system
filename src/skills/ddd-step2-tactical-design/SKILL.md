@@ -875,6 +875,143 @@ Todo evento consumido sin `payload[]` (campo ausente o lista vacía) → gap de 
 
 ---
 
+### 3.8 — BC como participante de una Saga por Coreografía
+
+Aplicar cuando `arch/system/system.yaml` declara `sagas[]` con al menos un paso donde
+`step.bc` coincide con el BC que estás diseñando.
+
+**Antes de escribir `domainEvents`**, leer la definición del saga en `system.yaml` y construir
+la **matriz de participación** de este BC:
+
+| Fuente en system.yaml | Acción requerida en este BC |
+|-----------------------|-----------------------------|
+| `step.triggeredBy` (este BC es `step.bc`) | Declarar ese evento en `consumed[]` + crear UC con `sagaStep.role: step` |
+| `step.onSuccess` (este BC es `step.bc`) | Declarar ese evento en `published[]` |
+| `step.onFailure` (este BC es `step.bc`) | Declarar ese evento en `published[]` |
+| `step.compensation` (este BC es `step.bc`) | Declarar ese evento en `published[]` |
+| `step.onFailure` de un paso POSTERIOR a éste (cuyo fallo requiere revertir este paso) | Declarar ese evento en `consumed[]` + crear UC con `sagaStep.role: compensation` |
+
+> **Regla crítica — los listeners de compensación NO se generan automáticamente:**
+> El campo `compensation` en `system.yaml` indica qué evento *confirma* que este paso fue
+> revertido, pero NO crea el listener que escucha el evento de fallo de un paso posterior.
+> Ese listener debe declararse explícitamente en `consumed[]` de este BC.
+>
+> Ejemplo: si `inventory` tiene `compensation: StockReleased`, y el disparador de esa
+> compensación es `PaymentFailed` (el onFailure de `payments`), entonces `inventory` debe
+> declarar `PaymentFailed` en su `consumed[]` con un UC (`ReleaseStock`, `sagaStep.role: compensation`).
+> Sin esa declaración, el generador no crea ningún listener para `PaymentFailed` en `inventory`.
+
+#### Payload mínimo por tipo de evento de saga
+
+| Tipo de evento | Campos obligatorios en payload |
+|----------------|-------------------------------|
+| Trigger (`triggeredBy`) consumido | `{correlationId-field}` (ej: `orderId`) + campos que el UC necesita para su lógica de dominio |
+| `onSuccess` publicado | `{correlationId-field}` + ID del recurso creado/modificado (ej: `reservationId`) |
+| `onFailure` publicado | `{correlationId-field}` + código o mensaje de fallo |
+| Compensation trigger consumido | `{correlationId-field}` + ID del recurso a revertir (ej: `reservationId`) |
+| Confirmation de compensación publicado | `{correlationId-field}` + ID del recurso revertido |
+
+> El `correlationId` (ej: `orderId`) **nunca se regenera** en ningún paso — viaja en
+> el `EventEnvelope.metadata().correlationId()` que el generador propaga automáticamente.
+> En el `payload[]` del YAML, declara el campo de negocio que actúa como correlationId
+> (ej: `orderId: Uuid`). El `correlationId` técnico del envelope es distinto y auto-inyectado.
+
+#### Ejemplo — BC `inventory` en `CheckoutSaga`
+
+> **Patrón de compensación:** `inventory` reserva primero (paso 1), luego `payments` cobra
+> (paso 2). Si payments falla, inventory —que ya ejecutó— debe liberar la reserva.
+> El disparador de compensación para inventory es el `onFailure` del paso POSTERIOR que falló.
+
+```yaml
+# system.yaml (fragmento)
+sagas:
+  - name: CheckoutSaga
+    steps:
+      - order: 1
+        bc: inventory
+        triggeredBy: OrderPlaced            # inventory consume esto
+        onSuccess: StockReserved            # inventory publica esto
+        onFailure: StockReservationFailed   # inventory publica esto si falla
+        compensation: StockReleased         # inventory publica esto al revertir
+      - order: 2
+        bc: payments
+        triggeredBy: StockReserved          # payments consume esto
+        onSuccess: PaymentCaptured          # payments publica esto
+        onFailure: PaymentFailed            # payments publica esto si falla
+```
+
+En `inventory.yaml`:
+```yaml
+domainEvents:
+  published:
+    - name: StockReserved
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: reservationId         # ← ID del recurso creado; necesario para revertir
+          type: Uuid
+        - name: itemId
+          type: Uuid
+    - name: StockReservationFailed
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: reason
+          type: String
+    - name: StockReleased             # ← confirma que la compensación fue exitosa
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: reservationId
+          type: Uuid
+
+  consumed:
+    - name: OrderPlaced               # ← triggeredBy del paso 1
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: itemId
+          type: Uuid
+        - name: quantity
+          type: Integer
+    - name: PaymentFailed             # ← disparador de compensación (onFailure del paso 2 — payments)
+      payload:                        # DEBE declararse aquí aunque sea del paso posterior
+        - name: orderId
+          type: Uuid
+        - name: reservationId         # ← necesario para localizar qué revertir
+          type: Uuid
+```
+
+El UC correspondiente a `PaymentFailed` consumido:
+```yaml
+useCases:
+  - id: UC-INV-005
+    name: ReleaseStock
+    type: command
+    actor: system
+    trigger:
+      kind: event
+      event: PaymentFailed
+      channel: payments.payment.payment-failed
+    aggregate: StockItem
+    sagaStep:
+      saga: CheckoutSaga
+      order: 1
+      role: compensation
+    method: release
+    input:
+      - name: orderId
+        type: Uuid
+        source: event.orderId
+      - name: reservationId
+        type: Uuid
+        source: event.reservationId
+        loadAggregate: true
+    implementation: scaffold
+```
+
+---
+
 ## Fase 4: Especificación de Casos de Uso — {bc-name}-spec.md
 
 ### 4.1 Identificación de actores

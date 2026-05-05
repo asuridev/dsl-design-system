@@ -240,6 +240,69 @@ Cuando identifiques un saga, agrégalo en `sagas[]` del `system.yaml` (ver schem
 Los sagas **no** aparecen en el diagrama C4 — son flujos transversales de negocio, no
 elementos de la arquitectura de contenedores.
 
+#### Metodología de diseño de una saga en 5 pasos
+
+Aplicar en orden estricto — no nombrar eventos antes de terminar el paso 2.
+
+**Paso 1 — Definir el proceso en lenguaje de negocio:**
+Describir cada paso con: quién lo ejecuta, qué hace, qué resultado espera el negocio si el paso es exitoso.
+Ejemplo: *"(1) orders confirma el pedido. (2) payments captura el pago. (3) inventory reserva el stock."*
+
+**Paso 2 — Trazar el grafo de compensación ANTES de nombrar eventos:**
+Para cada paso que puede fallar, identificar:
+- ¿Qué BC ejecuta la compensación de ese paso?
+- ¿Qué evento dispara esa compensación?
+- ¿Qué evento confirma que la compensación fue exitosa?
+
+Si un paso no puede fallar o no modifica estado persistente, no necesita compensación.
+Registrar en una tabla antes de continuar:
+
+| Paso | Falla posible | BC compensador | Disparador de compensación | Confirmación |
+|------|--------------|----------------|---------------------------|--------------|
+| payments captura pago | PaymentFailed | payments | OrderCancelled (emitido por orders al cancelar) | PaymentRefunded |
+| inventory reserva stock | StockReservationFailed | inventory | PaymentFailed (emitido por payments) | StockReleased |
+
+**Paso 3 — Nombrar todos los eventos en una tabla global:**
+Cada evento es globalmente único, PascalCase, en pasado. Construir la tabla:
+
+| Paso | Evento de éxito | Evento de fallo | Evento de compensación |
+|------|----------------|----------------|------------------------|
+| 1 — orders | OrderPlaced | — | — |
+| 2 — payments | PaymentCaptured | PaymentFailed | PaymentRefunded |
+| 3 — inventory | StockReserved | StockReservationFailed | StockReleased |
+
+**Paso 4 — Escribir `system.yaml#/sagas` desde la tabla:**
+- `trigger.event` = evento del primer paso (generalmente emitido por el BC iniciador)
+- `steps[].triggeredBy` = evento de éxito del paso anterior (o el trigger para el paso 1)
+- `steps[].onSuccess` = evento de éxito de este paso
+- `steps[].onFailure` = evento de fallo de este paso (si puede fallar)
+- `steps[].compensation` = evento de compensación de este paso (si existe)
+
+**Paso 5 — Construir la matriz published/consumed por BC y verificar completitud:**
+
+Para cada BC participante, derivar qué publica y qué consume:
+
+| BC | Consume (triggeredBy / compensation-trigger) | Publica (onSuccess / onFailure / compensation) |
+|----|---------------------------------------------|-----------------------------------------------|
+| orders | — | OrderPlaced |
+| payments | OrderPlaced | PaymentCaptured, PaymentFailed, PaymentRefunded |
+| inventory | PaymentCaptured, PaymentFailed | StockReserved, StockReservationFailed, StockReleased |
+
+> **Regla crítica — los listeners de compensación no se generan automáticamente:**
+> Si el paso 2 de inventory tiene `compensation: StockReleased`, el evento que *dispara* esa
+> compensación es el `onFailure` del paso siguiente (ej: `PaymentFailed`). El BC `inventory`
+> **debe declarar explícitamente `PaymentFailed` en su `consumed[]` con un UC** (`ReleaseStock`).
+> El generador de código NO crea ese listener a partir del campo `compensation` de `system.yaml` —
+> solo lo usará para anotar el UC con `@SagaStep` si el UC ya existe y está declarado.
+> Sin esa declaración explícita, no hay listener y la compensación nunca se ejecuta.
+
+Checklist de completitud antes de avanzar al Paso 2 táctico:
+- [ ] Cada `triggeredBy` de cada paso → está en `consumed[]` del BC receptor con un UC con `sagaStep`
+- [ ] Cada `compensation` → el evento que lo *activa* está en `consumed[]` del BC compensador con un UC
+- [ ] El `correlationId` (ej: `orderId`) viaja en el payload de **todos** los eventos de la saga
+- [ ] El payload de cada evento de compensación incluye el ID del recurso a revertir (ej: `reservationId`)
+- [ ] `infrastructure.reliability.outbox: true` y `consumerIdempotency: true` activados en `system.yaml`
+
 ---
 
 ### 2.6 Auditoría de Completitud de Integraciones — OBLIGATORIA ANTES DE GENERAR ARTEFACTOS

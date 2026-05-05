@@ -351,6 +351,33 @@ ejecutar el test de las tres preguntas:
   puede inferir leyendo las integraciones en `integrations[]` (qué evento dispara qué)?
   - Orden del saga inconsistente con el flujo real de eventos → 🟡 ALERTA
 
+**D7 — Listeners de compensación declarados explícitamente**
+- Para cada paso con `compensation` definido: el evento que *dispara* esa compensación
+  (el `onFailure` del paso siguiente, o el `onFailure` del paso actual si hay rollback parcial)
+  debe tener una integración en `integrations[]` desde el BC emisor hacia el BC compensador.
+  - Compensación sin integración hacia el BC compensador → 🔴 ERROR: sin integración, el
+    generador no puede crear el listener de compensación. El campo `compensation` en el saga
+    indica qué evento *confirma* la reversión, pero NO genera el listener que la dispara.
+- Para cada paso con `compensation`, ¿el BC compensador (`step.bc`) es el mismo BC que emite
+  el evento de confirmación? Si es otro BC, debe existir la integración adicional.
+
+**D8 — correlationId consistente en todos los pasos del saga**
+- El campo de correlación del negocio (ej: `orderId`) debe declararse en los contratos de
+  eventos de todos los pasos de la saga (verificar `contracts[].name` y alinear con los
+  payloads del AsyncAPI de cada BC participante).
+  - Si en el Paso 2 ya están diseñados los BCs participantes: verificar que el campo de
+    correlación aparece en todos los payloads de eventos de la saga.
+  - Campo de correlación ausente en algún paso → 🟡 ALERTA: la cadena de saga perderá
+    trazabilidad entre pasos
+
+**D9 — Payload de compensación incluye ID de reversión**
+- Para cada `compensation` declarado en el saga: el BC que ejecuta la compensación necesita
+  saber **qué recurso revertir**, no solo cuál pedido falló. El payload del evento que *dispara*
+  la compensación (ej: `PaymentFailed`) debe incluir el ID del recurso creado en el paso
+  anterior (ej: `reservationId`), no solo el correlationId (ej: `orderId`).
+  - Si los contratos de integración no incluyen ese ID → 🟡 ALERTA: el BC compensador
+    no podrá localizar el recurso a revertir sin un lookup adicional
+
 ---
 
 ### Checklist E — Nomenclatura e Idioma
