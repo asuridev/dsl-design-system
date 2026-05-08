@@ -1549,12 +1549,14 @@ useCases:
     type: command
     validations:
       - id: VAL-001
-        expression: "order.getTotal() > 0"
+        expression: "el total del pedido debe ser mayor que cero"
         errorCode: ORDER_AMOUNT_INVALID
-        description: "Total must be positive"
+        description: "Rechazar pedidos con importe cero o negativo"
 ```
 
-Cada validación se traduce a un guard al inicio del `execute()`.
+Cada validación se traduce a un `// TODO` en el handler, que Fase 3 implementa en Java.
+`expression` es **siempre lenguaje natural** — nunca escribir código Java aquí.
+Ver criterios de cuándo añadir `validations[]` en `references/use-cases-design-decisions.md §3`.
 
 #### `lookups[]` — resolución de entidades antes de ejecutar
 
@@ -1568,7 +1570,10 @@ lookups:
     errorCode: ORDER_LINE_NOT_FOUND
 ```
 
-Mutuamente excluyente con `notFoundError` legacy.
+**Mutuamente excluyente con `notFoundError`** — usar `lookups[]` cuando hay más de un
+agregado a cargar o cuando los errores son distintos por agregado. Los `input[]` de un
+UC con `lookups[]` **no llevan** `loadAggregate: true` — los lookups son el mecanismo
+de carga. Ver criterios completos en `references/use-cases-design-decisions.md §1`.
 
 #### `input[]` — campos extendidos
 
@@ -1603,10 +1608,18 @@ pagination:
 ```yaml
 fkValidations:
   - field: customerId
-    bc: customers                        # cross-BC: requiere integrations.outbound[]
+    bc: customers                        # BC externo sin LRM → genera {Bc}ServicePort
     aggregate: Customer
     errorCode: CUSTOMER_NOT_FOUND
 ```
+
+El generador elige el mecanismo según el contexto:
+- **Sin `bc`** (o mismo BC) → `repo.findById().isEmpty()` inline.
+- **`bc` externo + LRM local** (`aggregate` declarado con `readModel: true` en este BC) → repositorio del LRM.
+- **`bc` externo sin LRM** → genera `CustomersServicePort.java` con `existsCustomer(UUID)`.
+
+En cualquier caso cross-BC, **exige** entrada en `integrations.outbound[]` para ese BC.
+Ver tabla de decisión completa en `references/use-cases-design-decisions.md §2`.
 
 #### `idempotency` (commands)
 
@@ -1630,6 +1643,10 @@ authorization:
 
 #### Multi-aggregate — `aggregates[]` + `steps[]`
 
+**Restricción:** solo válido cuando **todos los agregados viven en este BC** (misma DB,
+misma transacción `@Transactional`). Para operaciones que involucran BCs distintos,
+usar Saga en `system.yaml`.
+
 ```yaml
 aggregates: [Order, Invoice]
 steps:
@@ -1640,6 +1657,8 @@ steps:
     onFailure:
       compensate: Order.revertConfirmation
 ```
+
+Ver criterios detallados en `references/use-cases-design-decisions.md §6`.
 
 #### `bulk` — operaciones en lote
 

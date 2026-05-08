@@ -173,11 +173,11 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - Commands: `returns: Void | Optional[X] | <VO|projection>`.
 - **Queries: `returns` usa `{AggregateName}Response` para el DTO del agregado, o el nombre de una projection.** Escribir solo el nombre del agregado (ej: `Category`) genera un import inválido → error de compilación en el proyecto destino. Colecciones: `Page[{AggregateName}Response]`, `Page[{ProjectionName}]`.
 - **No declarar `derived_from` ni `derivedFrom` en useCases** — el generador rechaza claves desconocidas en `useCases[]`. La trazabilidad del UC ya viene dada por su `id` (UC-XXX-NNN) y por `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.event` (eventos). Para enlazar a reglas de PRD usar `rules: [RULE-ID, ...]`. `derivedFrom` solo aplica a artefactos derivados: `aggregates[].domainMethods[]`, `repositories[].queryMethods[]`, `aggregates[].properties[]` con `source: derived`, `projections[].properties[]` y `domainEvents[].payload[]` con `source: derived`.
-- `validations[]` (array): `id`, `expression` (expresión booleana en el lenguaje de implementación destino), `errorCode`, `description`.
-- `lookups[]`: `param` + (`aggregate` o `nestedIn`) + `errorCode`. Mutuamente excluyente con `notFoundError`.
+- `validations[]` (array): `id`, `expression` (**lenguaje natural** — describe la condición en términos de negocio; el generador emite `// TODO` con el texto y Fase 3 lo implementa en Java; **nunca escribir código Java aquí**), `errorCode`, `description`.
+- `lookups[]`: `param` + (`aggregate` o `nestedIn`) + `errorCode`. **Mutuamente excluyente con `notFoundError`**. Usar `lookups[]` cuando hay más de un agregado a cargar o cuando los errores son distintos por agregado; `notFoundError` cuando solo hay un agregado principal cargado por `loadAggregate: true`.
 - `input[]` extendido: `default`, `max`, `source: header` + `headerName`.
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
-- `fkValidations[].bc` — cross-BC; requiere `integrations.outbound[]`.
+- `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
 - `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: database|redis`.
 - `authorization`: `rolesAnyOf[]`, `ownership: { field, claim, allowRoleBypass }`.
 - Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
@@ -282,6 +282,7 @@ con preguntas agrupadas en una sola llamada.
 > Leer `references/canonical-types.md` para la tabla de tipos y sus validaciones implícitas.
 > Leer `references/validation.md` para el vocabulario completo de `validations` — cuándo usarlas, qué constraints están disponibles y cómo se traducen por plataforma. Aplicar `validations` en `properties[]` siempre que el dominio imponga restricciones que el tipo canónico no captura solo (rangos, patrones, mínimos de longitud, restricciones temporales).
 > Leer `references/relationship-types.md` para las reglas de relaciones.
+> Leer `references/use-cases-design-decisions.md` antes de diseñar la sección `useCases[]` — contiene los criterios de decisión para cada mecanismo de los use cases.
 
 ### 3.1 Estructura del archivo (v1)
 
@@ -1483,6 +1484,11 @@ Recorrer todas las properties de todos los agregados:
   - Ejemplo: `GET /products?status` → `Product.status` → `indexed: true`
 
 #### C.3 — Construir sección `useCases`
+
+> **Leer `references/use-cases-design-decisions.md` antes de construir esta sección.**
+> Contiene los criterios de cuándo usar `notFoundError` vs `lookups[]`, cuándo añadir
+> `fkValidations[]` (y qué ruta genera el generador), cómo redactar `validations[].expression`,
+> cuándo aplica multi-aggregate, cuándo `scaffold` vs `full`, y otros trade-offs clave.
 
 Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`, y por cada evento en `domainEvents.consumed[]`:
 
