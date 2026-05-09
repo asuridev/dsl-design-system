@@ -635,12 +635,34 @@ Estructura obligatoria con estas secciones en orden:
 
 ```
 system:           → system identity
+actors:           → (opcional) tipos de actor que interactúan con el sistema
 boundedContexts:  → BCs with aggregates (strategic level)
 externalSystems:  → external systems referenced in integrations
 integrations:     → communication map between BCs and externals
 sagas:            → (opcional) sagas por coreografía que cruzan 3+ BCs
 infrastructure:   → technology decisions from Step 1
 ```
+
+> **`actors[]` — Cuándo incluirlo:** Declarar `actors[]` cuando el sistema tiene 2 o más
+> tipos de actor distintos (customer, admin, system, etc.). Su presencia activa la
+> **validación G14** del generador: cada `useCases[].actor` en los YAML tácticos de
+> cada BC debe referenciar exactamente un nombre declarado aquí.
+> Cuando `actors[]` está ausente, el generador no valida los campos `actor` de los
+> casos de uso (comportamiento legacy — cualquier valor es aceptado sin verificación).
+>
+> Declarar `actors[]` desde el Paso 1 hace el diseño táctico más preciso: obliga al
+> diseñador a identificar quién ejecuta cada caso de uso y previene inconsistencias
+> entre el diseño estratégico y el táctico.
+>
+> ```yaml
+> actors:
+>   - name: customer      # kebab-case — referenciado en useCases[].actor
+>     description: Registered user making purchases and managing their orders.
+>   - name: admin
+>     description: Back-office operator managing catalog and inventory.
+>   - name: system
+>     description: Internal system-to-system calls (e.g. scheduled jobs, saga triggers).
+> ```
 
 **Defaults de infraestructura** (aplicar si el usuario no especifica):
 
@@ -716,6 +738,27 @@ Reglas del schema:
 
 El generador procesa los siguientes bloques opcionales. Declararlos solo
 cuando aporten valor concreto al diseño — no añadirlos por completar.
+
+#### `actors[]` — validación cruzada con el diseño táctico
+
+```yaml
+actors:
+  - name: customer          # kebab-case — referenciado en useCases[].actor
+    description: Registered user making purchases and managing their orders.
+  - name: admin
+    description: Back-office operator managing catalog and inventory.
+  - name: system
+    description: Internal system-to-system calls (scheduled jobs, saga triggers).
+```
+
+Cuándo declarar:
+- Siempre que el sistema tenga 2 o más tipos de actor (customer/admin/system).
+- Antes de comenzar el diseño táctico (Paso 2): obliga a que cada UC declare su actor.
+
+Efecto en el generador:
+- Activa la **validación G14**: si `actors[]` está declarado y un `useCases[].actor` en
+  algún `{bc}.yaml` no coincide con ningún nombre de esta lista → error bloqueante.
+- Si `actors[]` está ausente, la validación G14 se omite (comportamiento legacy).
 
 #### `externalSystems[].operations[]` — OBLIGATORIO si el sistema externo es referenciado
 
@@ -818,6 +861,7 @@ integrations:
 - Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para ACL, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
 - **INT-015 (validador bloqueante)**: `auth.type: oauth2-cc` requiere `tokenEndpoint` + `credentialKey`. El skill `ddd-step1-refine` lo verifica.
 - Si una integración no declara `auth`/`resilience`, el adaptador se genera sin anotaciones Resilience4j ni interceptor de auth.
+- **`auth.type: internal-jwt`**: reconocido por el generador pero **no genera ningún `RequestInterceptor`**. La propagación del JWT entre servicios es responsabilidad de un interceptor Feign global en la infraestructura compartida, fuera del alcance del generador. Usar `internal-jwt` documenta la intención de seguridad pero no produce código de interceptor automático.
 ### 3.2 system-spec.md
 
 Para cada BC, escribe una sección con esta estructura exacta:

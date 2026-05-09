@@ -476,7 +476,7 @@ Bloque `auth` opcional en `system.yaml.integrations[]` o globalmente bajo `infra
 
 ```yaml
 auth:
-  type: none | api-key | bearer | oauth2-cc | mTLS
+  type: none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
   valueProperty: <nombre-propiedad-config>     # api-key/bearer
   header: <header-name>                         # api-key/bearer
   tokenEndpoint: <url>                          # solo oauth2-cc
@@ -487,20 +487,33 @@ auth:
 - **INT-015**: si `auth.type: oauth2-cc`, faltan `tokenEndpoint` o `credentialKey` → 🔴 ERROR.
 - `auth.type: api-key` sin `valueProperty` y `header` → 🔴 ERROR.
 - `auth.type: mTLS` sin certificados configurados (al menos `valueProperty` apuntando al secreto del cert) → 🟡 ALERTA.
+- `auth.type: internal-jwt` → ✅ válido, pero **no genera ningún `RequestInterceptor`**. La propagación del JWT entre servicios es responsabilidad de un interceptor Feign global en infraestructura compartida. Documentar esta decisión en `notes`.
 
 Bloque `resilience` opcional:
 
 ```yaml
 resilience:
-  timeoutMs: <int>
-  connectTimeoutMs: <int>
-  retries: { maxAttempts: <int>, waitDurationMs: <int> }
-  circuitBreaker: { failureRateThreshold: <0-100> }
+  timeoutMs: <int>                   # timeout total de la llamada en ms
+  connectTimeoutMs: <int>            # timeout de conexión en ms (debe ser < timeoutMs)
+  retries:
+    maxAttempts: <int>               # > 1 para activar @Retry; si ≤ 1 o ausente → no se genera
+    waitDuration: 500ms              # STRING con unidad (ms/s/m) — NO entero "waitDurationMs"
+  circuitBreaker:
+    failureRateThreshold: <0-100>    # porcentaje de fallos para abrir el circuito
+    waitDurationInOpenState: 30s     # STRING con unidad — NO entero. Tiempo en estado abierto.
+    slidingWindowSize: 20            # opcional
+    minimumNumberOfCalls: 10         # opcional
+    permittedNumberOfCallsInHalfOpenState: 3   # opcional
 ```
+
+> **Formato de duraciones:** `waitDuration` y `waitDurationInOpenState` son **strings con
+> unidad** (`500ms`, `1s`, `30s`). Un entero como `500` sin unidad es inválido y el
+> generador lo ignorará silenciosamente — el error puede pasar desapercibido en revisión.
 
 - `retries.maxAttempts < 1` → 🔴 ERROR.
 - `circuitBreaker.failureRateThreshold` fuera de [0, 100] → 🔴 ERROR.
 - `connectTimeoutMs > timeoutMs` → 🔵 SUGERENCIA: invertido — connect siempre menor que total.
+- `waitDuration` o `waitDurationInOpenState` declarado como entero en vez de string con unidad → 🔴 ERROR: formato inválido, el generador no lo procesa.
 - Integración con sistema externo sin ningún bloque de resiliencia (ni global ni local) → 🟡 ALERTA: ACL externo sin timeout/retries explícitos depende de defaults del runtime.
 
 **G4 — Sagas y reliability**
@@ -525,6 +538,25 @@ Aunque el `scope` del evento es declarado en `bc.yaml domainEvents.published[]`,
 Si dos integraciones declaran el mismo `name` de contrato con `version` distinto:
 - Es válido siempre que el broker enrute por `version` (típicamente vía topic suffix o header) — registrar en `notes`.
 - Sin documentación → 🔵 SUGERENCIA: clarificar la estrategia de versionado.
+
+**G7 — `actors[]` y validación cruzada con diseño táctico (G14)**
+
+- Si `actors[]` está declarado en `system.yaml`:
+  - Cada valor de `actor:` en los `useCases[]` de cualquier `{bc}.yaml` ya diseñado debe coincidir con un `actors[].name` declarado aquí → si hay discrepancia 🔴 ERROR (G14 bloqueante).
+  - Un actor referenciado en `useCases[]` con nombre no declarado en `actors[]` → 🔴 ERROR: el generador lo rechaza en la validación cruzada.
+- Si `actors[]` está ausente y el sistema tiene BCs tácticos ya diseñados con casos de uso que tienen `actor` definido → 🔵 SUGERENCIA: declarar `actors[]` para habilitar la validación G14 y garantizar consistencia entre el diseño estratégico y táctico.
+- Sistema con 2 o más tipos de actor distintos (customer, admin, system) sin `actors[]` declarado → 🟡 ALERTA: sin `actors[]`, el generador no valida que cada UC tenga el actor correcto.
+
+```yaml
+# Ejemplo correcto de actors[] en system.yaml:
+actors:
+  - name: customer      # kebab-case — referenciado en useCases[].actor del bc.yaml
+    description: Registered user making purchases.
+  - name: admin
+    description: Back-office operator.
+  - name: system
+    description: Internal automated process (scheduler, saga trigger).
+```
 
 ---
 

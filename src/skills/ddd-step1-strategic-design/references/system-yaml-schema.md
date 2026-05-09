@@ -23,6 +23,20 @@ system:
                         # En general el sistema completo es "core" —
                         # los BCs individuales tienen su propia clasificación
 
+# ─── ACTORES ─────────────────────────────────────────────────────────────────
+# OPCIONAL — cuando se declara, el generador activa validación G14:
+# cada useCases[].actor en los YAML tácticos debe referenciar un actor aquí.
+# Cuando está ausente, la validación se omite (comportamiento legacy).
+# RECOMENDADO siempre que el sistema tenga 2 o más tipos de actor distintos.
+actors:
+  - name: customer          # string kebab-case — referenciado en useCases[].actor
+    description: >          # texto — rol del actor. Solo referencia humana.
+      Registered user making purchases and managing their orders.
+  - name: admin
+    description: Back-office operator managing catalog and inventory.
+  - name: system
+    description: Internal system-to-system calls (e.g. scheduled jobs, saga triggers).
+
 # ─── BOUNDED CONTEXTS ────────────────────────────────────────────────────────
 # Cada BC tiene: nombre, tipo, propósito y agregados estratégicos
 # NO incluir en Paso 1: value_objects, domain_events internos, invariantes
