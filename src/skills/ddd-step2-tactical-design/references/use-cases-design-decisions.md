@@ -621,3 +621,69 @@ La trazabilidad del UC ya viene dada por:
 | Propiedad de agregado computada | `aggregates[].properties[].source: derived` con `derivedFrom` y `expression` |
 | Propiedad de projection computada | `projections[].properties[].derivedFrom: [campo1, campo2]` |
 | Campo de payload de evento derivado | `domainEvents.published[].payload[].source: derived` |
+
+---
+
+## §20 — Use cases con `trigger.kind: event`: patrones de diseño
+
+### Relación con `domainEvents.consumed[]`
+
+Cada UC con `trigger.kind: event` tiene una contraparte en `domainEvents.consumed[]`. El binding se hace:
+
+- **Forma A (preferida):** el UC declara `consumes: {EventName}` y `consumed[]` no tiene `command:`. El generador busca el UC automáticamente.
+- **Forma B:** el UC existe igual, pero `consumed[]` declara explícitamente `command: {UCName}`. Útil para routing personalizado con `queueKey`/`topicKey` o filtrado con `filterExpr`.
+
+### Cuándo declarar `input[]` en un UC de evento
+
+`input[]` es **opcional** para UCs con `trigger.kind: event`. El generador mapea los campos del payload al domainMethod por coincidencia de nombres cuando no hay `input[]`.
+
+Declarar `input[]` solo cuando:
+1. Necesitas `loadAggregate: true` para cargar el agregado desde el payload.
+2. El tipo de un campo en el payload difiere del tipo esperado por el domainMethod.
+
+```yaml
+# Con input[] — cuando se necesita loadAggregate
+trigger:
+  kind: event
+  consumes: StockReservationFailed
+input:
+  - name: orderId
+    type: Uuid
+    required: true
+    source: body        # "body" = campo del payload del evento
+    loadAggregate: true # activa findById(orderId) antes de invocar el método
+```
+
+### Patrón de ACK y diseño de excepciones en UCs de evento
+
+El listener del broker implementa este patrón de ACK:
+- `DomainException` → `basicNack(requeue=false)` → mensaje va a **DLQ inmediatamente** (sin reintentos)
+- `RuntimeException` (u otras no-Domain) → el broker reintenta según su política
+- Éxito → `basicAck`
+
+**Implicación para el diseño:**
+
+| Señal | Decisión |
+|---|---|
+| El UC puede fallar por condiciones transitorias (red, BD no disponible) | Las excepciones de infraestructura son `RuntimeException` → el broker reintentará. No lanzar `DomainException` para fallas transitorias |
+| El UC falla por una violación de negocio permanente (el mensaje ya no es procesable) | `DomainException` → va a DLQ directamente. El error es terminal — no se reintentará |
+| El UC tiene `consumerIdempotency: true` en system.yaml | Ver §18 — el primer fallo es potencialmente definitivo. Diseñar el UC como internamente resiliente |
+
+### Event-triggered UC con `readModel: true` (Local Read Model)
+
+Cuando el UC actualiza un `readModel`, usar `method: upsert` (no un `domainMethod` del agregado):
+
+```yaml
+- id: UC-CAT-019
+  name: HandleProductActivated
+  type: command
+  actor: system
+  trigger:
+    kind: event
+    consumes: ProductActivated
+  aggregate: ProductSnapshot     # readModel: true en aggregates[]
+  method: upsert                 # operación especial — no en domainMethods[]
+  implementation: full           # el generador puede generar upsert completo
+```
+
+`implementation: full` es válido para `readModel: true` con `method: upsert` cuando todos los campos del payload se mapean directamente a propiedades del snapshot.

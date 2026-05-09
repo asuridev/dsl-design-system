@@ -143,13 +143,16 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `published[]`:
   - `version` (entero ≥1, default 1).
   - `scope: internal|integration|both` (default `both`).
-  - `broker: { partitionKey, headers, retry: { maxAttempts, backoff: fixed|exponential, initialMs, maxMs }, dlq: { afterAttempts, target } }`.
-  - `payload[].source: aggregate|param|timestamp|constant|auth-context|derived` con sus campos auxiliares (`field`, `param`, `value`, `claim`, `derivedFrom`/`expression`).
-  - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`.
+  - `broker: { partitionKey, headers, retry: { maxAttempts, backoff: fixed|exponential, initialMs, maxMs }, dlq: { afterAttempts, routingKey, queueName } }`. ⚠️ Claves fuera de la whitelist `{partitionKey, headers, retry, dlq}` abortan el build con GEN-ERROR. **`dlq.target` no existe** — usar `routingKey` (routing-key RabbitMQ) o `queueName` (topic DLQ Kafka). `broker.retry` se parsea pero no genera código — sin efecto en artefactos generados (reservado).
+  - `payload[].source` — valores válidos: `aggregate` | `param` | `timestamp` | `constant` | `derived`. Campos auxiliares: `field` (solo con `source: aggregate`, cuando el nombre del campo del payload difiere del campo en el agregado), `param` (alias opcional con `source: param`), `value` (obligatorio con `source: constant`). ⚠️ **PROHIBIDO: `source: auth-context` en payloads de eventos (INT-025 — aborta el build)**. Para incluir el actor que ejecutó la operación: declara el campo en el agregado como `readOnly: true, source: authContext` y úsalo en el payload con `source: aggregate, field: createdBy`.
+  - `EventMetadata` canónica auto-inyectada — **NO declarar manualmente** `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`. Si se declaran, el generador los filtra y emite WARN. Los consumidores acceden a ellos vía `EventMetadata`, no vía payload.
   - `allowHiddenLeak: true` — opt-in cuando un campo `hidden: true` aparece en payload de evento `integration` o `both`.
-- `consumed[]`:
-  - `retry` y `dlq` **NO se declaran aquí** — son configuración de infraestructura.
-    Configurar en `system.yaml` o archivos de entorno. El generador ignora estos campos con `GEN-WARN`.
+- `consumed[]` — **dos formas mutuamente excluyentes**:
+  - **Forma A (sin `command:`, preferida):** declarar solo `name` + `sourceBc` + `description`. El generador localiza automáticamente el UC con `trigger.kind: event, consumes: {name}` y deriva el binding completo. Usar cuando hay UC formal.
+  - **Forma B (con `command: {UCName}`):** binding explícito; requiere `payload[]`. Usar para compensadores de saga o adaptadores legacy sin UC formal. Campos exclusivos de Forma B: `queueKey` (override del routing-key RabbitMQ), `topicKey` (override del topic Kafka), `filterExpr` (expresión Java booleana — si `false` el listener descarta el mensaje sin error).
+  - `sourceBc` — validado contra `system.yaml` (INT-007 si no coincide). Siempre declarar.
+  - `producer` — solo Javadoc; puede coincidir con `sourceBc` o diferir si hay un intermediario.
+  - ⚠️ `retry` y `dlq` **NO se declaran en `consumed[]`** — son configuración de infraestructura. El generador los ignora con GEN-WARN.
 
 #### Event DTOs — shapes de eventos externos
 - `eventDtos[]` — sección de nivel superior para shapes de eventos consumidos de BCs externos.
@@ -248,8 +251,13 @@ Si el BC productor no incluye la versión en el evento, **cambiar a `upsertStrat
 o pedir que el productor agregue la versión al payload del evento antes de usar `versionGuarded`.
 
 #### Integrations — capacidades de plataforma
-- `auth.type: none|api-key|bearer|oauth2-cc|mTLS` con campos auxiliares (`valueProperty`, `header`, `tokenEndpoint`, `credentialKey`).
-  - **INT-015**: `oauth2-cc` requiere `tokenEndpoint` + `credentialKey`.
+- `auth.type` — valores y campos auxiliares requeridos por tipo:
+  - `none`: sin autenticación.
+  - `api-key`: `header` (nombre del header, default `X-Api-Key`) + `valueProperty` (clave Spring con el secreto).
+  - `bearer`: `valueProperty` (clave Spring con el token estático).
+  - `oauth2-cc`: `tokenEndpoint` + `credentialKey`. **INT-015**: ambos son obligatorios — el build falla si falta alguno.
+  - `mTLS`: sin campos adicionales.
+  - `internal-jwt`: declarativo puro — el generador no produce interceptor. Documenta que la integración confía en el JWT interno propagado. Sin campos adicionales.
 - `resilience` schema real: `{ circuitBreaker: { failureRateThreshold, waitDurationInOpenState, slidingWindowSize, minimumNumberOfCalls, permittedNumberOfCallsInHalfOpenState }, retries: { maxAttempts, waitDuration }, connectTimeoutMs, timeoutMs }`. Los valores de tiempo son **strings con unidad** (`"30s"`, `"500ms"`), no enteros.
 - Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience`.
 - Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para sistemas externos, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
@@ -371,6 +379,54 @@ en la tabla `processed_event` **antes** de despachar el use case, en una transac
 > de una nueva entrega del mismo mensaje para corregir un fallo previo.
 
 ---
+
+#### `source: param` vs `source: derived` en event payload — la frontera crítica
+
+| Señal | Decisión |
+|---|---|
+| El valor es calculable por el propio agregado usando **solo sus campos internos** (ej: `total = unitPrice * quantity`, `fullName = firstName + lastName`) | `source: derived` — el agregado lo computa sin datos externos |
+| El valor requiere consultar **otra entidad, proyección o servicio externo** para resolverse | `source: param` — el handler lo resuelve antes de llamar al domainMethod y lo pasa como parámetro |
+| El valor es el resultado de un `outgoingCall` declarado en el UC | `source: param` — el resultado se pasa vía `bindsTo` en `outgoingCalls[]` |
+| El valor es una constante fija en tiempo de diseño | `source: constant` + `value: "{literal}"` — obligatorio declarar `value:` |
+| El campo existe en el agregado y el nombre del payload coincide | `source: aggregate` (o simplemente omitir `source:` — es el valor por defecto) |
+
+> **⚠️ Error crítico (INT-026):** si un campo del payload usa `source: param`, el parámetro DEBE existir en `aggregates[].domainMethods[{method}].params[]`. Si no existe, el generador emite `null` silenciosamente — el evento lleva un campo nulo sin error de build ni de compilación.
+
+> **⚠️ PROHIBIDO:** `source: auth-context` está prohibido en payloads de eventos (INT-025 — aborta el build). Para capturar el actor que ejecutó la acción, declara el campo con `readOnly: true, source: authContext` en el agregado y resuélvelo en el payload con `source: aggregate, field: createdBy`.
+
+---
+
+#### `consumed[]` Forma A vs Forma B — ¿cuándo declarar `command:`?
+
+**Forma A (sin `command:`)** — El generador localiza automáticamente el UC con `trigger.kind: event, consumes: {EventName}`:
+
+| Señal | Decisión |
+|---|---|
+| Hay un UC formal en `useCases[]` con `trigger.kind: event` para este evento | ✅ Forma A — solo declarar `name`, `sourceBc`, `description` |
+| El evento activa exactamente un UC (el caso más común) | ✅ Forma A |
+
+**Forma B (con `command: {UCName}`)** — binding explícito; requiere `payload[]`:
+
+| Señal | Decisión |
+|---|---|
+| El handler procesa el evento sin UC formal (ej: paso de compensación de saga, adaptador legacy) | ✅ Forma B |
+| El routing-key o topic real difiere de la convención derivada del nombre del evento | ✅ Forma B + `queueKey` (RabbitMQ) o `topicKey` (Kafka) |
+| Solo algunos mensajes del canal deben procesarse según contenido del payload | ✅ Forma B + `filterExpr: "{expresión Java booleana}"` |
+
+> **`sourceBc` vs `producer`:** `sourceBc` es validado por el generador contra `system.yaml` (INT-007 si no coincide) — siempre declarar. `producer` es solo Javadoc en el listener — opcional, útil cuando el publicador efectivo es diferente al BC registrado en `system.yaml` (ej: un sistema intermediario).
+
+---
+
+#### `broker` hints en eventos publicados — ¿cuándo declarar cada campo?
+
+| Campo | Cuándo declararlo |
+|---|---|
+| `partitionKey: {field}` | Solo en **Kafka**: cuando el orden de eventos del mismo recurso importa (ej: `orderId` garantiza que todos los eventos de un pedido van al mismo partition y se procesan en orden) |
+| `headers: {k: v}` | Cuando el consumidor necesita filtrar mensajes sin deserializar el body (ej: `eventType`, `tenantId`) |
+| `retry: {maxAttempts, backoff}` | ⚠️ **Sin efecto en los artefactos generados** — el generador lo parsea pero no produce código de retry. Configurar reintentos en `system.yaml` |
+| `dlq: {afterAttempts, routingKey, queueName}` | Cuando el BC es responsable de configurar el dead-letter. `routingKey` (RabbitMQ) o `queueName` (Kafka). Se propaga a la configuración del consumidor que lo declare |
+
+> **⚠️ Whitelist estricta:** solo `partitionKey`, `headers`, `retry`, `dlq` son claves válidas en `broker:`. Cualquier clave desconocida aborta el build (GEN-ERROR). `broker.dlq.target` **no existe** — usar `routingKey` o `queueName` según el broker.
 
 ---
 

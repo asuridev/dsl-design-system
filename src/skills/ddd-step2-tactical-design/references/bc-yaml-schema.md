@@ -775,7 +775,9 @@ domainEvents:
           maxMs: 5000
         dlq:                         # dead-letter del lado publicador
           afterAttempts: 3
-          target: {exchange.routing-key | topic}
+          routingKey: {routing-key}  # RabbitMQ: routing key de la DLQ (ej: dead.catalog.product-activated)
+          queueName: {queue-name}    # Kafka: nombre del topic DLQ (ej: catalog.product-activated.dlq)
+                                     # ⚠️ `dlq.target` NO existe — el build falla si se usa
       payload:
         # ⚠️ NO declarar: eventId, eventType, eventVersion, occurredAt, sourceBc, correlationId, causationId.
         # El generador los inyecta automáticamente como EventMetadata (primer campo del record).
@@ -803,17 +805,38 @@ domainEvents:
           expression: "{expr}"          # solo cuando source: derived — expresión en lenguaje natural
 
   consumed:
-    - name: {EventName}
-      sourceBc: {bc-name}
+
+    # ── Forma A (sin `command:`, preferida) ───────────────────────────────
+    # El generador localiza automáticamente el UC con trigger.kind: event, consumes: {name}.
+    # Usar cuando el evento tiene un UC formal en useCases[]. Solo declarar name + sourceBc + description.
+    - name: {EventName}              # PascalCase. Mismo nombre del evento en el BC publicador.
+      sourceBc: {bc-name}            # BC publicador — validado contra system.yaml (INT-007 si no coincide)
+      producer: {bc-name}            # OPCIONAL — solo Javadoc; puede diferir de sourceBc si hay intermediario
       description: {efecto que produce este evento en este BC}
+      # ⚠️ NO declarar retry ni dlq en consumed[] — son config de infraestructura.
+      #    Configurar en system.yaml o archivos de entorno del proyecto.
+      #    El generador ignora estos campos con GEN-WARN.
+
+    # ── Forma B (con `command:`) ─────────────────────────────────────
+    # Binding explícito. Requiere `payload[]`. Usar para compensadores de saga o
+    # adaptadores legacy sin UC formal, o cuando se necesita routing/filter personalizado.
+    - name: {EventName}
+      sourceBc: {bc-name}            # validado contra system.yaml (INT-007)
+      producer: {bc-name}            # OPCIONAL — solo Javadoc
+      description: {efecto que produce este evento en este BC}
+      command: {UCName}              # ACTIVADOR Forma B — nombre del handler UC. Requiere payload[].
+      queueKey: {routing-key}        # OPCIONAL — override de routing-key RabbitMQ
+                                     # Default: derivado del nombre del evento en kebab-case
+      topicKey: {topic-name}         # OPCIONAL — override del topic Kafka
+                                     # Default: derivado del nombre del evento en kebab-case
+      filterExpr: "{booleano Java}"  # OPCIONAL — si false el listener descarta el mensaje sin error
       payload:
         - name: {field}
           type: {canonical-type | EventDtoName}
           # Usar EventDtoName (declarado en eventDtos[]) cuando el campo es un objeto
           # complejo que pertenece al BC productor (ej: List[OrderLineSnapshot]).
       # ⚠️ NO declarar retry ni dlq en consumed[] — son config de infraestructura.
-      #    Configurar en system.yaml o archivos de entorno del proyecto.
-      #    El generador ignora estos campos con GEN-WARN.
+      #    El generador los ignora con GEN-WARN.
 ```
 
 ---

@@ -1471,24 +1471,75 @@ domainEvents:
       description: >
         Emitted when a product transitions from DRAFT to ACTIVE status via
         UC-PRD-004. Triggers StockItem creation in inventory BC.
+      version: 1                    # opcional (default 1). Incrementar ante cambios breaking del payload.
+      scope: integration            # internal | integration | both (default both).
+                                    # integration: solo BCs externos. internal: solo listeners del mismo BC.
+                                    # both: ambos (más conservador cuando hay duda).
+      broker:                       # opcional — hints para el publicador
+        partitionKey: productId     # Kafka: garantiza orden de eventos del mismo producto
+        dlq:                        # whitelist estricta: afterAttempts, routingKey, queueName
+          afterAttempts: 3
+          routingKey: dead.catalog.product-activated   # RabbitMQ
+          # queueName: catalog.product-activated.dlq  # Kafka (alternativa)
       payload:
-        - name: productId       # siempre incluir el ID del agregado
+        - name: productId           # siempre incluir el ID del agregado
           type: Uuid
           required: true
+          # source: aggregate es el default — se puede omitir cuando el nombre coincide con el campo del agregado
         - name: name
           type: String(200)
           required: true
-        - name: categoryId      # FK que el consumidor puede necesitar sin hacer lookup
+          source: aggregate         # explícito: toma this.getName() del agregado
+        - name: categoryId          # FK que el consumidor puede necesitar sin hacer lookup
           type: Uuid
           required: true
-        - name: price           # snapshot del precio en el momento del evento
+        - name: price               # snapshot del precio en el momento del evento
           type: Money
           required: true
+        - name: createdBy           # campo readOnly+source:authContext en el agregado
+          type: String(200)
+          required: true
+          source: aggregate         # el agregado ya lo tiene (no usar source: auth-context — PROHIBIDO aqui)
+          field: createdBy          # field es necesario si el nombre del campo del payload difiere del agregado
+
+    - name: ProductPriceUpdated
+      description: >
+        Emitted when UC-PRD-006 successfully updates the price. Consumed by
+        orders BC to re-validate cart totals.
+      scope: both                   # listeners internos (invalidar caché interna) + BCs externos
+      allowHiddenLeak: false        # default false. Solo true cuando un campo hidden: true del agregado
+                                   # DEBE viajar en el payload por motivo justificado (datos de auditoría
+                                   # cifrada para consumidor interno). Siempre documentar la excepción.
+      payload:
+        - name: productId
+          type: Uuid
+          required: true
+        - name: newPrice
+          type: Money
+          required: true
+          source: param             # newPrice viene del parámetro del domainMethod updatePrice(newPrice: Money)
+                                    # ⚠️ INT-026: newPrice DEBE existir en domainMethods[updatePrice].params[]
+        - name: previousPrice
+          type: Money
+          required: false
+          source: aggregate         # previousPrice es un campo del agregado (price antes de la mutación)
+          field: price              # field: el nombre del campo en el agregado es 'price', no 'previousPrice'
+        - name: updatedAt
+          type: DateTime
+          required: true
+          source: timestamp         # Instant.now() al momento de emitir el evento
+        - name: discountCode
+          type: String(50)
+          required: false
+          source: constant
+          value: "PROMO2024"       # valor literal fijo (obligatorio cuando source: constant)
 
     - name: ProductDiscontinued
       description: >
         Emitted when a product reaches DISCONTINUED status. Triggers StockItem
         closure in inventory BC.
+      # ⚠️ NO declarar en payload[]: eventId, eventType, eventVersion, occurredAt, sourceBc,
+      #    correlationId, causationId. El generador los inyecta como EventMetadata automáticamente.
       payload:
         - name: productId
           type: Uuid
@@ -1497,36 +1548,86 @@ domainEvents:
 
 ---
 
+### Reglas del payload de `published`
+
+| `source:` | Significado | Campo auxiliar requerido |
+|---|---|---|
+| `aggregate` (default) | `this.get{Field}()` del agregado raíz | `field:` si el nombre del payload difiere del campo en el agregado |
+| `param` | Parámetro del `domainMethod` | `param:` (alias opcional si el nombre difiere) ⚠️ INT-026: el param DEBE existir en `domainMethods[method].params[]` |
+| `timestamp` | `Instant.now()` al momento de emitir | — |
+| `constant` | Valor literal fijo | `value: "{literal}"` — **obligatorio** |
+| `derived` | Valor computado por el agregado a partir de sus propios campos | `derivedFrom` / `expression` (documentación para Fase 3) |
+| `auth-context` | ⚠️ **PROHIBIDO** (INT-025 — aborta el build) | — |
+
+---
+
 ### `consumed` — eventos de otros BCs que este BC procesa
+
+**Dos formas disponibles:**
+- **Forma A (sin `command:`):** Solo declarar `name` + `sourceBc` + `description`. El generador localiza automáticamente el UC con `trigger.kind: event, consumes: {name}`. Preferida cuando hay UC formal.
+- **Forma B (con `command: {UCName}`):** Binding explícito con `payload[]`. Para compensadores de saga, adaptadores legacy o cuando se necesita `queueKey`/`topicKey`/`filterExpr`.
 
 Campos de cada evento consumido:
 
 | Campo | Descripción |
 |---|---|
-| `name` | PascalCase en tiempo pasado. Nombre del evento tal como lo publica el BC emisor. Debe coincidir con el `name` en `contracts` de `system.yaml` para las integraciones `channel: message-broker` donde este BC es el `to`. |
-| `sourceBc` | kebab-case. BC que publica este evento. Debe existir en `system.yaml`. |
-| `description` | Qué efecto produce este evento en este BC — qué agregado se actualiza o qué use case se dispara. |
-| `payload` | Campos que llegan con el evento. Deben reflejar exactamente el payload del evento en el BC emisor. Siempre obligatorio — todo evento consumido debe tener un UC asociado. |
+| `name` | PascalCase en tiempo pasado. Nombre del evento tal como lo publica el BC emisor. Debe coincidir con el `name` en `contracts` de `system.yaml`. |
+| `sourceBc` | kebab-case. BC que publica este evento. **Validado contra `system.yaml`** — INT-007 si no coincide. |
+| `producer` | Opcional. Solo Javadoc en el listener. Útil si el publicador efectivo difiere del BC registrado en `system.yaml`. |
+| `description` | Qué efecto produce este evento en este BC. |
+| `command` | Solo Forma B. Nombre del UC handler. Activa el binding explícito. |
+| `queueKey` | Solo Forma B. Override del routing-key RabbitMQ (default: derivado del nombre del evento). |
+| `topicKey` | Solo Forma B. Override del topic Kafka (default: derivado del nombre del evento). |
+| `filterExpr` | Solo Forma B. Expresión Java booleana — si `false`, el listener descarta el mensaje sin error. |
+| `payload` | Solo Forma B. Campos que llegan con el evento. Deben reflejar el payload del BC emisor. |
 
 ```yaml
   consumed:
 
     # Evento con UC — el BC ejecuta lógica de dominio al recibirlo
     - name: StockUpdated
-      sourceBc: inventory       # inventory es quien publica este evento
+      sourceBc: inventory       # validado contra system.yaml — INT-007 si no coincide
+      producer: inventory       # OPCIONAL — solo Javadoc. Útil si el publicador efectivo
+                                # es distinto al BC registrado en system.yaml.
       description: >
         Updates the isAvailable flag on the CatalogProductSnapshot local read
         model when inventory reports a stock status change. Triggers UC-CAT-010.
+      # ⚠️ NO declarar retry ni dlq — el generador los ignora con GEN-WARN.
+
+    # ── Forma B (con `command:`) ──────────────────────────────────────────────
+    # Binding explícito. Usar para compensadores de saga o cuando se necesita
+    # routing/filter personalizado. Requiere `payload[]`.
+    - name: OrderPlaced
+      sourceBc: orders
+      description: >
+        Reserves stock for each line of the new order (saga step, no formal UC).
+      command: ReserveStockForOrder   # ACTIVADOR Forma B — nombre del UC handler
+      queueKey: orders.order.placed   # override del routing-key RabbitMQ
+      # topicKey: orders.order.placed # alternativa para Kafka
+      filterExpr: "payload.totalLines > 0"  # descarta pedidos sin líneas (expresión Java booleana)
       payload:
-        - name: productId
+        - name: orderId
           type: Uuid
           required: true
-        - name: available
-          type: Boolean
+        - name: lines
+          type: List[OrderLineSnapshot]  # declarado en eventDtos[] de este BC
           required: true
 
 
 ```
+
+---
+
+### Forma A vs Forma B: cuándo usar cada una
+
+| Criterio | Forma A (sin `command:`) | Forma B (con `command:`) |
+|---|---|---|
+| Hay UC formal con `trigger.kind: event` | ✅ Preferida | ❌ Innecesaria |
+| Compensador de saga o handler sin UC formal | ❌ No aplica | ✅ Obligatoria |
+| El routing-key/topic difiere de la convención estándar | ❌ No soportado | ✅ `queueKey`/`topicKey` |
+| Filtrar mensajes según contenido del payload | ❌ No soportado | ✅ `filterExpr` |
+
+> **`sourceBc` vs `producer`:** `sourceBc` es validado por el generador contra `system.yaml` (INT-007 si no coincide) — siempre declarar. `producer` es solo Javadoc en el listener — solo añadir cuando el publicador efectivo es diferente al BC registrado en `system.yaml`.
 
 ---
 
