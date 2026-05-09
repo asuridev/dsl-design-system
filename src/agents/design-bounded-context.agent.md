@@ -63,6 +63,7 @@ Generar en orden:
 1. **bc.yaml v1** — secciones: `bc`, `type`, `description`, `enums`, `valueObjects`, `aggregates`, `integrations`, `domainEvents`
    - `domainRules`: incluir `id` y `description`. Incluir `type` si es inequívoco.
    - No incluir aún: `useCases`, `repositories`, `errors`
+   - Para cada `domainMethods[]`: el método `create` **debe declarar `returns: {NombreAgregado}`** (nunca `void`) — el build falla con error S23 si es `void` o distinto.
 2. **bc-spec.md** — casos de uso por actor, derivados del yaml v1
 3. **bc-flows.md** — flujos Given/When/Then. Antes de escribir: identificar todos los UCs scaffold y construir la matriz de cobertura. Cada UC scaffold debe tener ≥1 FL-ID planificado.
 4. **diagrams/** — calcular el inventario exacto antes de crear archivos:
@@ -82,11 +83,18 @@ Generar en orden:
 
 Reescribir bc.yaml completando:
 8. `domainRules`: asignar `type` y `errorCode` a todas las reglas
+    > ⚠️ `condition` y `state` no son claves válidas en `domainRules[]` — el generador rechaza ambas con error. La condición va en `description` (texto para Fase 3); el estado terminal es implícito en `type: terminalState`.
 9. Properties: marcar `unique: true` e `indexed: true` según reglas y query params GET
 10. `useCases[]`: construir cada UC con todos los campos requeridos (`id`, `name`, `type`, `actor`, `trigger`, `aggregate`, `method`, `rules`, `notFoundError`, `fkValidations`, `implementation`, `sagaStep` si aplica)
     > ⚠️ `repositoryMethod` y `emits` no son campos de `useCases[]`: `repositoryMethod` fue eliminado (la persistencia la infiere el generador) y `emits` fue movido a `aggregates[].domainMethods[]`.
+    > ⚠️ Queries: `returns` debe ser `{AggregateName}Response` (no solo el nombre del agregado) — escribir solo `Category` genera un import inválido → error de compilación. Para colecciones: `Page[{AggregateName}Response]`.
+    > ⚠️ `fkValidations[]`: los campos correctos son `param` (no `field`) y `error` (no `notFoundError`) — el generador rechaza los nombres incorrectos con 🔴 ERROR.
+    > ⚠️ `idempotency.storage`: único valor válido es `cache` — los valores `database` y `redis` están deprecados y el generador los rechaza.
+    > ⚠️ `pagination.direction`: debe ser `ASC` o `DESC` en mayúsculas — el generador mapea el valor literalmente al enum del runtime; `asc`/`desc` minúsculas abortan el build.
 11. `repositories[]`: derivar métodos desde las 4 fuentes (implicit, domainRules uniqueness, openapi GET params, crossAggregateConstraint)
-12. `errors[]`: declarar todos los códigos con `httpStatus` — incluir todos los `notFoundError`, `fkValidations.notFoundError` y `errorCode` de domainRules
+    > ⚠️ Listados con filtros (GET con query params) → declarar en `queryMethods[]`, **no** en `methods[]`. Para parámetros de búsqueda que no coinciden con una propiedad del agregado (ej: `search`, `q`), declarar `filterOn[]` + `operator` — sin ellos el generador no puede construir la cláusula WHERE y aborta con 🔴 ERROR.
+    > ⚠️ ReadModels (`readModel: true`): solo admiten `findById`, `findBy{unique}` y `upsert` — **nunca `save` ni `delete`**.
+12. `errors[]`: declarar todos los códigos con `httpStatus` — incluir todos los `notFoundError`, `fkValidations[].error` y `errorCode` de domainRules
 
 **Al terminar Etapa C, no presentar resumen al usuario. Pasar inmediatamente a Fase 2.**
 
@@ -111,7 +119,7 @@ Verificar en orden:
 - `triggeredBy` en enums → UC-IDs válidos en `useCases[]`
 - `domainRules.errorCode` → response 4xx existente en OpenAPI
 - UC scaffold → flujo dedicado en flows.md (no negociable)
-- `notFoundError` y `fkValidations.notFoundError` → entrada en `errors[]` con httpStatus 404
+- `notFoundError` y `fkValidations[].error` → entrada en `errors[]` con httpStatus 404
 - Flags `unique`/`indexed` correctamente asignados
 - Canales AsyncAPI consumidos → coinciden exactamente con system.yaml `contracts[].channel`
 

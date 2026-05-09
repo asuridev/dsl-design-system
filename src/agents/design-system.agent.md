@@ -101,6 +101,10 @@ Para cada BC Core que tenga agregados con ciclo de vida (estados ACTIVE/DISCONTI
 - ¿Algún BC Core depende de un BC Supporting? (inversión de dependencia — señal de alerta)
 - ¿Alguna integración sync se usa en un flujo de alto volumen o sin necesidad de respuesta inmediata? → considerar cambiar a async
 
+**Dependencias de datos autoritativos (snapshot at write time):**
+- Para cada agregado con campos que representen valores "congelados" al momento de la transacción — monetarios (precio de venta, monto total, tarifa vigente) o de identidad (dirección de entrega, nombre del cliente al pedido) — ¿existe una integración `customer-supplier / http` desde el BC consumidor hacia el BC autoritativo de ese valor?
+  - Campo snapshot sin integración declarada → 🔴 ERROR: para datos monetarios, riesgo de fraude (OWASP A04); para datos de identidad, riesgo de entrega fallida o inconsistencia en tracking.
+
 **Naming de contratos message-broker:**
 - ¿Todos los `contracts[].name` en integraciones `channel: message-broker` están en inglés PascalCase?
 - Un mismatch (`PedidoConfirmado` en lugar de `OrderConfirmed`) es un gap táctico — corregir ahora
