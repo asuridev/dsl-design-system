@@ -189,8 +189,17 @@ infrastructure:
 
   reliability:          # OPCIONAL — patrones de robustez de eventos
     outbox: false       # patrón outbox para publicación at-least-once de eventos
+    outboxRetentionDays: 7       # OPCIONAL — entero ≥ 1. Días de retención de filas
+                                 # publicadas en `outbox_event`. Sin este campo, la tabla
+                                 # crece indefinidamente; el generador NO produce código
+                                 # de purga. Activar en producción siempre que outbox: true.
     consumerIdempotency: false   # idempotencia automática en consumidores
                                  # ACTIVAR siempre que existan sagas[]
+    processedEventRetentionDays: 14  # OPCIONAL — entero ≥ 1. Días de retención de filas
+                                     # en `processed_event`. Sin este campo, la tabla crece
+                                     # indefinidamente; el generador NO produce código de purga.
+                                     # Activar en producción siempre que consumerIdempotency: true.
+                                     # El valor típico debe superar el max-delivery-timeout del broker.
 
   integrations:         # NO IMPLEMENTADO EN EL GENERADOR (reservado para uso futuro)
                         # El campo infrastructure.integrations.defaults NO es leído por

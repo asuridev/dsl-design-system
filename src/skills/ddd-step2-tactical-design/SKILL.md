@@ -122,12 +122,19 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `softDelete: true` (en agregado o entidad). Inyecta `deletedAt`. Resolución vía `softDelete` qualifier (`countNonDeletedBy*`).
 - Auto equals/hashCode/toString por id (no declarar manualmente).
 - `domainRules[].type` whitelist:
-  - `uniqueness` — **obligatorios `field` (o `fields[]`) + `errorCode`**; opcional `constraintName: snake_case_index`. Sin `field` el reader aborta el build (no sabe qué columna lleva la restricción de unicidad).
-  - `statePrecondition` — siempre con `errorCode`.
-  - `terminalState` — `errorCode` traduce al error de transición inválida del runtime destino.
-  - `sideEffect` — sin error visible al cliente; documentado en flows.md.
-  - `deleteGuard` — requiere `targetAggregate` + `targetRepositoryMethod`.
-  - `crossAggregateConstraint` — requiere `targetAggregate` + `field` + `expectedStatus`.
+  - `uniqueness` — `errorCode` requerido. `field` (camelCase, referencia a una propiedad del agregado): opcional pero **muy recomendado** — sin `field` el generador emite un TODO enriquecido en el handler (no aborta el build). Con `field`: genera guardia proactiva en handler (`findBy{Campo}` pre-check). Con `field` + `constraintName` (snake_case): además genera mapeo reactivo de `DataIntegrityViolationException`. **`constraintName` requiere `field`** — el build falla si `constraintName` está sin `field`. ⚠️ `fields[]` (plural) no existe — solo `field` (singular) está en la whitelist.
+  - `statePrecondition` — siempre con `errorCode`. Genera TODO enriquecido en el handler; la condición concreta la implementa Fase 3.
+  - `terminalState` — `errorCode` traduce al error de transición inválida. No declarar transiciones FROM el estado terminal en el enum.
+  - `sideEffect` — **sin `errorCode`** (el generador no emite error visible al cliente). El generador no produce código ejecutable — es anotación de diseño pura para Fase 3.
+  - `deleteGuard` — requiere `targetAggregate` (PascalCase) + `targetRepositoryMethod` (camelCase). Ambos deben declararse **juntos** o ninguno — el build falla si solo uno está presente. Sin ellos: TODO enriquecido.
+  - `crossAggregateConstraint` — requiere `targetAggregate` + `field` + `expectedStatus`. Los **tres deben declararse juntos** — el build falla si alguno de los tres está sin los otros dos.
+- `domainMethods[]` — métodos de comportamiento invocables por command UCs:
+  - `name` (camelCase) — referenciado exactamente por `useCases[].method`.
+  - `signature` (string DSL, **formato preferido**): `"methodName(param1: Type, param2?): ReturnType"`. Parámetros sin `:Type` → el generador resuelve el tipo buscando una propiedad con el mismo nombre en el agregado. Parámetros con `?` → opcionales.
+  - `description` (texto libre) → genera **Javadoc** en el método Java. Añadir siempre.
+  - `returns` — obligatorio `void` o el nombre del agregado. **Para el método `create`: DEBE ser el nombre del agregado** — el build falla con error S23 si es `void` o distinto.
+  - `emits` — string (evento único) o lista YAML de strings; cada entrada debe existir en `domainEvents.published[]`.
+  - Formato alternativo: `params: [{name, type}]` (válido pero menos explícito que `signature`). Solo usar si el contexto hace a `signature` difícil de leer.
 
 #### Value Objects
 - `immutable: true` — marca el VO como inmutable. El generador aplica `List.copyOf()` defensivo en listas. **Obligatorio para VOs `Snapshot`** (VOs que capturan el estado de una entidad para eventos de dominio). Un VO inmutable no tiene setters y sus colecciones son defensivamente copiadas en el constructor.
@@ -182,7 +189,7 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `input[]` extendido: `default`, `max`, `source: header` + `headerName`.
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
 - `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
-- `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: database|redis`.
+- `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`.
 - `authorization`: `rolesAnyOf[]`, `ownership: { field, claim, allowRoleBypass }`.
 - Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
 - `bulk: { itemType, maxItems, onItemError: continue|abort }`.
@@ -324,16 +331,46 @@ Esta sección responde la pregunta "¿cuándo debo usar X?" para cada caracterí
 
 ---
 
-#### `idempotency` — ¿cuándo declararlo?
+#### `idempotency` en commands HTTP — ¿cuándo declararlo?
 
 | Señal | Decisión |
 |---|---|
-| El command puede llegar duplicado por reintentos del cliente (pago, creación de pedido, transferencias) | ✅ `idempotency: { header: Idempotency-Key, ttl: PT24H, storage: database }` |
-| El command es consumido desde un evento de broker (no HTTP) | ❌ Omitir — la idempotencia de eventos se gestiona con `EventMetadata.eventId` en el consumer |
+| El command puede llegar duplicado por reintentos del cliente (pago, creación de pedido, transferencias) | ✅ `idempotency: { header: Idempotency-Key, ttl: PT24H, storage: cache }` |
+| El command es consumido desde un evento de broker (no HTTP) | ❌ Omitir — la idempotencia de eventos se gestiona a nivel de sistema con `consumerIdempotency: true` en `system.yaml` |
 | El command es un query o una lectura | ❌ Omitir |
 | El command es idempotente por naturaleza (PATCH que solo actualiza un campo simple) | ❌ Omitir — no hay ganancia y agrega complejidad |
 
-> Usar `storage: redis` solo si el proyecto tiene Redis en la infraestructura declarada en `system.yaml`. Usar `storage: database` por defecto.
+> Usar `storage: cache` (único valor soportado). El provider concreto de caché (Redis, Caffeine, etc.) se configura en `dsl-springboot.json` con la clave `cacheProvider` — no en el YAML de diseño.
+
+---
+
+#### Diseño de use cases con `trigger.kind: event` cuando `consumerIdempotency: true`
+
+Cuando el sistema activa `infrastructure.reliability.consumerIdempotency: true` en `system.yaml`,
+el generador produce una guardia de deduplicación (`IdempotencyGuard`) que registra el `eventId`
+en la tabla `processed_event` **antes** de despachar el use case, en una transacción separada
+(`REQUIRES_NEW`). Esto tiene una consecuencia crítica de diseño:
+
+**Si el use case falla después de que `IdempotencyGuard.tryRecord()` confirma:**
+- La fila `(handlerId, eventId)` persiste en `processed_event` aunque el use case no completó.
+- El broker reentregará el mensaje, pero la guardia lo descartará silenciosamente.
+- **El use case no se ejecutará en el siguiente reintento.**
+
+**Implicación directa para el diseño en Paso 2:**
+
+| Señal en el use case | Acción recomendada en el diseño |
+|---|---|
+| El UC llama a sistemas externos (HTTP, BBDD) que pueden fallar transitoriamente | Marcar `implementation: scaffold` y documentar en flows.md que el UC debe ser tolerante a fallos (ej: verificar estado antes de mutar, usar operaciones idempotentes) |
+| El UC escribe en múltiples repositorios | Declarar el UC con `implementation: scaffold` — la Fase 3 debe asegurar que cada escritura sea idempotente o que la primera escritura exitosa sea suficiente |
+| El UC es un paso de saga y su fallo dejaría el sistema en estado inconsistente | Declarar explícitamente en `{bc-name}-flows.md` el comportamiento esperado ante fallo permanente y si existe compensación manual |
+| El UC es naturalmente idempotente (ej: `upsert` de una proyección, actualización de estado que ya verifica el estado actual) | No requiere acción especial — el diseño ya garantiza que re-ejecutar produce el mismo resultado |
+
+> **En resumen:** con `consumerIdempotency: true`, el primer intento fallido de un use case
+> disparado por evento es potencialmente definitivo. Los use cases con `trigger.kind: event`
+> deben diseñarse para que su lógica de negocio sea internamente resiliente, no dependiente
+> de una nueva entrega del mismo mensaje para corregir un fallo previo.
+
+---
 
 ---
 

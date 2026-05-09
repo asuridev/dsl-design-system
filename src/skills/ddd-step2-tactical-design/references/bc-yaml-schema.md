@@ -62,6 +62,11 @@ valueObjects:
   - name: {Name}
     description: >
       {qué representa este VO y por qué existe como VO y no como primitivo}
+    immutable: true  # opcional — aplica List.copyOf() defensivo en constructores para
+                     # propiedades List[T]. Recomendado para VOs Snapshot (capturan estado
+                     # de entidades para eventos de dominio) y VOs compartidos en contextos
+                     # concurrentes. Un VO inmutable garantiza que ningún llamador puede
+                     # modificar la colección interna después de construir el VO.
     properties:
       - name: {field}
         type: {canonical-type}     # ver canonical-types.md
@@ -343,20 +348,99 @@ aggregates:
           # ... propiedades de la entidad (admiten validations: igual que aggregates[].properties[])
 
     domainRules:
+
+      # ── statePrecondition ──────────────────────────────────────────────────
+      # Condición para una transición de estado. El generador emite un TODO enriquecido
+      # en el handler con el nombre de la clase de error a lanzar.
+      # La condición concreta (ej: product.getStatus() == DRAFT) se implementa en Fase 3.
       - id: {PREFIX}-RULE-{NNN}
-        type: statePrecondition | uniqueness | terminalState | sideEffect | deleteGuard | crossAggregateConstraint
-        errorCode: {ERROR_CODE}       # referencia a errors[].code; omitir si no hay error propio
-        description: {invariante de negocio que el sistema debe hacer cumplir siempre}
+        type: statePrecondition
+        errorCode: {ERROR_CODE}        # requerido — referencia a errors[].code
+        description: {condición que debe cumplir el estado del agregado antes de la operación}
+
+      # ── uniqueness ────────────────────────────────────────────────────────
+      # Garantiza unicidad de un campo a nivel de sistema.
+      # Con `field` → genera guardia proactiva en el handler (findBy{Campo} pre-check).
+      # Con `field` + `constraintName` → ADEMÁS genera mapeo reactivo de
+      #   DataIntegrityViolationException (el constraint DB lanzado por concurrent inserts).
+      # Sin `field` → emite un TODO enriquecido en el handler (no aborta el build).
+      # `constraintName` solo es válido cuando `field` está declarado (el build falla si solo uno).
+      - id: {PREFIX}-RULE-{NNN}
+        type: uniqueness
+        errorCode: {ERROR_CODE}        # requerido
+        description: {campo} must be unique across all {Aggregate}s.
+        field: {campoDelAgregado}      # camelCase — debe coincidir con un name en properties[] del agregado
+        constraintName: {uk_nombre}    # snake_case — nombre del índice UNIQUE en la BD
+                                       # REQUIERE `field`. Activa el mapeo reactivo de
+                                       # DataIntegrityViolationException → errorCode.
+
+      # ── terminalState ──────────────────────────────────────────────────────
+      # Estado final sin transiciones de salida. El generador envuelve la llamada
+      # transitionTo() del enum en un try/catch que convierte
+      # InvalidStateTransitionException en el error declarado.
+      # NO declarar transiciones FROM este estado en el enum — es el mecanismo de bloqueo.
+      - id: {PREFIX}-RULE-{NNN}
+        type: terminalState
+        errorCode: {ERROR_CODE}        # requerido
+        description: A {aggregate} in {TERMINAL_STATE} cannot be modified.
+
+      # ── sideEffect ────────────────────────────────────────────────────────
+      # Acción complementaria documentada para Fase 3 (ej: registrar historial, notificar).
+      # ⚠️ NO lleva `errorCode` — no produce error visible al cliente.
+      # El generador NO emite código ejecutable — es una anotación de diseño pura.
+      - id: {PREFIX}-RULE-{NNN}
+        type: sideEffect
+        description: {efecto colateral documentado para la implementación en Fase 3}
+        # errorCode: PROHIBIDO en sideEffect — el generador lo ignora
+
+      # ── deleteGuard ───────────────────────────────────────────────────────
+      # Impide eliminar un registro que tiene dependientes activos en OTRO agregado.
+      # Con `targetAggregate` + `targetRepositoryMethod` → genera guardia ejecutable.
+      # Sin ellos → emite TODO enriquecido.
+      # ⚠️ `targetAggregate` y `targetRepositoryMethod` deben declararse JUNTOS o
+      #    ninguno — el build falla si solo uno está presente.
+      - id: {PREFIX}-RULE-{NNN}
+        type: deleteGuard
+        errorCode: {ERROR_CODE}        # requerido
+        description: Cannot delete {Aggregate} while it has associated {dependents}.
+        targetAggregate: {DependentAggregateName}    # PascalCase — agregado que tiene los dependientes
+        targetRepositoryMethod: {countMethodName}    # camelCase — método del repo que cuenta dependientes
+                                                     # Ejemplo: countActiveByCategoryId
+
+      # ── crossAggregateConstraint ──────────────────────────────────────────
+      # Invariante que requiere consultar el estado de OTRO agregado antes de ejecutar.
+      # Ejemplo: no se puede crear un Pedido si el Producto no está en estado ACTIVE.
+      # ⚠️ Los tres atributos (targetAggregate, field, expectedStatus) deben declararse
+      #    JUNTOS. El build falla si alguno de los tres está presente sin los otros dos.
+      - id: {PREFIX}-RULE-{NNN}
+        type: crossAggregateConstraint
+        errorCode: {ERROR_CODE}        # requerido
+        description: {invariante cross-agregado que debe validarse antes de continuar}
+        targetAggregate: {OtherAggregateName}        # PascalCase — agregado a consultar
+        field: {fieldName}                           # campo del otro agregado a verificar
+        expectedStatus: {EXPECTED_ENUM_VALUE}        # valor esperado (SCREAMING_SNAKE_CASE)
 
     # ─ Métodos de dominio (fuente de verdad para commands)
     # Solo en agregados que NO son readModel. Omitir si el agregado es readModel: true.
     domainMethods:
+
+      # ─ FORMATO CANÓNICO (preferido): signature como string DSL
       - name: {methodName}          # camelCase — referenciado desde useCases[].method
-        params:                     # omitir si el método no recibe parámetros externos
-          - name: {param}
-            type: {DSL-type}        # tipo canónico o declarado en enums/valueObjects
-        returns: void | {AggregateName}  # void si no devuelve nada; tipo del agregado para creaciones (factory)
-        emits: {NombreEvento | null}     # string: evento único; null: no emite
+        signature: "{methodName}(param1: Type, param2?): ReturnType"
+                                    # Firma completa del método en notación DSL:
+                                    #   - param sin hint → el generador resuelve el tipo
+                                    #     buscando una propiedad con el mismo nombre en el agregado
+                                    #   - param: Type → type hint explícito (ej: newPrice: Money)
+                                    #   - param? → parámetro opcional
+                                    #   - Sin parámetros → "methodName(): void"
+                                    #   - Factory → "create(field1, field2): AggregateName"
+        description: "{propósito del método en términos de negocio}"
+                                    # Genera Javadoc en el método Java producido.
+                                    # Añadir siempre — ayuda al equipo de Fase 3.
+        returns: void | {AggregateName}  # void si no devuelve nada; nombre del agregado para factories
+                                    # ⚠️ OBLIGATORIO para el método "create": returns DEBE ser el
+                                    # nombre del agregado (sin esto el build falla con error S23).
+        emits: {NombreEvento | null}     # string: evento único; null (o ausente): no emite
         # emits también puede ser lista cuando la operación emite múltiples eventos:
         # emits:
         #   - OrderCompleted
@@ -364,6 +448,14 @@ aggregates:
         #   - InventoryReserved
         # Cada entrada debe referenciar un evento en domainEvents.published[].
         # Usar lista cuando la operación coordina más de un cambio de estado observable.
+
+      # ─ FORMATO ALTERNATIVO: params como lista (válido; equivalente; menos conciso)
+      # - name: {methodName}
+      #   params:
+      #     - name: {param}
+      #       type: {DSL-type}        # tipo canónico o declarado en enums/valueObjects
+      #   returns: void
+      #   emits: null
 
 
 # ─── USE CASES ──────────────────────────────────────────────────────────────
@@ -385,7 +477,17 @@ useCases:
       - name: {param}
         type: {DSL-type}
         required: true | false
-        source: path | query | body | authContext
+        source: body | path | query | authContext | header | multipart
+        # body       → campo del JSON request body (POST/PUT/PATCH)
+        # path       → variable de path URL (ej: /products/{id})
+        # query      → query string parameter (ej: ?status=ACTIVE)
+        # authContext→ inyectado desde el JWT/SecurityContext (no del request)
+        # header     → cabecera HTTP; requiere además: headerName: {NombreHeader}
+        # multipart  → parte de un form-data; type DEBE ser "File"; opcionalmente:
+        #              partName: {nombre-del-part}
+        #              maxSize: {N}{B|KB|MB|GB}      # ej: 10MB
+        #              contentTypes: [image/png, image/jpeg]
+        #              ⚠️ multipart y body son mutuamente excluyentes en el mismo UC.
         loadAggregate: true         # opcional — activa findById({param}) antes de invocar el método.
                                     # Exactamente un param por UC puede declararlo; su tipo debe ser Uuid.
                                     # Omitir en commands de creación (domainMethods[method].returns != void).
@@ -414,16 +516,24 @@ useCases:
     actor: system
     trigger:
       kind: event
-      event: {NombreEvento}          # nombre del evento consumido
-      channel: {canal-asyncapi}      # canal AsyncAPI donde llega el evento
+      consumes: {NombreEvento}       # nombre canónico del evento (alias legacy: event:)
+      channel: {canal-asyncapi}      # opcional — canal AsyncAPI donde llega el evento
+      fromBc: {bc-name}              # opcional — BC que publica el evento
+      filter: "{expresión Java}"     # opcional — condición booleana; si false el mensaje se descarta
     aggregate: {AggregateName}
     method: {methodName}             # → aggregates[{AggregateName}].domainMethods[{methodName}]
                                      # Excepción — readModel: true: usar "upsert" o "delete"
+    # input[] — OPCIONAL para UCs de evento.
+    # Si se omite, el generador mapea automáticamente los campos del payload del evento
+    # con los params del domainMethod por coincidencia de nombres.
+    # Declarar input[] solo cuando necesitas `loadAggregate: true` o cuando quieres
+    # incluir campos con tipo que no coincide con el nombre del param del domainMethod.
     input:
-      - name: {param}
+      - name: {paramNombreIgualAlPayloadField}
         type: {DSL-type}
         required: true
-        source: event.{campo}        # extrae el campo del payload del evento
+        source: body                 # "body" = campo del payload del evento (único source válido
+                                     # para inputs de UCs event-triggered que declaran input[])
         loadAggregate: true          # opcional — activa findById({param}) antes de invocar el método
     rules: [{RULE-ID}, ...]
     notFoundError: [{ERROR_CODE}]    # omitir cuando no aplica
@@ -747,14 +857,14 @@ bc → type → description → enums → valueObjects → eventDtos → project
 
 ## Tipos de domainRules
 
-| type | Cuándo usarlo | Genera |
-|------|--------------|--------|
-| `statePrecondition` | Condición para transición de estado (DRAFT → ACTIVE) | Guard en método de dominio |
-| `uniqueness` | Campo debe ser único en todo el repositorio | Índice UNIQUE en DB + `findBy{Campo}` en repositorio |
-| `terminalState` | Estado sin transiciones salientes | Sin método de transición |
-| `sideEffect` | Acción que ocurre como consecuencia (ej: registrar historial) | **Ninguno** — el generador no emite código (`emptyResult()`). Anotación de diseño para Fase 3. |
-| `deleteGuard` | Condición para permitir eliminación física | Guard en use case de delete + método `delete` en repositorio |
-| `crossAggregateConstraint` | Invariante que requiere consultar otro agregado | Método de query en repositorio del otro agregado |
+| type | Cuándo usarlo | Sub-atributos propios | Genera |
+|------|--------------|----------------------|--------|
+| `statePrecondition` | Condición previa para transición de estado (ej: DRAFT → ACTIVE) | — | TODO enriquecido en handler con clase de error; la condición concreta la implementa Fase 3 |
+| `uniqueness` | Campo que debe ser único en todo el repositorio | `field` (camelCase, recomendado), `constraintName` (snake_case, requiere `field`) | Con `field`: guard proactivo `findBy{Campo}` en handler. Con `constraintName`: además mapeo reactivo de `DataIntegrityViolationException`. Sin `field`: TODO enriquecido |
+| `terminalState` | Estado sin transiciones salientes (ej: CANCELLED, DELETED) | — | Try/catch en métodos que invocan `transitionTo()` del enum |
+| `sideEffect` | Acción complementaria documentada (ej: registrar historial) | — (sin `errorCode`) | **Ninguno** — anotación de diseño pura para Fase 3. El generador no emite código ejecutable |
+| `deleteGuard` | Condición para permitir eliminación física (chequear dependientes) | `targetAggregate` (PascalCase) + `targetRepositoryMethod` (camelCase) — deben declararse juntos o ninguno | Con ambos: guard ejecutable en handler. Sin ellos: TODO enriquecido. Siempre: método `delete` en repositorio |
+| `crossAggregateConstraint` | Invariante que requiere consultar el estado de otro agregado | `targetAggregate` + `field` + `expectedStatus` — los tres deben declararse juntos | Método de query en repositorio del agregado objetivo. El build falla si solo algunos de los tres están presentes |
 
 ---
 

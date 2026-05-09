@@ -302,6 +302,8 @@ Checklist de completitud antes de avanzar al Paso 2 táctico:
 - [ ] El `correlationId` (ej: `orderId`) viaja en el payload de **todos** los eventos de la saga
 - [ ] El payload de cada evento de compensación incluye el ID del recurso a revertir (ej: `reservationId`)
 - [ ] `infrastructure.reliability.outbox: true` y `consumerIdempotency: true` activados en `system.yaml`
+- [ ] Considerar `outboxRetentionDays` ≥ 1 (sin él, `outbox_event` crece indefinidamente en producción)
+- [ ] Considerar `processedEventRetentionDays` ≥ 1 — valor > max-redelivery-timeout del broker (sin él, `processed_event` crece indefinidamente en producción)
 
 ---
 
@@ -812,7 +814,9 @@ Tipos wire-format en `request.fields[].type` / `response.fields[].type`: `String
 infrastructure:
   reliability:
     outbox: true                 # publicación de eventos vía outbox pattern
+    outboxRetentionDays: 7       # OPCIONAL — días de retención de filas publicadas en outbox_event
     consumerIdempotency: true    # idempotencia automática en consumidores
+    processedEventRetentionDays: 14  # OPCIONAL — días de retención en processed_event
 ```
 
 Cuándo activar `outbox: true`:
@@ -821,10 +825,31 @@ Cuándo activar `outbox: true`:
 - **Activar siempre que existan `sagas[]`** — sin outbox, una falla entre commit y
   publish puede romper la cadena del saga.
 
+`outboxRetentionDays` (entero ≥ 1, opcional pero recomendado en producción):
+- Sin este campo, la tabla `outbox_event` crece indefinidamente. El generador NO produce
+  ningún mecanismo de purga.
+- Valor orientativo: 7 días es suficiente — los mensajes se publican en segundos y no
+  necesitan permanecer en la tabla más que unos pocos días como margen.
+- Activar siempre que `outbox: true` y el sistema vaya a entornos de producción.
+
 Cuándo activar `consumerIdempotency: true`:
 - Hay UCs disparados por evento (`trigger.kind: event` en algún BC).
 - **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe
   ejecutar el paso dos veces.
+
+`processedEventRetentionDays` (entero ≥ 1, opcional pero recomendado en producción):
+- Sin este campo, la tabla `processed_event` crece indefinidamente. El generador NO produce
+  ningún mecanismo de purga.
+- El valor debe superar el máximo tiempo de redelivery del broker para que la guardia
+  siga funcionando durante una redelivery tardía. Valor orientativo: 14 días para RabbitMQ;
+  para Kafka ajustar al `retention.ms` del topic.
+- Activar siempre que `consumerIdempotency: true` y el sistema vaya a producción.
+
+> **⚠️ Limitación crítica de `consumerIdempotency: true`** (informar al equipo de Fase 2 táctico):
+> Si un use case falla **después** de que la guardia registra el `eventId` (con `REQUIRES_NEW`),
+> la fila en `processed_event` persiste aunque el use case no completó. En el siguiente redelivery,
+> la guardia descarta el mensaje — el use case **nunca se reintenta**. Los fallos deben
+> manejarse dentro del use case (retry interno, compensación) — no vía redelivery del broker.
 
 #### `infrastructure.integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
 

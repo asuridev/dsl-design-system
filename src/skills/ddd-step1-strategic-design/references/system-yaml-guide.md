@@ -610,13 +610,26 @@ Patrones de robustez para la publicación y consumo de eventos.
 infrastructure:
   reliability:
     outbox: true                    # outbox pattern para publicación at-least-once
+    outboxRetentionDays: 7          # días de retención de filas publicadas en outbox_event
     consumerIdempotency: true       # idempotencia automática en consumidores
+    processedEventRetentionDays: 14 # días de retención en processed_event
 ```
 
 | Campo | Cuándo activarlo |
 |---|---|
 | `outbox: true` | Hay alguna integración `channel: message-broker` y se requiere garantía at-least-once. **Activar siempre que existan `sagas[]`** — sin outbox, una falla entre commit y publish puede romper la cadena del saga. |
+| `outboxRetentionDays` | **Activar siempre que `outbox: true` en producción.** Entero ≥ 1. Sin este campo, la tabla `outbox_event` crece indefinidamente y degrada el rendimiento del relay con el tiempo. Valor orientativo: 7 días es suficiente porque los mensajes se publican en segundos; un valor mayor es innecesario. Si se omite, el generador NO produce ningún mecanismo de purga. |
 | `consumerIdempotency: true` | Hay UCs disparados por evento (`trigger.kind: event` en algún BC). **Activar siempre que existan `sagas[]`** — un redelivery del mismo evento no debe ejecutar el paso dos veces. |
+| `processedEventRetentionDays` | **Activar siempre que `consumerIdempotency: true` en producción.** Entero ≥ 1. Sin este campo, la tabla `processed_event` crece indefinidamente. El valor debe superar el máximo tiempo de redelivery del broker (para RabbitMQ tipicamente 14–30 días; para Kafka depende de `retention.ms`). Si se omite, el generador NO produce ningún mecanismo de purga. |
+
+> **⚠️ Limitación crítica de `consumerIdempotency: true` — para tener en cuenta en diseño táctico:**
+> Cuando un use case disparado por evento falla **después** de que la guardia registra el `eventId`,
+> la fila queda en `processed_event` como "ya procesado", aunque el use case no completó.
+> El broker reentregará el mensaje, pero la guardia lo descartará silenciosamente.
+> **Consecuencia de diseño:** todo use case con `trigger.kind: event` en un sistema con
+> `consumerIdempotency: true` debe ser diseñado para que su fallo sea excepcional y
+> no dependiente de reintentos automáticos. Los fallos transitorios deben manejarse
+> dentro del propio use case (ej: retry interno, circuit breaker) — no vía redelivery del broker.
 
 ### `integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
 
@@ -643,6 +656,8 @@ Antes de considerar el `system.yaml` completo, verificar:
 - [ ] Todo `externalSystem` referenciado en `integrations` declara `operations[]` y los contratos matchean (**INT-008** / **INT-009**)
 - [ ] Toda integración con `auth.type: oauth2-cc` declara `tokenEndpoint` y `credentialKey` (**INT-015**)
 - [ ] Si existen `sagas[]`, está activado `infrastructure.reliability.outbox: true` y `consumerIdempotency: true` (recomendado)
+- [ ] Si `outbox: true`, considerar `outboxRetentionDays` ≥ 1 (sin él, `outbox_event` crece indefinidamente)
+- [ ] Si `consumerIdempotency: true`, considerar `processedEventRetentionDays` ≥ 1 (sin él, `processed_event` crece indefinidamente)
 - [ ] Todo evento en `sagas[].steps[].onSuccess/onFailure/compensation` existe como contrato de integración
 
 ---

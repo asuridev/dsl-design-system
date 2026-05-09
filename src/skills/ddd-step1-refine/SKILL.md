@@ -441,11 +441,18 @@ que el generador procesa. Estas no aplicaban en versiones anteriores del DSL.
 
 Si `infrastructure.reliability` está declarado, sus valores válidos son:
 - `outbox: true|false` — patrón outbox para eventos publicados
+- `outboxRetentionDays: <entero ≥ 1>` — días de retención de filas publicadas en `outbox_event`
 - `consumerIdempotency: true|false` — idempotencia automática en consumidores
+- `processedEventRetentionDays: <entero ≥ 1>` — días de retención en `processed_event`
 
-- Valor fuera del booleano → 🔴 ERROR.
+- Valor fuera del booleano en `outbox`/`consumerIdempotency` → 🔴 ERROR.
+- `outboxRetentionDays` < 1 o no entero → 🔴 ERROR: el generador lo ignora y no produce purga.
+- `processedEventRetentionDays` < 1 o no entero → 🔴 ERROR: el generador lo ignora y no produce purga.
+- `processedEventRetentionDays` declarado sin `consumerIdempotency: true` → 🔵 SUGERENCIA: el campo no tiene efecto sin `consumerIdempotency: true`.
 - Si `outbox: true` pero no hay ninguna integración `channel: message-broker` → 🔵 SUGERENCIA: outbox sin eventos es overhead innecesario.
+- Si `outbox: true` y **no** está declarado `outboxRetentionDays` → 🟡 ALERTA: la tabla `outbox_event` crecerá indefinidamente en producción; recomendar activar `outboxRetentionDays: 7` (o el valor que corresponda).
 - Si hay sagas (`sagas[]`) y `consumerIdempotency: false` → 🟡 ALERTA: las cadenas de saga requieren idempotencia para tolerar redelivery; recomendar activarla.
+- Si `consumerIdempotency: true` y **no** está declarado `processedEventRetentionDays` → 🟡 ALERTA: la tabla `processed_event` crecerá indefinidamente en producción; recomendar activar `processedEventRetentionDays: 14` (o el valor que supere el max-redelivery-timeout del broker).
 - Si `outbox: true` y alguna BC ya tiene diseño táctico con eventos consumidos, verificar que el retry/DLQ del entorno (`rabbitmq.yaml` / `kafka.yaml`) sea coherente con los consumers generados → 🟡 ALERTA.
 
 **G2 — `externalSystems[].operations[]` declaradas**

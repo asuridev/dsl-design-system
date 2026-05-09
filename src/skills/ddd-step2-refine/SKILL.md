@@ -989,14 +989,41 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 
 #### E11 — Reliability infrastructure (cross-checked con system.yaml)
 
+**E11.1 — Outbox**
+
 - Si `system.yaml infrastructure.reliability.outbox: true`, todo evento publicado
   por este BC se persiste vía outbox. No requiere acción aquí, pero si el bc.yaml
   declara `broker.dlq` y outbox=false, alertar inconsistencia → 🟡 ALERTA.
+- Si `system.yaml infrastructure.reliability.outboxRetentionDays` **no** está declarado
+  y `outbox: true` → 🔵 SUGERENCIA: la tabla `outbox_event` crecerá indefinidamente en
+  producción; recomendar añadir `outboxRetentionDays: 7` (o el valor apropiado) en `system.yaml`.
+
+**E11.2 — Consumer Idempotency**
 
 - Si `system.yaml infrastructure.reliability.consumerIdempotency: true`, todo UC
   con `trigger.kind: event` debe ser idempotente — verificar que no existan
   efectos secundarios no idempotentes. Si el UC carga agregado y aplica método,
   el dominio debe garantizar idempotencia (ej: chequeo de estado antes de mutar).
+
+- **⚠️ LIMITACIÓN CRÍTICA — verificar siempre que `consumerIdempotency: true`:**
+  El generador produce un `IdempotencyGuard.tryRecord()` que registra el `eventId`
+  en `processed_event` con `Propagation.REQUIRES_NEW` **antes** de ejecutar el UC.
+  Si el UC lanza una excepción después de ese punto, la fila en `processed_event`
+  **permanece confirmada**. En el siguiente redelivery, la guardia descarta el mensaje.
+  **El UC no se ejecutará nunca más para ese `eventId`.**
+
+  Para cada UC con `trigger.kind: event` evaluar:
+
+  | Clasificación del UC | Riesgo | Acción |
+  |---|---|---|
+  | Idempotente por naturaleza (upsert, verificación de estado previa a mutación, soft-delete ya aplicado) | Bajo | Sin acción adicional |
+  | Lógica no trivial que puede fallar transitoriamente (llamadas externas, multi-repo) | Alto | Añadir `implementation: scaffold` y documentar en `{bc}-flows.md` la estrategia ante fallo permanente (compensación manual, alerta operacional) |
+  | Paso de saga cuyo fallo deja el sistema en estado inconsistente | Crítico | `implementation: scaffold` obligatorio + documentar en flows.md el escenario de "primer intento fallido" y la compensación |
+
+- Si `system.yaml infrastructure.reliability.processedEventRetentionDays` **no** está declarado
+  y `consumerIdempotency: true` → 🔵 SUGERENCIA: la tabla `processed_event` crecerá
+  indefinidamente en producción; recomendar añadir `processedEventRetentionDays: 14` (o el
+  valor que supere el max-redelivery-timeout del broker) en `system.yaml`.
 
 #### E12 — eventDtos[]: validación estructural
 
