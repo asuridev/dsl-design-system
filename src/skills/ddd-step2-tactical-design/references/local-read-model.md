@@ -510,22 +510,30 @@ projections:
       - name: name
         type: String(200)
         required: true
-      - name: price
-        type: Money
+      # ⚠️ Money NO soportado en persistent projections — aplana los campos como escalares:
+      - name: priceAmount
+        type: Decimal
+        precision: 19
+        scale: 4
         required: true
+      - name: priceCurrency
+        type: String(3)
+        required: true
+      # ⚠️ Enums NO soportados en persistent projections — usar String(n):
       - name: status
-        type: ProductSnapshotStatus     # enum declarado en enums[] de ESTE BC
+        type: String(50)                # guarda el name() del enum: "AVAILABLE", "DISCONTINUED"
         required: true
     # additionalSources: eventos que actualizan solo un subconjunto de campos
     # OBLIGATORIO: cada evento aquí debe incluir el campo keyBy (productId) en su payload[]
     # en el BC productor. Sin él, el partial updater descarta el evento silenciosamente en runtime.
     additionalSources:
       - kind: event
-        event: ProductPriceChanged      # solo actualiza price, no reemplaza toda la fila
+        event: ProductPriceChanged      # solo actualiza priceAmount y priceCurrency
         from: catalog
         updatesFields:
-          - price
-          # payload de ProductPriceChanged DEBE incluir: productId (keyBy) + price (updatesFields)
+          - priceAmount
+          - priceCurrency
+          # payload de ProductPriceChanged DEBE incluir: productId (keyBy) + priceAmount + priceCurrency
       - kind: event
         event: ProductDiscontinued      # solo actualiza status
         from: catalog
@@ -565,12 +573,50 @@ projections:
 3. Todos los campos en `updatesFields[]` deben estar en `properties[]`.
 4. El evento en `source.event` y en cada `additionalSources[].event` debe estar publicado
    por el BC `from` correspondiente (INT-010 / INT-012 lo verifican como error).
-5. `properties[]` solo puede contener tipos escalares canónicos, enums, y VOs escalares.
-   No se admiten tipos `List[...]` ni referencias a agregados.
+5. `properties[]` solo puede contener **tipos escalares canónicos** (ver §Tipos soportados).
+   **Prohibido:** VOs (incluyendo `Money`), enums del dominio, `List[T]`, y referencias a agregados.
+   - Para `Money`: aplanar en `priceAmount: Decimal` + `priceCurrency: String(3)`.
+   - Para enums: usar `String(n)` y guardar el `name()` del enum. La conversión, si se necesita, va en Fase 3.
+   - Para `List[T]`: serializar como `String` (JSON plano) si es estrictamente necesario; no está soportado nativamente.
 6. **El evento de cada `additionalSources` entry debe incluir el campo `keyBy` en su `payload[]`
    en el BC productor.** El partial updater lo necesita para localizar la fila con `findById`.
    Si el campo está ausente del payload, el updater descarta el evento en runtime con un
    log `WARN` — la actualización se pierde silenciosamente sin ningún error de build ni de compilación.
+
+---
+
+## Tipos Soportados en `properties[]` de Persistent Projections
+
+Solo tipos escalares canónicos — los mismos que mapean a una sola columna SQL.
+
+| Tipo DSL | Java | SQL |
+|---|---|---|
+| `Uuid` | `UUID` | `UUID` |
+| `String` | `String` | `TEXT` |
+| `String(n)` | `String` | `VARCHAR(n)` |
+| `Text` | `String` | `TEXT` |
+| `Email` | `String` | `VARCHAR(254)` |
+| `Url` | `String` | `TEXT` |
+| `Integer` | `Integer` | `INTEGER` |
+| `Long` | `Long` | `BIGINT` |
+| `Decimal` | `BigDecimal` | `NUMERIC(precision, scale)` |
+| `Boolean` | `Boolean` | `BOOLEAN` |
+| `Date` | `LocalDate` | `DATE` |
+| `DateTime` | `Instant` | `TIMESTAMP` |
+
+### Tipos NO soportados — error de build inmediato
+
+| Tipo | Error del generador | Solución |
+|---|---|---|
+| `Money` | `is a domain type. Persistent projections only accept canonical scalar types` | Aplanar: `priceAmount: Decimal` + `priceCurrency: String(3)` |
+| Cualquier VO del dominio | Idem | Aplanar sus campos como escalares |
+| Enum del dominio | Idem | Usar `String(n)` y guardar `nombre.name()` del enum |
+| `List[T]` | `List<T> requires a join table — out of scope for Phase 3` | Serializar como `String` (JSON) si es estrictamente necesario |
+| Referencia a agregado | Idem que VO | Usar `Uuid` del ID del agregado |
+
+> **¿Cómo documentar el enum original?** Declarar en `{bc-name}-flows.md` el mapeo de
+> valores (ej: `"AVAILABLE"` → producto activo, `"DISCONTINUED"` → discontinuado).
+> La lógica de conversión de String a enum va en la capa de aplicación en Fase 3.
 
 ---
 
@@ -630,8 +676,14 @@ projections:
       - name: name
         type: String(200)
         required: true
-      - name: price
-        type: Money
+      # ⚠️ Money NO soportado — aplanar como escalares:
+      - name: priceAmount
+        type: Decimal
+        precision: 19
+        scale: 4
+        required: true
+      - name: priceCurrency
+        type: String(3)
         required: true
       - name: version
         type: Long                    # debe existir; eventVersionField lo referencia
@@ -641,7 +693,8 @@ projections:
         event: ProductPriceChanged
         from: catalog
         updatesFields:
-          - price
+          - priceAmount
+          - priceCurrency
           - version                   # versión DEBE estar en updatesFields también
                                       # para que el partial updater pueda guardarla
 ```

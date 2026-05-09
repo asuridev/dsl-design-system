@@ -173,7 +173,9 @@ projections:
         type: Uuid
         required: true
       - name: {field}
-        type: {canonical-type | EnumName}  # solo escalares — NO List[T] ni referencias a agregados
+        type: {canonical-type}           # SOLO tipos escalares canónicos — NO VOs, NO enums, NO List[T]
+                                         # Money → aplanar en priceAmount:Decimal + priceCurrency:String(3)
+                                         # Enum → usar String(n) y guardar el name() del enum
         required: true | false
     # additionalSources: eventos que actualizan SOLO un subconjunto de campos (sin insertar)
     # REGLA: el BC productor de cada evento adicional DEBE incluir el campo keyBy

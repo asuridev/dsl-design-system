@@ -232,6 +232,12 @@ El generador soporta un vocabulario extendido para cada sección del BC.
     - Los campos en `updatesFields[]` deben estar declarados en `properties[]`.
     - El evento referenciado debe estar en `domainEvents.published[]` del BC `from`.
     - **El evento debe incluir el campo `keyBy` en su `payload[]` en el BC productor.** El partial updater lo necesita para localizar la fila con `findById`. Si no está en el payload, el evento se descarta silenciosamente en runtime con `WARN` — sin error de build ni de compilación.
+  - **⚠️ Restricción de tipos en `properties[]`:** solo se admiten tipos escalares canónicos que mapean a una columna SQL simple. **Tipos PROHIBIDOS** (el build falla con error inmediato):
+    - `Money` y cualquier VO del dominio → aplanar: `priceAmount: Decimal` + `priceCurrency: String(3)`.
+    - Enums del dominio → usar `String(n)` y almacenar el `name()` del enum.
+    - `List[T]` → no soportado; serializar como `String` si es estrictamente necesario.
+    - Tipos admitidos: `Uuid, String, String(n), Text, Email, Url, Integer, Long, Decimal, Boolean, Date, DateTime`.
+  - **AsyncAPI requerido:** aunque no hay use cases explícitos, los canales `subscribe` de todos los eventos fuente (principal y `additionalSources`) **deben declararse** en `{bc}-async-api.yaml`. El generador los necesita para construir la topología del broker.
 
 #### Regla de diseño — `versionGuarded` y versión en el productor
 

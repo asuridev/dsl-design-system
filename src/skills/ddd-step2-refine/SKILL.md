@@ -984,8 +984,24 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   - Falta de cualquier campo → 🔴 ERROR.
   - Evento referenciado debe existir en `domainEvents.consumed[]` → si no, 🔴 ERROR.
   - `keyBy` debe ser propiedad del payload del evento → si no, 🔴 ERROR.
-  - `upsertStrategy: versionGuarded` requiere campo `version` en el payload del
-    evento → si no, 🔴 ERROR.
+  - `upsertStrategy: versionGuarded` requiere campo `version` (o el campo señalado por `eventVersionField`) en el payload del evento → si no, 🔴 ERROR (el build falla al no encontrar el campo de versión).
+  - `eventVersionField` (cuando declarado): debe coincidir exactamente con el nombre de una propiedad en `properties[]`. Si no existe → 🔴 ERROR.
+
+- **`properties[]` — tipos escalares canónicos únicos:** el generador rechaza inmediatamente cualquier tipo no escalar. Para cada propiedad en `properties[]` de una projection `persistent: true`:
+  - Tipo canónico escalar (`Uuid, String, String(n), Text, Email, Url, Integer, Long, Decimal, Boolean, Date, DateTime`) → ✅
+  - `Money` (VO) → 🔴 ERROR: aplanar en `priceAmount: Decimal (precision:19, scale:4)` + `priceCurrency: String(3)`.
+  - Cualquier otro VO del dominio → 🔴 ERROR: aplanar sus campos escalares como propiedades individuales.
+  - Nombre de enum → 🔴 ERROR: usar `String(n)` y documentar que se almacena el `name()` del enum.
+  - `List[T]` → 🔴 ERROR: no soportado en persistent projections; serializar como `String` si es imprescindible.
+  - Tipos de colección genérica: `Map`, `Page`, `Slice`, `Stream` → 🔴 ERROR.
+
+- **`additionalSources[]`:** cada entry `{ kind: event, event: <Name>, from: <bc>, updatesFields: [...] }`.
+  - `keyBy` **nunca** puede aparecer en `updatesFields[]` → 🔴 ERROR.
+  - Cada campo en `updatesFields[]` debe estar declarado en `properties[]` → si no, 🔴 ERROR.
+  - El evento referenciado debe estar en `domainEvents.consumed[]` del BC → si no, 🔴 ERROR.
+  - El evento referenciado debe incluir el campo `keyBy` en su `payload[]` del BC productor; si no, el partial updater descartará el mensaje silenciosamente en runtime sin error de build → 🟡 ALERTA: verificar el `payload[]` en el AsyncAPI del BC `from`.
+
+- **AsyncAPI requerido:** aunque no hay use cases explícitos, todos los canales `subscribe` de los eventos fuente (principal y `additionalSources`) deben estar declarados en `{bc}-async-api.yaml`. Ausente → 🟡 ALERTA (el generador los necesita para construir la topología del broker).
 
 #### E11 — Reliability infrastructure (cross-checked con system.yaml)
 
