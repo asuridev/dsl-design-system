@@ -902,13 +902,16 @@ Cuándo activar `consumerIdempotency: true`:
 > la guardia descarta el mensaje — el use case **nunca se reintenta**. Los fallos deben
 > manejarse dentro del use case (retry interno, compensación) — no vía redelivery del broker.
 
-#### `infrastructure.integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
+#### `infrastructure.integrations.defaults` — Solo `auth` implementado (nivel 3 de fallback)
 
-> **Este bloque no está implementado en el generador.** El resolver de auth y resiliencia
-> (`resilience-auth-resolver.js`) no lee `infrastructure.integrations.defaults`.
-> Declararlo en `system.yaml` no produce ningún efecto en el código generado.
-> Para que `auth`/`resilience` apliquen a una integración, deben declararse directamente
-> en `integrations[].auth/resilience` (BC→BC) o en `externalSystems[].auth/resilience` (externo).
+> **Implementación parcial:** el resolver de auth (`resilience-auth-resolver.js`) **sí lee**
+> `infrastructure.integrations.defaults.auth` — actúa como tercer nivel de fallback cuando
+> ni `bc.yaml outbound[].auth` ni `integrations[]/externalSystems[].auth` están declarados.
+> **`infrastructure.integrations.defaults.resilience` NO se lee** — el resolver de resiliencia
+> no implementa este nivel de fallback. Para `resilience`, declarar individualmente en
+> cada `integrations[]` o `externalSystems[]`.
+> Usar `defaults.auth` solo si la mayoría de integraciones comparten el mismo mecanismo
+> de autenticación y se quiere evitar repetirlo. No es el patrón más habitual.
 
 #### Integraciones internas: `auth` y `resilience` por integración
 
@@ -933,11 +936,25 @@ integrations:
       timeoutMs: 15000
 ```
 
-- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience`.
-- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para ACL, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
+- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience` > `system.yaml infrastructure.integrations.defaults.auth`.
+- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience` > `system.yaml infrastructure.integrations.defaults.auth`. Para ACL, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
 - **INT-015 (validador bloqueante)**: `auth.type: oauth2-cc` requiere `tokenEndpoint` + `credentialKey`. El skill `ddd-step1-refine` lo verifica.
 - Si una integración no declara `auth`/`resilience`, el adaptador se genera sin anotaciones Resilience4j ni interceptor de auth.
-- **`auth.type: internal-jwt`**: reconocido por el generador pero **no genera ningún `RequestInterceptor`**. La propagación del JWT entre servicios es responsabilidad de un interceptor Feign global en la infraestructura compartida, fuera del alcance del generador. Usar `internal-jwt` documenta la intención de seguridad pero no produce código de interceptor automático.
+- **`auth.type: internal-jwt`**: el generador produce `InternalJwtPropagator.java` (emitido una sola vez, compartido entre todos los BC que lo usen) — un `RequestInterceptor` que extrae el JWT del `SecurityContextHolder` y lo propaga en el header `Authorization: Bearer` de cada llamada Feign saliente. Usar cuando la integración BC→BC debe fluir el token del usuario original a lo largo de toda la cadena de servicio.
+
+**Árbol de decisión para `auth.type`:**
+
+| Escenario | `auth.type` |
+|---|---|
+| Sistema externo con clave de API fija en header | `api-key` + `valueProperty` (+ `header` si distinto de `X-Api-Key`) |
+| Sistema externo con Bearer token estático (sin renovación) | `bearer` + `valueProperty` |
+| Sistema externo con OAuth2 M2M (token de corta vida, renovación automática) | `oauth2-cc` + `tokenEndpoint` + `credentialKey` |
+| Sistema externo que exige TLS mutuo (cliente presenta certificado) | `mTLS` (sin campos adicionales) |
+| BC→BC donde el JWT del usuario original debe propagarse en la cadena | `internal-jwt` (sin campos adicionales) |
+| Integración interna sin requisito de auth adicional (red privada) | `none` o omitir el bloque `auth` |
+
+> **`oauth2-cc` tiene impacto en infraestructura:** genera `oauth2.yaml` ×4 entornos + `starter-oauth2-client` en `build.gradle`.
+> **`mTLS` tiene impacto en infraestructura:** genera `mtls.yaml` ×4 entornos. Declarar estos tipos requiere coordinar con el equipo de infra.
 ### 3.2 system-spec.md
 
 Para cada BC, escribe una sección con esta estructura exacta:

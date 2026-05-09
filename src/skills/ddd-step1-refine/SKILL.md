@@ -494,7 +494,7 @@ auth:
 - **INT-015**: si `auth.type: oauth2-cc`, faltan `tokenEndpoint` o `credentialKey` → 🔴 ERROR.
 - `auth.type: api-key` sin `valueProperty` y `header` → 🔴 ERROR.
 - `auth.type: mTLS` sin certificados configurados (al menos `valueProperty` apuntando al secreto del cert) → 🟡 ALERTA.
-- `auth.type: internal-jwt` → ✅ válido, pero **no genera ningún `RequestInterceptor`**. La propagación del JWT entre servicios es responsabilidad de un interceptor Feign global en infraestructura compartida. Documentar esta decisión en `notes`.
+- `auth.type: internal-jwt` → ✅ válido. El generador produce `InternalJwtPropagator.java` (compartido, una sola vez) — `RequestInterceptor` que propaga el JWT del `SecurityContextHolder` al header `Authorization: Bearer`. Sin campos adicionales en `auth`.
 
 Bloque `resilience` opcional:
 

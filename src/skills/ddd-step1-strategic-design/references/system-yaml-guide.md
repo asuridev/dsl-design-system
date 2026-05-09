@@ -348,14 +348,38 @@ integrations:
 | `auth.type` | Cómo se inyecta | Configuración requerida |
 |---|---|---|
 | `none` | Sin interceptor | — |
-| `api-key` | Header configurable (default `X-Api-Key`) | `valueProperty`, opcional `header` |
-| `bearer` | `Authorization: Bearer <token>` | `valueProperty` |
-| `oauth2-cc` | `OAuth2AuthorizedClientManager` resuelve y refresca tokens | `tokenEndpoint`, `credentialKey` |
-| `mTLS` | Configuración externa (truststore/keystore) | — |
-| `internal-jwt` | Intención declarativa — **no genera interceptor**. La propagación del JWT debe resolverse con un interceptor global en la infraestructura compartida. | — |
+| `api-key` | `RequestInterceptor` con `@Value` + header configurable (default `X-Api-Key`) | `valueProperty`, opcional `header` |
+| `bearer` | `RequestInterceptor` con `@Value` + `Authorization: Bearer <token>` | `valueProperty` |
+| `oauth2-cc` | `RequestInterceptor` via `OAuth2AuthorizedClientManager` — refresca tokens automáticamente | `tokenEndpoint` (requerido), `credentialKey` (requerido) |
+| `mTLS` | `feign.Client.Default` con `SSLSocketFactory` — configura TLS mutuo a nivel de socket | — |
+| `internal-jwt` | `RequestInterceptor` via `InternalJwtPropagator` — extrae el JWT del `SecurityContextHolder` y lo propaga en cada llamada Feign saliente | — |
 
 > **Validador INT-015 (bloqueante):** si `auth.type: oauth2-cc`, los campos
 > `tokenEndpoint` y `credentialKey` son obligatorios.
+
+> **Validador INT-024 (bloqueante):** `auth.type` debe ser uno de: `api-key`, `bearer`, `oauth2-cc`, `mTLS`, `internal-jwt`, `none`. Un typo (ej: `bearrer`) produce un error inmediato.
+
+### Árbol de decisión para elegir `auth.type`
+
+| Escenario de autenticación | `auth.type` recomendado |
+|---|---|
+| Sistema externo exige una clave de API fija en un header personalizado | `api-key` — declarar `header` solo si el nombre del header es distinto de `X-Api-Key` |
+| Sistema externo acepta un token estático en `Authorization: Bearer` | `bearer` — el token se configura como property Spring, nunca hardcodeado |
+| Sistema externo requiere OAuth2 Client Credentials (machine-to-machine) | `oauth2-cc` — Spring Security gestiona el ciclo de vida del token automáticamente; requiere `tokenEndpoint` + `credentialKey` |
+| Sistema externo exige TLS mutuo (cliente presenta certificado) | `mTLS` — configura keystore/truststore vía properties de entorno |
+| Integración BC→BC donde el token del usuario original debe propagarse | `internal-jwt` — el generador produce `InternalJwtPropagator` que copia el JWT del contexto de seguridad |
+| Integración interna sin autenticación (red privada, mTLS a nivel red) | `none` o omitir el bloque `auth` |
+
+> **`oauth2-cc` vs `bearer`:** Si el sistema externo requiere que el cliente se autentique
+> con `client_id` + `client_secret` para obtener un access token (flujo OAuth2 real), usar
+> `oauth2-cc`. Si el sistema externo acepta un token permanente/estático (API token sin
+> expiración), usar `bearer`. La diferencia clave: `oauth2-cc` renueva el token automáticamente;
+> `bearer` no lo renueva nunca.
+
+> **Precedencia de `auth` por tipo de integración:**
+> - **BC→BC:** `bc.yaml outbound[name=target].auth` > `system.yaml integrations[from, to, channel=http].auth` > `system.yaml infrastructure.integrations.defaults.auth`
+> - **Externos (ACL):** `bc.yaml outbound[name=target].auth` > `system.yaml externalSystems[name=target].auth` > `system.yaml infrastructure.integrations.defaults.auth`
+> - ⚠️ Para integraciones ACL (externos), `integrations[].auth` **no se lee** — el `auth` del externo va en `externalSystems[].auth`, no en la entrada de `integrations[]`.
 
 ### Bloque `resilience` (opcional, por integración)
 
@@ -631,16 +655,23 @@ infrastructure:
 > no dependiente de reintentos automáticos. Los fallos transitorios deben manejarse
 > dentro del propio use case (ej: retry interno, circuit breaker) — no vía redelivery del broker.
 
-### `integrations.defaults` — NO IMPLEMENTADO EN EL GENERADOR
+### `integrations.defaults` — Solo `auth` implementado (nivel 3 de fallback)
 
-> **Este bloque no está implementado en el generador (`dsl-springboot-generator`).** El resolver
-> de resiliencia y auth (`resilience-auth-resolver.js`) no lee `infrastructure.integrations.defaults`.
-> Declarar este bloque no produce ningún efecto en el código generado.
+> **Estado de implementación parcial:** el bloque `infrastructure.integrations.defaults`
+> es leído por el resolver de auth (`resilience-auth-resolver.js`) **únicamente para `auth`**
+> — actúa como nivel 3 de fallback cuando ni `bc.yaml outbound[].auth` ni la entrada de
+> `system.yaml integrations[]/externalSystems[]` declaran auth.
 >
-> Si necesitas `resilience` o `auth` en todas las integraciones, debes declararlos
-> individualmente en cada entrada de `integrations[]` o `externalSystems[]`.
+> **Lo que funciona:** `infrastructure.integrations.defaults.auth` se aplica como valor de
+> auth global cuando ningún nivel superior lo sobreescribe.
+>
+> **Lo que NO funciona:** `infrastructure.integrations.defaults.resilience` **no es leído**
+> — el resolver de resiliencia no implementa este nivel de fallback. Si necesitas resiliencia,
+> debes declararla individualmente en cada `integrations[]` o `externalSystems[]`.
 
-El campo `infrastructure.integrations.defaults` está reservado para una implementación futura.
+> **Cuándo usar `defaults.auth`:** solo tiene sentido si la mayoría de las integraciones
+> comparten el mismo mecanismo de autenticación y se quiere evitar repetirlo. No es un
+> patrón habitual — lo más común es declarar `auth` por integración o en `externalSystems[]`.
 
 ---
 

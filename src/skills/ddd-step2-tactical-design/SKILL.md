@@ -262,11 +262,12 @@ o pedir que el productor agregue la versión al payload del evento antes de usar
   - `api-key`: `header` (nombre del header, default `X-Api-Key`) + `valueProperty` (clave Spring con el secreto).
   - `bearer`: `valueProperty` (clave Spring con el token estático).
   - `oauth2-cc`: `tokenEndpoint` + `credentialKey`. **INT-015**: ambos son obligatorios — el build falla si falta alguno.
-  - `mTLS`: sin campos adicionales.
-  - `internal-jwt`: declarativo puro — el generador no produce interceptor. Documenta que la integración confía en el JWT interno propagado. Sin campos adicionales.
+  - `mTLS`: sin campos adicionales. El generador produce `MutualTlsSupport.java` (compartido) y configura `feign.Client.Default` con `SSLSocketFactory`.
+  - `internal-jwt`: sin campos adicionales. El generador produce `InternalJwtPropagator.java` (compartido, emitido una vez) — `RequestInterceptor` que propaga el JWT del `SecurityContextHolder` al header `Authorization: Bearer` de cada llamada Feign saliente. Útil para comunicación BC→BC donde el token del usuario original debe fluir por toda la cadena.
 - `resilience` schema real: `{ circuitBreaker: { failureRateThreshold, waitDurationInOpenState, slidingWindowSize, minimumNumberOfCalls, permittedNumberOfCallsInHalfOpenState }, retries: { maxAttempts, waitDuration }, connectTimeoutMs, timeoutMs }`. Los valores de tiempo son **strings con unidad** (`"30s"`, `"500ms"`), no enteros.
-- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience`.
-- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience`. Para sistemas externos, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
+- Precedencia BC→BC: `bc.yaml outbound[name=target].auth/resilience` > `system.yaml integrations[from=bc, to=target].auth/resilience` > `system.yaml infrastructure.integrations.defaults.auth`.
+- Precedencia externo (ACL): `bc.yaml outbound[name=target].auth/resilience` > `system.yaml externalSystems[name=target].auth/resilience` > `system.yaml infrastructure.integrations.defaults.auth`. Para sistemas externos, `integrations[].auth/resilience` **no es leído** — la resiliencia/auth del externo va en `externalSystems[]`.
+- **`oauth2-cc` y `mTLS` tienen impacto en infraestructura**: `oauth2-cc` genera `oauth2.yaml` ×4 entornos + `starter-oauth2-client`; `mTLS` genera `mtls.yaml` ×4 entornos.
 - External systems referenciados deben existir en `system.yaml externalSystems[]` con `operations[]` (INT-008/INT-009).
 
 > **Validación cruzada con AsyncAPI (INT-016..INT-021):**
