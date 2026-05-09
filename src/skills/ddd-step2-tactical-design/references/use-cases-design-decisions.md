@@ -324,7 +324,8 @@ authorization:
   ownership:
     field: customerId        # campo del agregado o del comando
     claim: sub               # claim del JWT que identifica al usuario
-    allowRoleBypass: true    # los ADMIN saltan el check de ownership
+    allowRoleBypass:         # lista de roles que pueden actuar sobre recursos ajenos
+      - ROLE_ADMIN
 ```
 
 **Criterio:**
@@ -334,7 +335,7 @@ authorization:
 - Ambos → el usuario debe cumplir los dos (AND). Usar cuando el permiso de negocio
   es más restrictivo que el rol asignado.
 - `ownership` → el recurso debe pertenecer al usuario autenticado (multi-tenant,
-  self-service). `allowRoleBypass: true` si los admins deben poder actuar sobre
+  self-service). `allowRoleBypass: [ROLE_ADMIN]` si los admins deben poder actuar sobre
   recursos de cualquier usuario.
 
 ---
@@ -400,17 +401,16 @@ entidad única).
 idempotency:
   header: Idempotency-Key      # header HTTP que el cliente envía
   ttl: PT24H                   # tiempo que se recuerda el resultado (ISO-8601)
-  storage: redis               # database (default) | redis
+  storage: cache               # ÚNICO valor válido — database y redis están deprecados y rechazados
 ```
 
 **Reglas:**
-- Usar `redis` cuando la ventana de idempotencia es corta y el volumen es alto (mejor
-  rendimiento). Usar `database` si los datos deben sobrevivir reinicios o el volumen
-  es bajo.
+- Usar siempre `storage: cache`. Los valores `database` y `redis` están **deprecados** — el generador los rechaza con error de build. El provider concreto de caché (Redis, Caffeine, etc.) se configura en `dsl-springboot.json` con la clave `cacheProvider`, no en el YAML de diseño.
 - No declarar `idempotency` en queries — son operaciones de lectura; la idempotencia
   no aplica.
 - No declarar `idempotency` en comandos disparados por eventos (`trigger.kind: event`) —
-  la idempotencia de mensajes se gestiona en la capa de messaging (no en el handler).
+  la idempotencia de mensajes se gestiona a nivel de sistema con `consumerIdempotency: true`
+  en `system.yaml` (no en el handler del UC).
 
 ---
 
@@ -456,3 +456,168 @@ input:
 
 Usar siempre `default` + `max` juntos para parámetros de paginación manual
 (cuando no se usa el tipo `PageRequest` como parámetro completo).
+
+---
+
+## §14 — `returns` en queries: formato correcto
+
+El valor de `returns` en un use case de tipo `query` debe seguir estas reglas para
+evitar errores de compilación en el proyecto generado:
+
+| Intención | Valor correcto | Valor incorrecto |
+|---|---|---|
+| Retornar el DTO completo del agregado | `ProductResponse` | ~~`Product`~~ (genera import inválido) |
+| Retornar una projection nombrada | `ProductSummary` | — |
+| Retornar colección paginada del DTO del agregado | `Page[ProductResponse]` | ~~`Page[Product]`~~ |
+| Retornar colección paginada de projection | `Page[ProductSummary]` | — |
+| Retornar lista sin paginar | `List[ProductSummary]` | — |
+| Retornar resultado opcional | `Optional[ProductDetail]` | — |
+| Descargar un archivo | `BinaryStream` | — |
+
+**Regla clave:** escribir solo el nombre del agregado (`Category`, `Product`) en `returns`
+de un query **falla silenciosamente en el diseño y produce un error de compilación en el
+proyecto generado**. El generador solo reconoce `{AggregateName}Response` como referencia al
+DTO del agregado; lo mapea a `{AggregateName}ResponseDto`.
+
+```yaml
+# ✅ Correcto
+returns: ProductResponse
+returns: Page[ProductResponse]
+returns: ProductSummary
+
+# ❌ Incorrecto — genera import inválido en el proyecto destino
+returns: Product
+returns: Page[Product]
+```
+
+**Commands** también pueden declarar `returns` cuando el endpoint devuelve un body:
+- `returns: Uuid` → retorna el ID del recurso creado (convención para `201 Created` con body)
+- `returns: ProductResponse` → retorna el estado actualizado
+- Sin `returns` → void (para `204 No Content` o `201 Created` sin body)
+
+> **Regla práctica:** si el OpenAPI del BC declara `responses.2xx.content.application/json`
+> en un command, declarar `returns`. Si no hay body en la respuesta, omitir `returns`.
+
+---
+
+## §15 — `pagination.direction`: mayúsculas obligatorias
+
+El campo `direction` en el bloque `defaultSort` de `pagination` debe ser `ASC` o `DESC`
+en **mayúsculas estrictas**. El generador mapea el valor literalmente al identificador
+del enum de dirección del runtime destino sin normalización.
+
+```yaml
+# ✅ Correcto
+pagination:
+  defaultSize: 20
+  maxSize: 100
+  sortable: [createdAt, name]
+  defaultSort:
+    field: createdAt
+    direction: DESC         # mayúsculas obligatorias
+
+# ❌ Incorrecto — aborta el build
+pagination:
+  defaultSort:
+    direction: desc         # minúsculas → ERROR
+    direction: Desc         # mixto → ERROR
+```
+
+---
+
+## §16 — `public: true`: cuándo declararlo
+
+Marca el endpoint como completamente público: no requiere JWT ni verificación de identidad.
+Solo válido para `trigger.kind: http`.
+
+| Señal | Decisión |
+|---|---|
+| El endpoint es de solo lectura y no expone datos personalizados (catálogo público, landing page, lookup de países) | ✅ `public: true` |
+| El endpoint es un webhook receiver que autentica por firma de payload, no por JWT | ✅ `public: true` (verificación de firma implementada manualmente en Fase 3) |
+| El endpoint requiere cualquier forma de identidad del usuario | ❌ Omitir — usar `authorization` |
+| El UC tiene `trigger.kind: event` | ❌ No aplica — en eventos no tiene efecto |
+
+**Reglas de consistencia:**
+- `public: true` y `authorization` son mutuamente excluyentes. Si ambos están presentes,
+  `public: true` gana y el generador emite warning. Eliminar `authorization` si la intención
+  es un endpoint público.
+- `public: true` en un command (`type: command`) requiere justificación explícita en
+  `{bc-name}-spec.md` — los commands normalmente necesitan identidad del actor para auditoría.
+
+---
+
+## §17 — `cacheable`: cuándo declararlo en un query
+
+Solo válido para `type: query` con `trigger.kind: http`. Genera `@Cacheable` en el handler
+y configuración de `RedisCacheManager`. **Requiere `cacheProvider: redis` en `dsl-springboot.json`
+— el build falla si falta.**
+
+| Señal | Decisión |
+|---|---|
+| Query sobre datos estáticos o de muy baja frecuencia de cambio (catálogos, árboles de categorías, listas de países) | ✅ `cacheable: { ttl: PT1H }` |
+| Query que retorna detalles de una entidad por ID (lectura frecuente, escritura poco frecuente) | ✅ `cacheable: { ttl: PT5M, keyFields: [entityId] }` |
+| Query sobre datos de usuario o que cambian con alta frecuencia | ❌ Omitir |
+| UC de tipo `command` | ❌ Prohibido — el generador lo rechaza con error |
+| UC con `trigger.kind: event` | ❌ No aplica |
+
+```yaml
+cacheable:
+  ttl: PT5M            # obligatorio — ISO-8601 duration
+  keyFields: [id]      # opcional — campos del input[] usados como clave de caché
+  cacheWhen: [id]      # opcional — solo cachear si estos campos no son nulos
+```
+
+> **`cacheWhen`:** usar solo cuando el query tiene parámetros opcionales cuya ausencia cambia
+> radicalmente el scope del resultado (ej: `SearchProductsByCategory` solo se cachea cuando
+> `categoryId` no es nulo). Los campos de `keyFields` y `cacheWhen` deben coincidir
+> con nombres declarados en `input[]`.
+
+---
+
+## §18 — Diseño de use cases cuando `consumerIdempotency: true`
+
+Cuando `system.yaml` activa `infrastructure.reliability.consumerIdempotency: true`,
+el generador produce una guardia de deduplicación (`IdempotencyGuard`) que registra el
+`eventId` en la tabla `processed_event` **en una transacción separada (`REQUIRES_NEW`)
+antes de despachar el use case**. Esto tiene una consecuencia crítica de diseño:
+
+**Si el use case falla después de que `IdempotencyGuard.tryRecord()` confirma:**
+- La fila `(handlerId, eventId)` persiste en `processed_event` aunque el UC no completó.
+- El broker reentregará el mensaje, pero la guardia lo descartará silenciosamente.
+- **El use case no se ejecutará en el siguiente reintento.**
+
+Por eso, los use cases con `trigger.kind: event` deben diseñarse con esto en mente:
+
+| Señal en el use case | Acción de diseño recomendada |
+|---|---|
+| El UC llama a sistemas externos (HTTP, otras BDs) que pueden fallar transitoriamente | Marcar `implementation: scaffold` — documentar en flows.md que el UC debe ser tolerante a fallos |
+| El UC escribe en múltiples repositorios en la misma transacción | `implementation: scaffold` — Fase 3 debe garantizar que cada escritura sea idempotente o que la primera sea suficiente |
+| El UC es un paso de saga y su fallo dejaría el sistema inconsistente | Documentar en `{bc-name}-flows.md` el comportamiento ante fallo permanente y si existe compensación manual |
+| El UC es naturalmente idempotente (ej: upsert de proyección, actualización de estado que verifica el estado actual) | No requiere acción especial — el diseño ya garantiza que re-ejecutar produce el mismo resultado |
+
+> **En resumen:** con `consumerIdempotency: true`, el primer intento fallido de un use case
+> disparado por evento es potencialmente el último. Los use cases con `trigger.kind: event`
+> deben ser **internamente resilientes**, no depender de una nueva entrega del mismo mensaje
+> para corregir un fallo previo.
+
+---
+
+## §19 — `derivedFrom` / `derived_from`: prohibido en `useCases[]`
+
+**No declarar `derivedFrom` ni `derived_from` como campo de un use case.** El generador
+rechaza claves desconocidas en `useCases[]` y el build falla.
+
+La trazabilidad del UC ya viene dada por:
+- Su `id` (`UC-XXX-NNN`)
+- `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.consumes` (eventos)
+- `rules: [RULE-ID, ...]` para enlazar a reglas de dominio
+
+`derivedFrom` solo es válido en otros contextos:
+
+| Contexto válido | Cómo declararlo |
+|---|---|
+| Método de repositorio derivado de una regla | `repositories[].queryMethods[].derivedFrom: PRD-RULE-002` |
+| Método de repositorio derivado de un operationId | `repositories[].queryMethods[].derivedFrom: openapi:listProducts` |
+| Propiedad de agregado computada | `aggregates[].properties[].source: derived` con `derivedFrom` y `expression` |
+| Propiedad de projection computada | `projections[].properties[].derivedFrom: [campo1, campo2]` |
+| Campo de payload de evento derivado | `domainEvents.published[].payload[].source: derived` |

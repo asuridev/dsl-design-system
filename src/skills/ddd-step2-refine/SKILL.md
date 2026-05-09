@@ -775,11 +775,11 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`fkValidations[].bc`** (cross-BC): si está, requiere `integrations.outbound[]`
   hacia ese BC (ver B23, ahora extendido).
 
-- **`idempotency` block** (solo commands): `{ header, ttl (ISO-8601), storage:
-  database|redis }`.
+- **`idempotency` block** (solo commands): `{ header, ttl (ISO-8601), storage: cache }`.
+  ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza con error de build.
   - En queries → 🔴 ERROR.
   - `ttl` no ISO-8601 → 🔴 ERROR.
-  - `storage` fuera del enum → 🔴 ERROR.
+  - `storage` ≠ `cache` → 🔴 ERROR.
 
 - **`authorization` block**: `{ rolesAnyOf: [...], ownership: { field, claim,
   allowRoleBypass } }`.

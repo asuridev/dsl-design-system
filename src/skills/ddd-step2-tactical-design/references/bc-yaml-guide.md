@@ -776,164 +776,305 @@ useCases:
 ## `repositories` — Contratos de acceso a datos
 
 Declara los métodos que el dominio necesita para leer y escribir sus agregados. Son
-interfaces del dominio — el generador produce la implementación concreta.
+interfaces del dominio — el generador produce la implementación concreta (interfaz JPA +
+`RepositoryImpl` que traduce entre dominio y JPA).
 
-Cada entrada tiene tres campos raíz:
+### Propiedades de nivel de repositorio
 
-| Campo | Descripción |
-|---|---|
-| `aggregate` | PascalCase. Nombre del agregado al que pertenece este repositorio. Un repositorio por agregado. |
-| `queryMethods` | Lista de métodos de lectura usados por queries (Path B de resolución). |
-| `methods` | Lista de métodos de escritura/lectura por ID (save, findById, delete, countBy…). |
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `aggregate` | PascalCase | ✅ | Nombre del agregado. Debe coincidir con un agregado declarado en `aggregates[]`. |
+| `queryMethods` | lista | no | Métodos de lectura con filtros múltiples. Generan `@Query` JPQL inline. Fuente de verdad para el Path B de resolución de queries. |
+| `methods` | lista | no | Métodos con firma directa: `findById`, `findBy{Campo}`, `countBy*`, `save`, `delete`, `existsBy*`. |
+| `bulkOperations` | `true` / omitido | no | Cuando `true`, expone `saveAll(List<T>)`, `findAllById(List<UUID>)` y `count()` en el puerto de dominio. Usar en commands de importación masiva o casos de uso con `bulk:`. |
+| `autoDerive` | `true` / `false` | no | Default `true`. Cuando `true`, el generador deriva automáticamente `findBy{Campo}` desde cada `domainRules[].type: uniqueness`. Poner `false` solo cuando ya declaraste el método manualmente con una firma diferente. |
 
-### `queryMethods` — métodos de lectura para queries
+---
+
+### `queryMethods` — métodos de lectura con filtros (Path B)
 
 Son la fuente de verdad para el **Path B**: cuando un query UC no tiene `loadAggregate: true`,
 el generador cruza los nombres de `input[]` del UC contra los `params` de cada `queryMethod`
-para identificar unívocamente el método a invocar.
+para identificar unívocamente el método a invocar. El generador produce una `@Query` JPQL
+inline con condiciones `IS NULL OR` para cada parámetro opcional.
+
+> **Separación estricta:** `queryMethods` son de solo lectura con filtros múltiples.  
+> Los métodos point-lookup (`findById`, `findBy{Campo}`) y los de escritura (`save`, `delete`, `count`)  
+> van siempre en `methods`. **Un método de listado con parámetros de filtro NUNCA va en `methods`.**
+
+#### Propiedades de un `queryMethod`
+
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `name` | camelCase | ✅ | Convenciones: `list` (filtros opcionales + paginación), `listBy{Param}` (un param obligatorio), `search{Aggregate}s` (búsqueda semántica). |
+| `params` | lista | ✅ | Parámetros de filtro. Ver tabla de campos de param abajo. |
+| `returns` | tipo retorno | ✅ | Ver tabla de tipos de retorno abajo. |
+| `derivedFrom` | string | no | Origen del método. Ver valores válidos abajo. |
+| `defaultSort` | objeto | no | Ordenación por defecto en retornos `List[T]`. Campos: `field` (camelCase, atributo del agregado) y `direction` (`ASC` o `DESC`). **No aplica a `Page[T]`** — el orden lo controla `Pageable.sort` en runtime. |
+| `sortable` | lista camelCase | no | Campos por los que puede ordenarse. Se validan contra las propiedades del agregado. |
+
+#### Campos de un `param` de `queryMethod`
+
+| Campo | Descripción |
+|---|---|
+| `name` | camelCase. Si el nombre coincide con una propiedad del agregado, el generador infiere el predicado `EQ` automáticamente. |
+| `type` | Tipo canónico. `List[T]` activa el operador `IN` por defecto. |
+| `required` | `false` para filtros opcionales. Omitir (o `true`) para params obligatorios. |
+| `filterOn` | Array de propiedades del agregado que filtra este param. **Requerido cuando el nombre del param no corresponde a ninguna propiedad del agregado** (ej: `search`, `q`, `keyword`). Sin este campo el generador no puede derivar el predicado. |
+| `operator` | Operador SQL del predicado. **Obligatorio cuando `filterOn` está presente.** |
+
+#### Operadores disponibles
+
+| Operador | SQL generado | Cuándo usar |
+|---|---|---|
+| `EQ` | `field = :param` | Filtro exacto por estado, ID, booleano. Default implícito cuando el nombre mapea a una propiedad. |
+| `LIKE_CONTAINS` | `LOWER(field) LIKE LOWER(CONCAT('%', :param, '%'))` | Búsqueda libre en texto, case-insensitive. El más común para campos de búsqueda. |
+| `LIKE_STARTS` | `LOWER(field) LIKE LOWER(CONCAT(:param, '%'))` | Autocompletado con prefijo. |
+| `LIKE_ENDS` | `LOWER(field) LIKE LOWER(CONCAT('%', :param))` | Sufijo. |
+| `GTE` | `field >= :param` | Rango inferior (precio mínimo, fecha desde). |
+| `LTE` | `field <= :param` | Rango superior (precio máximo, fecha hasta). |
+| `IN` | `field IN :param` | Filtro multi-valor. El tipo del param debe ser `List[T]`. |
 
 ```yaml
 repositories:
 
   - aggregate: Order
     queryMethods:
-      - name: listByCustomerId
+
+      - name: listByCustomerId      # filtros opcionales + paginación
         params:
           - name: customerId
             type: Uuid
-            required: true
+            required: true          # el campo obligatorio que define el scope
           - name: status
             type: OrderStatus
-            required: false
+            required: false         # filtro opcional
           - name: page
             type: PageRequest
             required: false
         returns: "Page[Order]"
+        defaultSort:
+          field: createdAt
+          direction: DESC
+        sortable:
+          - createdAt
+          - totalAmount
         derivedFrom: openapi:listOrders
 
-      - name: listByDriverId
+      - name: searchProducts        # búsqueda semántica con rango de precios
         params:
-          - name: driverId
-            type: Uuid
+          - name: searchTerm
+            type: String
+            required: false
+            filterOn: [name, sku]   # filtra sobre Product.name Y Product.sku
+            operator: LIKE_CONTAINS
+          - name: minPrice
+            type: Decimal
+            required: false
+            filterOn: [priceAmount] # nombre de columna JPA (Money expandida)
+            operator: GTE
+          - name: maxPrice
+            type: Decimal
+            required: false
+            filterOn: [priceAmount]
+            operator: LTE
+          - name: statusList
+            type: List[ProductStatus]
+            required: false
+            filterOn: [status]
+            operator: IN
+          - name: page
+            type: PageRequest
             required: true
-        returns: "List[Order]"
-        derivedFrom: openapi:listOrdersByDriver
+        returns: "Page[Product]"
+        derivedFrom: openapi:searchProducts
 ```
 
-El nombre del `queryMethod` sigue las mismas convenciones que `methods`:
-- `list` — query con filtros opcionales + paginación
-- `listBy{Param}` — filtrada por un único param obligatorio
-- `findBy{Campo}` — búsqueda por campo único (retorna nullable)
+---
 
-> **Separación estricta:** los métodos de `queryMethods` son de solo lectura. Los métodos de
-> `methods` son los implícitos (`findById`, `save`, `delete`) y los derivados de domainRules.
-> Un método de listado (con parámetros de filtro) **nunca va en `methods`** — va en `queryMethods`.
+### `methods` — métodos point-lookup, escritura y conteo
 
-### Campos de un método
-
-| Campo | Descripción |
-|---|---|
-| `name` | camelCase. Nombre del método. Ver convenciones de naming más abajo. |
-| `params` | Lista de parámetros de entrada. Ver campos de cada param en la tabla siguiente. |
-| `returns` | Tipo de retorno. Ver tabla de tipos de retorno más abajo. |
-| `derivedFrom` | Por qué existe este método. Ver valores válidos más abajo. |
-
-### Campos de un `param`
-
-| Campo | Descripción |
-|---|---|
-| `name` | camelCase. Si el nombre coincide con una propiedad del agregado, el generador infiere el predicado `EQ` automáticamente. |
-| `type` | Tipo canónico del parámetro. |
-| `required` | `false` para filtros opcionales. Omitir (o `true`) para params obligatorios. |
-| `filterOn` | Array de propiedades del agregado que filtra este param. **Requerido cuando el nombre del param no corresponde a ninguna propiedad del agregado** (ej: `search`, `q`, `keyword`). El generador no puede derivar el predicado sin este campo. Ejemplo: `filterOn: [name, sku]`. |
-| `operator` | Operador SQL del predicado. **Requerido cuando `filterOn` está presente.** Valores válidos: `EQ` (igualdad exacta — default implícito cuando el nombre mapea a una propiedad), `LIKE_CONTAINS` (`LIKE '%:v%'`), `LIKE_STARTS` (`LIKE ':v%'`), `LIKE_ENDS` (`LIKE '%:v'`), `GTE` (`>=`), `LTE` (`<=`), `IN`. |
-
-### `derivedFrom` — origen del método
-
-| Valor | Qué significa | Cuándo usarlo |
-|---|---|---|
-| `implicit` | Método estándar que el generador crea en todo repositorio, sin ninguna declaración explícita en el diseño. | `findById` y `save` siempre. |
-| `RULE-ID` | El método existe porque una regla de dominio lo requiere. El ID apunta a la regla en `domainRules`. | Reglas `uniqueness` → `findBy{Campo}`; reglas `deleteGuard` → `delete`; reglas `crossAggregateConstraint` → `countBy{Campo}`. |
-| `openapi:{operationId}` | El método existe porque un endpoint del OpenAPI necesita ese acceso a datos. El `operationId` referenciado debe existir en el OpenAPI del BC. | Queries con filtros (`list`, `listBy{Param}`). |
-
-### Tipos de retorno
-
-| Tipo de retorno | Cuándo usarlo |
-|---|---|
-| `Product?` | Nullable — el método puede no encontrar el registro. Siempre para `findById` y `findBy{Campo}`. |
-| `Page[Product]` | Lista paginada con metadatos. Para métodos `list` con `PageRequest` como parámetro. |
-| `List[Product]` | Lista sin paginación. Solo cuando el volumen está acotado (ej: entidades de un agregado). |
-| `Int` | Conteo. Para métodos `countBy…` derivados de reglas `crossAggregateConstraint`. Siempre mayúscula. |
-| `void` | Sin retorno. Solo para `delete`. |
-
-### Convenciones de naming
-
-| Método | Cuándo usarlo |
-|---|---|
-| `findById` | Siempre. Busca por la PK del agregado. |
-| `findBy{Campo}` | Campo con `unique: true` en el agregado o regla `uniqueness`. Retorna `{Aggregate}?`. |
-| `list` | Query con filtros opcionales. Acepta `PageRequest`. |
-| `listBy{Param}` | Query filtrada por un único parámetro **obligatorio** (ej: `listByCategory`). |
-| `countBy{Campo}` | Cuenta instancias que referencian otro agregado. Para reglas `crossAggregateConstraint`. |
-| `countNonDeletedBy{Campo}` | Igual que `countBy{Campo}` pero el agregado tiene `softDelete: true`. El generador deriva `WHERE {campo} = :v AND deleted_at IS NULL`. Usar este nombre en lugar de `countActiveBy{Campo}` — el calificador `Active` es ambiguo cuando el agregado no tiene campo `status`. |
-| `save` | Siempre. INSERT o UPDATE del agregado. |
-| `delete` | Solo si hay regla `deleteGuard`. Eliminación física. |
-
-> **Calificadores en `count`/`list` sobre agregados `softDelete: true`:** El calificador `Active` (ej: `countActiveByCustomerId`, `listActiveByOwnerId`) implica `status = 'ACTIVE'`, pero en agregados soft-deleted no hay `status`. El generador no puede resolver la ambigüedad y produce un predicado incorrecto. Usar siempre `NonDeleted` como calificador de exclusión de borrados lógicos — el generador lo mapea inequívocamente a `deleted_at IS NULL`.
-
-### Ejemplo completo
+Los métodos en `methods` tienen firma directa. Incluyen los métodos implícitos (`findById`, `save`)
+que el generador crea en todo repositorio, los derivados de `domainRules` y los métodos
+explícitos adicionales necesarios.
 
 ```yaml
-repositories:
-
-  - aggregate: Product
     methods:
 
-      - name: findById              # implícito — siempre presente
+      # ─ Método implícito de lectura por ID (siempre presente)
+      - name: findById
         params:
           - name: id
             type: Uuid
         returns: "Product?"
         derivedFrom: implicit
 
-      - name: findBySku             # derivado de PRD-RULE-002 (uniqueness en sku)
-        params:
-          - name: sku
-            type: String(100)
-        returns: "Product?"
+      # ─ Derivado de regla de unicidad (autoDerive genera esto si no se declara)
+      - name: findBySku
+        signature: "findBySku(String(100)): Product?"
         derivedFrom: PRD-RULE-002
 
-      - name: list                  # derivado del endpoint GET /products del OpenAPI
+      # ─ Derivado de crossAggregateConstraint (cuenta dependientes en otro agregado)
+      - name: countNonDeletedByCategoryId  # usar NonDeleted, no Active, en agregados softDelete
         params:
-          - name: status            # filtro opcional — mapea a Product.status (EQ implícito)
-            type: ProductStatus
-            required: false
-          - name: search            # param de búsqueda textual — no mapea a ninguna propiedad
-            type: String
-            required: false
-            filterOn: [name, sku]   # filtra sobre Product.name y Product.sku
-            operator: LIKE_CONTAINS # genera: WHERE (p.name LIKE %:search% OR p.sku LIKE %:search%)
-          - name: page              # siempre requerido en métodos list
-            type: PageRequest
-            required: true
-        returns: "Page[Product]"
-        derivedFrom: openapi:listProducts
-
-      - name: countByCategoryId     # derivado de PRD-RULE-005 (crossAggregateConstraint)
-        params:                     # verifica que la categoría no tenga productos antes
-          - name: categoryId        # de permitir su eliminación
+          - name: categoryId
             type: Uuid
         returns: Int
         derivedFrom: PRD-RULE-005
 
-      - name: save                  # implícito — siempre presente
+      # ─ Método de existencia (Phase 3 opt-in: para guards de deduplicación)
+      - name: existsBySkuAndIdNot
+        params:
+          - name: sku
+            type: String(100)
+            required: true
+          - name: id
+            type: Uuid
+            required: true
+        returns: Boolean
+        derivedFrom: PRD-RULE-002
+
+      # ─ Persistencia (siempre presente)
+      - name: save
         params:
           - name: entity
             type: Product
         returns: void
         derivedFrom: implicit
 
-      - name: delete                # derivado de PRD-RULE-003 (deleteGuard)
+      # ─ Eliminación (solo si hay regla deleteGuard)
+      - name: delete
+        params:
+          - name: id
+            type: Uuid
+        returns: void
+        derivedFrom: PRD-RULE-003
+```
+
+#### Sintaxis de `signature` (alternativa concisa a `params`/`returns`)
+
+`"methodName(param1Type, param2Name?: param2Type): ReturnType"`
+
+Útil para métodos con un solo parámetro donde el nombre no agrega valor. Ejemplo:
+- `"findBySku(String(100)): Product?"` — equivale a `params: [{name: sku, type: String(100)}] + returns: Product?`
+- `"existsByEmail(Email): Boolean"`
+
+---
+
+### `derivedFrom` — origen del método
+
+| Valor | Qué significa | Cuándo usarlo |
+|---|---|---|
+| `implicit` | El generador crea este método en todo repositorio. No requiere declaración explícita en el diseño. | `findById` y `save` siempre. |
+| `RULE-ID` | El método existe porque una regla de dominio lo requiere. El ID literal apunta a la regla en `domainRules[]`. | `uniqueness` → `findBy{Campo}`; `deleteGuard` → `delete`; `crossAggregateConstraint` → `countBy{Campo}`. |
+| `openapi:{operationId}` | El método existe porque un endpoint del OpenAPI necesita ese acceso a datos. | Queries con filtros (`queryMethods`). |
+
+---
+
+### Tipos de retorno disponibles
+
+| Tipo de retorno | Java | Cuándo usarlo |
+|---|---|---|
+| `T?` | `Optional<T>` | Nullable — el método puede no encontrar el registro. Siempre en `findById` y `findBy{Campo}`. |
+| `Page[T]` | `Page<T>` | Listado paginado con total (UI de tabla con contador). Requiere param `PageRequest`. |
+| `Slice[T]` | `Slice<T>` | Listado paginado sin total. Más eficiente: no ejecuta `COUNT(*)`. Para scroll infinito o cursor paginado. |
+| `Stream[T]` | `Stream<T>` | Procesamiento incremental de volúmenes masivos (exports, batch). **No usar en handlers HTTP** — Spring cierra la sesión JPA antes de que el stream se consuma. |
+| `List[T]` | `List<T>` | Lista completa sin paginación. Solo cuando el volumen está acotado por diseño (ej: líneas de un pedido). |
+| `Boolean` | `boolean` | Para `existsBy*`. Verificar existencia sin cargar el objeto. |
+| `Long` | `long` | Conteos grandes (`saveAll` count, contadores estadísticos). |
+| `Int` | `int` | Conteos pequeños. Para `countBy*` derivados de `crossAggregateConstraint`. |
+| `void` | `void` | Para `delete` y `save` (sin retorno). |
+
+---
+
+### Convenciones de naming
+
+| Método | Cuándo usarlo |
+|---|---|
+| `findById` | Siempre. Busca por la PK del agregado. Derivado implícito — no necesita declaración si `autoDerive: true`. |
+| `findBy{Campo}` | Campo con `unique: true` en el agregado o regla `uniqueness`. Retorna `{Aggregate}?`. |
+| `existsBy{Campo}` | Guard de deduplicación o verificación de existencia sin cargar la entidad. |
+| `list` | Query con filtros opcionales y paginación. Siempre en `queryMethods`. |
+| `listBy{Param}` | Query filtrada por un único parámetro **obligatorio** (ej: `listByCustomerId`). Siempre en `queryMethods`. |
+| `search{Aggregates}` | Búsqueda semántica con múltiples filtros opcionales y texto libre. Siempre en `queryMethods`. |
+| `countBy{Campo}` | Cuenta instancias que referencian otro agregado. Para reglas `crossAggregateConstraint`. |
+| `countNonDeletedBy{Campo}` | Igual que `countBy{Campo}` pero agrega `deleted_at IS NULL`. **Usar en vez de `countActiveBy{Campo}`** — el calificador `Active` es ambiguo sin campo `status` explícito. |
+| `save` | Siempre. INSERT o UPDATE del agregado. Derivado implícito. |
+| `delete` | Solo si hay regla `deleteGuard`. Eliminación física. |
+
+---
+
+### Restricciones en agregados `readModel: true`
+
+Un repositorio de `readModel: true` solo puede declarar:
+- `findById` y `findBy{unique}` en `methods`
+- `upsert` — operación especial de escritura (sin `save` ni `delete`)
+
+**Nunca declarar `save` ni `delete` en un readModel.** Los readModels se hidratan
+exclusivamente vía event-triggered use cases con `method: upsert`. El generador rechaza
+`save` y `delete` en un repositorio cuyo agregado es `readModel: true`.
+
+---
+
+### Ejemplo completo con `bulkOperations` y `autoDerive`
+
+```yaml
+repositories:
+
+  - aggregate: Product
+    bulkOperations: true    # expone saveAll(List<Product>), findAllById(List<UUID>), count()
+    autoDerive: true        # default — genera findBySku desde PRD-RULE-002 automáticamente
+                            # poner false solo si ya declaraste findBySku con firma diferente
+
+    queryMethods:           # ← métodos con filtros van AQUÍ, no en methods
+
+      - name: list
+        params:
+          - name: status
+            type: ProductStatus
+            required: false
+          - name: search
+            type: String
+            required: false
+            filterOn: [name, sku]
+            operator: LIKE_CONTAINS
+          - name: page
+            type: PageRequest
+            required: true
+        returns: "Page[Product]"
+        defaultSort:
+          field: createdAt
+          direction: DESC
+        sortable: [createdAt, name, priceAmount]
+        derivedFrom: openapi:listProducts
+
+    methods:                # ← solo point-lookup, escritura y conteo van AQUÍ
+
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: "Product?"
+        derivedFrom: implicit
+
+      # findBySku se genera automáticamente desde PRD-RULE-002 (autoDerive: true)
+      # Si se declara manualmente, autoDerive lo ignora para este campo
+
+      - name: countNonDeletedByCategoryId
+        params:
+          - name: categoryId
+            type: Uuid
+        returns: Int
+        derivedFrom: PRD-RULE-005
+
+      - name: save
+        params:
+          - name: entity
+            type: Product
+        returns: void
+        derivedFrom: implicit
+
+      - name: delete
         params:
           - name: id
             type: Uuid
@@ -945,42 +1086,228 @@ repositories:
 
 ## `errors` — Catálogo de errores del dominio
 
-Un error por cada violación posible. El generador produce clases de excepción tipadas.
+Un error por cada violación posible del dominio. El generador produce clases de excepción
+Java tipadas que el `HandlerExceptions` global convierte en respuestas HTTP estructuradas.
+
+> **Regla de completitud:** todo `errorCode` referenciado en `domainRules[].errorCode`,
+> `notFoundError`, `lookups[].errorCode`, `fkValidations[].error` o `validations[].errorCode`
+> DEBE existir en esta sección. El generador falla si hay un código referenciado sin declarar.
+
+> **Clave prohibida:** `constraintName` **no puede aparecer en `errors[]`**. El validador
+> rechaza cualquier clave fuera de la whitelist. El constraint de DB va en
+> `aggregates[].domainRules[].constraintName` (junto a la regla `uniqueness`).
+
+---
+
+### Propiedades de un error
+
+| Propiedad | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `code` | SCREAMING_SNAKE_CASE | ✅ | Identificador único del error en el BC. |
+| `httpStatus` | integer (whitelist) | ✅ | Código HTTP de la respuesta. Ver tabla completa abajo. |
+| `description` | texto libre | no | Descripción técnica interna. Se emite como **Javadoc** en la clase de error generada. Añadir siempre que el código no sea autoexplicativo. Ayuda al equipo de Fase 3 a entender cuándo lanzar el error. |
+| `message` | texto | no | Mensaje de error para el usuario final (cuando no hay parámetros dinámicos). |
+| `title` | texto | no | Título corto de la respuesta de error (visible al cliente en la respuesta JSON). |
+| `errorType` | PascalCase + `Error` | no | Override del nombre de la clase Java. Por defecto el generador deriva el nombre mecánicamente del `code` (`PRODUCT_NOT_FOUND` → `ProductNotFoundError`). Usar solo cuando el código es críptico o el nombre derivado es incorrecto. |
+| `messageTemplate` | string con `{argName}` | ✅ si `args` declarado | Mensaje parametrizado. Los placeholders `{argName}` son reemplazados en runtime con los `args`. |
+| `args` | lista | no | Parámetros del `messageTemplate`. Cada entry: `name` (camelCase) + `type` (tipo Java: `String`, `UUID`, `Integer`, `BigDecimal`, etc.). |
+| `chainable` | `true` / `false` | no | Default: `false`. Cuando `true`, genera un constructor adicional `(Throwable cause)` en la clase. Usar cuando el error envuelve una excepción de infraestructura (timeout, conexión, BD) y el stack trace de la causa original debe preservarse en los logs. |
+| `kind` | `business` / `infrastructure` | no | Default: `business`. `infrastructure` activa la lógica de `triggeredBy`. |
+| `triggeredBy` | FQN o nombre simple de clase Java | solo si `kind: infrastructure` | La clase de excepción JVM que el `HandlerExceptions` global traduce a este error de dominio. El generador registra un `@ExceptionHandler` para esta excepción. |
+| `usedFor` | `auto` / `manual` | no | Default: `auto`. El generador emite una advertencia si ningún artefacto del YAML referencia el `code`. Usar `manual` para suprimir esta advertencia cuando el error se lanza manualmente en código de Fase 3 (sin declaración en `domainRules`, `notFoundError`, etc.). |
+
+---
+
+### `httpStatus` — valores soportados (whitelist exacta)
+
+Solo se aceptan los siguientes 14 valores. Cualquier otro abortará el build.
+
+| Código | Significado | Cuándo usarlo en el dominio |
+|---|---|---|
+| `400` | Bad Request | Request inválido sintácticamente. Errores de validación del esquema. |
+| `401` | Unauthorized | El usuario no está autenticado. |
+| `402` | Payment Required | La operación requiere pago previo. |
+| `403` | Forbidden | El usuario no tiene permisos sobre este recurso. |
+| `404` | Not Found | El recurso no existe. **El más común para entidades no encontradas.** |
+| `408` | Request Timeout | La operación tardó demasiado. |
+| `409` | Conflict | Conflicto de estado: SKU duplicado, email ya registrado, estado incompatible. |
+| `412` | Precondition Failed | Precondición no cumplida (ETag, versión, estado requerido que no es el actual). |
+| `415` | Unsupported Media Type | Tipo de archivo no soportado (uploads). |
+| `422` | Unprocessable Entity | Regla de negocio violada. **El más común para errores de dominio** (`statePrecondition`, `crossAggregateConstraint`). |
+| `423` | Locked | El recurso está bloqueado temporalmente (procesamiento en curso). |
+| `429` | Too Many Requests | Rate limit o cuota excedida. |
+| `503` | Service Unavailable | Dependencia externa no disponible (gateway de pago, servicio externo). |
+| `504` | Gateway Timeout | Timeout en una llamada a dependencia externa. |
+
+> **Regla práctica:** 404 para "no existe", 409 para "existe pero está en conflicto",
+> 422 para "existe pero la operación no puede ejecutarse por una regla de negocio",
+> 503/504 para errores de infraestructura externa.
+
+---
+
+### Cuándo usar cada propiedad avanzada
+
+#### `description` — Javadoc de la clase de error
+
+Siempre añadir `description` cuando:
+- El código no es autoexplicativo (`RULE_VLD_004`, `CAT_001`, etc.)
+- El error se puede confundir con otro de código similar
+- Hay matices importantes sobre cuándo lanzarlo vs otros errores del mismo `httpStatus`
+
+```yaml
+  - code: PRODUCT_CANNOT_BE_ACTIVATED
+    httpStatus: 422
+    description: >
+      A product can only be activated if it has a name, a valid price greater than zero,
+      and at least one image. Thrown by the activate() domain method guard.
+    message: The product is missing required fields for activation.
+```
+
+#### `messageTemplate` + `args` — cuando el mensaje necesita datos dinámicos
+
+Usar cuando el mensaje de error debe incluir información contextual del request (el valor
+que causó el conflicto, el ID del recurso no encontrado, el límite superado, etc.).
+
+```yaml
+  - code: PRODUCT_SKU_ALREADY_EXISTS
+    httpStatus: 409
+    messageTemplate: "A product with SKU '{sku}' already exists in the catalog."
+    args:
+      - name: sku
+        type: String
+    description: Uniqueness constraint violation on the product SKU field.
+```
+
+El generador produce un constructor Java parametrizado:
+```java
+public ProductSkuAlreadyExistsError(String sku) {
+    super("A product with SKU '" + String.valueOf(sku) + "' already exists in the catalog.",
+          "PRODUCT_SKU_ALREADY_EXISTS", 409, new Object[]{ sku });
+}
+```
+
+> **Cuando no hay datos dinámicos:** usar `message` (texto fijo). No declarar `args` sin `messageTemplate`.
+
+#### `chainable: true` — para errores de infraestructura que envuelven una causa
+
+Usar cuando el error en el dominio corresponde a una falla de una dependencia externa
+y es crítico preservar el stack trace original en los logs para debugging.
+
+```yaml
+  - code: PAYMENT_GATEWAY_UNAVAILABLE
+    httpStatus: 503
+    description: The payment gateway returned an unexpected error or timed out.
+    chainable: true
+```
+
+Genera un constructor adicional:
+```java
+public PaymentGatewayUnavailableError(Throwable cause) {
+    super("PAYMENT_GATEWAY_UNAVAILABLE", cause);
+}
+// Uso en el adaptador:
+// throw new PaymentGatewayUnavailableError(feignException);
+```
+
+#### `kind: infrastructure` + `triggeredBy` — mapeo de excepciones JVM a errores de dominio
+
+Usar cuando una excepción técnica lanzada por el runtime (Hibernate, Feign, JPA) debe
+traducirse automáticamente en un error de dominio estructurado, sin que Fase 3 deba
+escribir un try/catch en cada handler.
+
+El `HandlerExceptions` global registra un `@ExceptionHandler` para la clase indicada.
+
+```yaml
+  - code: DATABASE_CONSTRAINT_VIOLATION
+    httpStatus: 409
+    kind: infrastructure
+    triggeredBy: org.springframework.dao.DataIntegrityViolationException
+    chainable: true
+    description: >
+      Triggered reactively when a concurrent insert violates a DB unique constraint.
+      Complements the proactive guard generated from uniqueness domainRules.
+```
+
+> **Restricción:** `triggeredBy` solo es válido cuando `kind: infrastructure`. El build
+> falla si `triggeredBy` está presente sin `kind: infrastructure`. El mismo `triggeredBy`
+> no puede mapearse a dos errores distintos en el mismo BC.
+
+#### `usedFor: manual` — errores lanzados solo desde código de Fase 3
+
+Usar para errores que NO aparecen en ningún `domainRule`, `notFoundError`, `lookups[]`,
+`fkValidations[]` ni `validations[]` — se lanzan exclusivamente desde código manual
+en handlers, adaptadores o sagas.
+
+Sin `usedFor: manual`, el generador emite una advertencia de "error huérfano" que podría
+indicar un error de diseño (código declarado pero nunca referenciado).
+
+```yaml
+  - code: SAGA_COMPENSATION_FAILED
+    httpStatus: 503
+    usedFor: manual
+    description: >
+      Thrown manually from the saga orchestrator when the compensation step also fails.
+      Not wired to any domain rule — thrown from infrastructure-level saga code in Fase 3.
+```
+
+---
+
+### Ejemplo completo de la sección `errors`
 
 ```yaml
 errors:
 
+  # Error básico (sin propiedades avanzadas)
   - code: PRODUCT_NOT_FOUND
     httpStatus: 404
-    errorType: ProductNotFoundError
+    title: Product Not Found
+    message: The requested product does not exist in the catalog.
+    description: Thrown when a product lookup by ID returns no result.
 
-  - code: PRODUCT_NOT_ACTIVATABLE
+  # Error con estado de precondición
+  - code: PRODUCT_CANNOT_BE_ACTIVATED
     httpStatus: 422
-    errorType: ProductNotActivatableError
+    title: Product Cannot Be Activated
+    message: The product cannot be activated because it is not in DRAFT status.
+    description: State precondition violation for the activate transition.
 
+  # Error con mensaje parametrizado (SKU que causó el conflicto)
   - code: PRODUCT_SKU_ALREADY_EXISTS
     httpStatus: 409
-    errorType: ProductSkuAlreadyExistsError
+    title: SKU Already Exists
+    messageTemplate: "A product with SKU '{sku}' already exists in the catalog."
+    args:
+      - name: sku
+        type: String
+    description: Uniqueness constraint violation on the product SKU field.
 
-  - code: PRODUCT_CANNOT_BE_DELETED
-    httpStatus: 422
-    errorType: ProductCannotBeDeletedError
+  # Error de tipo de archivo
+  - code: INVALID_IMAGE_TYPE
+    httpStatus: 415
+    title: Unsupported Image Type
+    message: Only PNG, JPEG, and WebP image files are accepted for product images.
+    description: Thrown when an uploaded product image has an unsupported MIME type.
+
+  # Error de infraestructura con mapeo reactivo (excepción JVM → error de dominio)
+  - code: CATALOG_SERVICE_UNAVAILABLE
+    httpStatus: 503
+    kind: infrastructure
+    triggeredBy: feign.FeignException
+    chainable: true
+    title: Catalog Service Unavailable
+    message: The catalog service is temporarily unavailable. Please retry later.
+    description: >
+      Thrown when the Feign client receives a non-2xx response or connection error
+      from the catalog service. The FeignException is preserved as cause in the log.
+
+  # Error lanzado manualmente desde código de saga (sin domainRule que lo referencie)
+  - code: STOCK_RESERVATION_FAILED
+    httpStatus: 503
+    usedFor: manual
+    description: >
+      Thrown manually from the order saga orchestrator when inventory returns a
+      reservation failure. Not wired to any domain rule in this BC's YAML.
 ```
-
-| Campo | Descripción |
-|---|---|
-| `code` | SCREAMING_SNAKE_CASE. Referenciado en `domainRules[].errorCode` y `useCases[].notFoundError`. |
-| `httpStatus` | Código HTTP que el adaptador REST devuelve al cliente. |
-| `errorType` | PascalCase con sufijo `Error`. Nombre de la clase de excepción generada. |
-
-**Guía de `httpStatus`:**
-
-| Código | Cuándo usarlo |
-|---|---|
-| `400` | Request malformado o con datos inválidos. |
-| `404` | Entidad no encontrada por ID. |
-| `409` | Conflicto (violación de unicidad, estado ya en el valor pedido). |
-| `422` | La entidad existe pero la operación no puede ejecutarse (precondición de negocio no cumplida). |
 
 ---
 
@@ -1627,7 +1954,7 @@ Ver tabla de decisión completa en `references/use-cases-design-decisions.md §2
 idempotency:
   header: Idempotency-Key
   ttl: PT24H                             # ISO-8601 duration
-  storage: redis                         # database | redis
+  storage: cache                         # ÚNICO valor válido — database y redis están deprecados
 ```
 
 #### `authorization`
@@ -1638,7 +1965,8 @@ authorization:
   ownership:
     field: customerId                    # campo del agregado/comando
     claim: sub                           # claim del JWT
-    allowRoleBypass: true                # roles en rolesAnyOf saltan el ownership
+    allowRoleBypass:                     # lista de roles que pueden saltarse el ownership check
+      - ROLE_ADMIN
 ```
 
 #### Multi-aggregate — `aggregates[]` + `steps[]`

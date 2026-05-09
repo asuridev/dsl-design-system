@@ -378,7 +378,7 @@ en la tabla `processed_event` **antes** de despachar el use case, en una transac
 
 | Señal | Decisión |
 |---|---|
-| Solo el propietario del recurso puede ejecutar el command (ej: un usuario solo puede editar su propio perfil) | ✅ `ownership: { field: userId, claim: sub, allowRoleBypass: true }` |
+| Solo el propietario del recurso puede ejecutar el command (ej: un usuario solo puede editar su propio perfil) | ✅ `ownership: { field: userId, claim: sub, allowRoleBypass: [ROLE_ADMIN] }` |
 | Cualquier usuario con el rol correcto puede ejecutar el command sobre cualquier recurso | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
 | El recurso no tiene campo de ownership (ej: catálogo gestionado por admins) | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
 
@@ -568,6 +568,190 @@ Por defecto (sin `errorType`), el generador deriva el nombre mecánicamente de `
 | UC simple tipo CRUD sin reglas de negocio especiales | Opcional — el `name` ya documenta la intención | — |
 
 > `description` en los errores y use cases se convierte en Javadoc en el código generado. Es la única documentación automática del comportamiento; evita que el equipo de Fase 3 tenga que leer el YAML para entender cada clase.
+
+---
+
+#### `messageTemplate` + `args` vs `message` — ¿cuándo parametrizar el mensaje de error?
+
+| Situación | Decisión | Ejemplo |
+|---|---|---|
+| El mensaje de error es estático (no incluye datos del request) | Usar `message: "texto fijo"`. No declarar `args`. | `"The product cannot be activated."` |
+| El mensaje necesita incluir un valor del request (el SKU duplicado, el ID no encontrado, el límite excedido) | Usar `messageTemplate` con `{placeholder}` + `args`. | `"A product with SKU '{sku}' already exists."` |
+| El error tiene múltiples valores dinámicos de tipos distintos | Usar `messageTemplate` con múltiples placeholders + un entry en `args` por cada uno. | `"Order {orderId} exceeds the daily limit of {limit} for customer {customerId}."` |
+
+**Regla:** cuando el usuario necesita saber *qué* valor causó el problema para poder corregirlo, usar `messageTemplate` + `args`. Si el mensaje genérico es suficiente, usar `message`.
+
+**Tipos válidos para `args[].type`:** `String`, `UUID`, `Integer`, `Long`, `BigDecimal`, `Boolean`, `LocalDate`, `LocalDateTime`.
+
+```yaml
+# ✅ Con datos dinámicos
+- code: ORDER_EXCEEDS_DAILY_LIMIT
+  httpStatus: 422
+  messageTemplate: "Order {orderId} exceeds the daily limit of {limit} for customer {customerId}."
+  args:
+    - name: orderId
+      type: UUID
+    - name: limit
+      type: BigDecimal
+    - name: customerId
+      type: UUID
+
+# ✅ Sin datos dinámicos
+- code: CART_IS_EMPTY
+  httpStatus: 422
+  message: The cart must have at least one item before checkout.
+```
+
+---
+
+#### `chainable: true` — ¿cuándo preservar la causa original?
+
+| Situación | Decisión |
+|---|---|
+| El error representa una falla de infraestructura (timeout, conexión, BD, servicio externo) | `chainable: true` — el adaptador hace `new MiError(causa)` y el stack trace de la causa aparece en los logs |
+| El error es de dominio puro (precondición, estado, unicidad) | `chainable: false` (default) — no hay causa original que preservar |
+
+**Por qué importa:** sin `chainable: true`, el `HandlerExceptions` no puede recibir la causa original como parámetro. El stack trace de la `FeignException` o `DataAccessException` se pierde en los logs, dificultando el debugging en producción.
+
+> **Regla:** todo error con `kind: infrastructure` debe tener `chainable: true`. Es válido también en errores `kind: business` que envuelven excepciones técnicas (ej: un timeout interno tratado como error de dominio).
+
+---
+
+#### `kind: infrastructure` + `triggeredBy` — ¿cuándo mapear excepciones JVM a errores de dominio?
+
+| Situación | Decisión |
+|---|---|
+| Una excepción JVM específica (Feign, Hibernate, JPA) puede ocurrir en múltiples puntos del BC y siempre debe producir la misma respuesta HTTP | `kind: infrastructure` + `triggeredBy: <FQN>` — el `@ExceptionHandler` global atrapa la excepción en cualquier handler |
+| La excepción es una condición de carrera que complementa la proactive guard (ej: `DataIntegrityViolationException` en inserts concurrentes) | `kind: infrastructure` + `triggeredBy: org.springframework.dao.DataIntegrityViolationException` — manejo reactivo de lo que la validación proactiva no pudo prevenir |
+| La excepción solo ocurre en un punto específico y el código de Fase 3 la captura manualmente | `kind: business` (default) + `usedFor: manual` — no registrar un `@ExceptionHandler` global |
+
+**Restricciones:**
+- `triggeredBy` solo es válido con `kind: infrastructure`. El build falla si aparece sin él.
+- El mismo `triggeredBy` class no puede mapearse a dos errores distintos en el mismo BC.
+- Siempre añadir `chainable: true` junto con `kind: infrastructure`.
+
+```yaml
+# ✅ Mapeo reactivo de excepción JVM
+- code: CONCURRENT_UPDATE_CONFLICT
+  httpStatus: 409
+  kind: infrastructure
+  triggeredBy: org.springframework.dao.DataIntegrityViolationException
+  chainable: true
+  description: >
+    Handles concurrent insert conflicts when the proactive uniqueness guard
+    loses a race condition. The DB constraint is the last line of defense.
+
+# ✅ Timeout en servicio externo
+- code: PAYMENT_GATEWAY_TIMEOUT
+  httpStatus: 504
+  kind: infrastructure
+  triggeredBy: feign.RetryableException
+  chainable: true
+  message: The payment gateway timed out. Please retry the operation.
+```
+
+---
+
+#### `usedFor: manual` — ¿cuándo declarar un error sin referencia en el YAML?
+
+| Situación | Decisión |
+|---|---|
+| El error se lanza desde un `domainRule`, `notFoundError`, `lookups[]`, `fkValidations[]` o `validations[]` | `usedFor: auto` (default) — el generador valida que el código esté referenciado |
+| El error se lanza **exclusivamente** desde código manual de Fase 3 (saga orchestrator, adaptador, compensación) sin ninguna declaración declarativa en el YAML | `usedFor: manual` — suprime la advertencia de "error huérfano" |
+
+> **Señal de diseño:** si muchos errores necesitan `usedFor: manual`, revisar si faltan `domainRules` que los debería referenciar. El caso de uso más legítimo para `usedFor: manual` es la lógica de saga/compensación, que por definición es imperativa y no puede expresarse en reglas declarativas.
+
+```yaml
+- code: SAGA_ROLLBACK_FAILED
+  httpStatus: 503
+  usedFor: manual
+  description: >
+    Thrown manually from the saga compensator when the rollback step also fails.
+    There is no domainRule that references this code — it is thrown imperatively
+    in the infrastructure saga orchestrator code written in Phase 3.
+```
+
+---
+
+#### `bulkOperations: true` en repositories — ¿cuándo declararlo?
+
+| Situación | Decisión |
+|---|---|
+| Un use case tiene `bulk:` declarado (importación masiva, sincronización de catálogos) | `bulkOperations: true` — el puerto de dominio expone `saveAll`, `findAllById` y `count` |
+| El BC necesita contar todos los registros del agregado (sin filtros) en algún flujo de negocio | `bulkOperations: true` — expone `count()` en el puerto |
+| Los use cases son CRUD estándar uno a uno y no hay flujos de importación/lote | omitir `bulkOperations` (default: no se exponen los métodos bulk en el puerto) |
+
+> **Nota técnica:** `saveAll` y `findAllById` ya están disponibles en la capa JPA (heredados de `JpaRepository`). `bulkOperations: true` los promueve al **puerto de dominio** (interfaz), haciéndolos accesibles desde los handlers de aplicación. Sin este flag, los handlers no pueden llamarlos aunque la capa JPA los tenga.
+
+```yaml
+repositories:
+  - aggregate: Product
+    bulkOperations: true   # ← necesario cuando hay: useCases[].bulk: {chunkSize: N}
+```
+
+---
+
+#### `queryMethods` vs `methods` en repositories — ¿dónde va cada método?
+
+| Tipo de método | Sección correcta | Ejemplo |
+|---|---|---|
+| Listado con filtros múltiples (cualquiera de ellos puede ser opcional) | `queryMethods` | `list(status?, search?, page)` |
+| Búsqueda por múltiples campos con texto libre | `queryMethods` | `searchProducts(term?, minPrice?, maxPrice?, page)` |
+| Lookup por un único campo único (`findBy{Campo}`) | `methods` | `findBySku(sku): Product?` |
+| Lookup por PK (`findById`) | `methods` | `findById(id): Product?` |
+| Verificación de existencia (`existsBy*`) | `methods` | `existsByEmail(email): Boolean` |
+| Conteo de dependencias (`countBy*`, `countNonDeletedBy*`) | `methods` | `countNonDeletedByCategoryId(categoryId): Int` |
+| Persistencia (`save`) | `methods` | `save(entity): void` |
+| Eliminación (`delete`) | `methods` | `delete(id): void` |
+
+**Regla de oro:** si el método tiene un parámetro de filtro que puede variar en la query string de un GET, va en `queryMethods`. Si es un lookup puntual por un único campo o una operación de escritura, va en `methods`.
+
+> **Error frecuente:** poner métodos `list` o `search*` en `methods`. Estos métodos necesitan la generación de `@Query` JPQL que solo ocurre en `queryMethods`. El generador no genera `@Query` para métodos en `methods`.
+
+---
+
+#### `defaultSort` + `sortable[]` en `queryMethods` — ¿cuándo declarar ordenación?
+
+| Situación | Decisión |
+|---|---|
+| El retorno del queryMethod es `List[T]` (sin paginación, sin `Pageable`) | Declarar `defaultSort: {field, direction}` — fija el orden en la `@Query` JPQL |
+| El retorno es `Page[T]` (con `Pageable`) y la UI siempre ordena por el mismo campo | Omitir `defaultSort` — el orden lo controla `Pageable.sort` en runtime desde el cliente |
+| El retorno es `Page[T]` y el cliente puede elegir el campo de orden desde la API | Declarar `sortable: [campo1, campo2]` — el generador valida que el campo de sort del `Pageable` esté en la lista permitida |
+| El método devuelve un único elemento o un Boolean/Int | No aplica `defaultSort` ni `sortable[]` |
+
+**Para `List[T]`:** `defaultSort` es especialmente importante porque la query no tiene `ORDER BY` implícito. Sin `defaultSort`, el orden de los resultados es no determinístico (depende del motor de BD y el plan de ejecución).
+
+**Para `Page[T]`:** `sortable[]` actúa como allowlist de campos de ordenación que el cliente puede pasar en el parámetro `sort` del `Pageable`. Si no se declara, el generador no restringe los campos de sort (cualquier campo del JPA entity es válido).
+
+```yaml
+queryMethods:
+  - name: list
+    params:
+      - name: status
+        type: ProductStatus
+        required: false
+      - name: page
+        type: PageRequest
+        required: true
+    returns: "Page[Product]"
+    defaultSort:
+      field: createdAt       # atributo camelCase del agregado (no columna DB)
+      direction: DESC
+    sortable:
+      - createdAt
+      - name
+      - priceAmount
+
+  - name: listFeaturedProducts  # sin Pageable — el orden es fijo en la @Query
+    params:
+      - name: categoryId
+        type: Uuid
+        required: true
+    returns: "List[Product]"
+    defaultSort:
+      field: sortOrder
+      direction: ASC
+```
 
 ---
 
