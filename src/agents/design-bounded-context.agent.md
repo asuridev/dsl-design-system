@@ -83,7 +83,8 @@ Generar en orden:
 Reescribir bc.yaml completando:
 8. `domainRules`: asignar `type` y `errorCode` a todas las reglas
 9. Properties: marcar `unique: true` e `indexed: true` según reglas y query params GET
-10. `useCases[]`: construir cada UC con todos los campos requeridos (`id`, `name`, `type`, `actor`, `trigger`, `aggregate`, `method`, `repositoryMethod`, `rules`, `emits`, `notFoundError`, `fkValidations`, `implementation`, `sagaStep` si aplica)
+10. `useCases[]`: construir cada UC con todos los campos requeridos (`id`, `name`, `type`, `actor`, `trigger`, `aggregate`, `method`, `rules`, `notFoundError`, `fkValidations`, `implementation`, `sagaStep` si aplica)
+    > ⚠️ `repositoryMethod` y `emits` no son campos de `useCases[]`: `repositoryMethod` fue eliminado (la persistencia la infiere el generador) y `emits` fue movido a `aggregates[].domainMethods[]`.
 11. `repositories[]`: derivar métodos desde las 4 fuentes (implicit, domainRules uniqueness, openapi GET params, crossAggregateConstraint)
 12. `errors[]`: declarar todos los códigos con `httpStatus` — incluir todos los `notFoundError`, `fkValidations.notFoundError` y `errorCode` de domainRules
 

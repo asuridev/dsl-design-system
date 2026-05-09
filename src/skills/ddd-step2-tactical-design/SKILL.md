@@ -25,12 +25,14 @@ arch/{bc-name}/
 ├── {bc-name}-spec.md           ← casos de uso detallados
 ├── {bc-name}-flows.md          ← flujos de validación Given/When/Then
 ├── {bc-name}-open-api.yaml     ← contratos REST (OpenAPI 3.1.0)
+├── {bc-name}-internal-api.yaml ← contratos REST internos BC-a-BC (condicional — ver §3.6)
 ├── {bc-name}-async-api.yaml    ← contratos de eventos (AsyncAPI 2.6.0)
 └── diagrams/
-    ├── {bc-name}-diagram.mmd                        ← casos de uso (flowchart) — SIEMPRE
-    ├── {bc-name}-diagram-domain-model.mmd            ← modelo de dominio (classDiagram) — SIEMPRE
-    ├── {bc-name}-diagram-{entity}-states.mmd         ← 1 por enum con transitions (ej: category-states)
-    └── {bc-name}-diagram-{op-kebab}-seq.mmd          ← 1 por operación outbound (ej: product-activated-seq)
+    ├── {bc-name}-diagram.mmd                            ← casos de uso (flowchart) — SIEMPRE
+    ├── {bc-name}-diagram-domain-model.mmd               ← modelo de dominio (classDiagram) — SIEMPRE
+    ├── {bc-name}-diagram-{entity}-states.mmd            ← 1 por enum con transitions (ej: category-states)
+    ├── {bc-name}-diagram-{op-kebab}-seq.mmd             ← 1 por operación outbound (ej: product-activated-seq)
+    └── {bc-name}-diagram-{readmodel-kebab}-sync-seq.mmd ← 1 por agregado readModel (condicional)
 ```
 
 ---

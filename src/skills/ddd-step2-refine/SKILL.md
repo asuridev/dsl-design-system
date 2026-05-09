@@ -243,13 +243,6 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
 - Entradas duplicadas en `emits[]` (sea string o lista) → 🔴 ERROR: el generador
   rechaza listas con el mismo nombre de evento más de una vez.
 
-**B8e — useCases[].rules[] → domainRules existentes**
-- Para cada UC con `rules[]` declarado: cada ID en la lista, ¿existe como `id` en
-  algún `aggregates[].domainRules[]` del BC?
-  - ID en `rules[]` que no corresponde a ninguna domainRule → 🔴 ERROR: la
-    validación queda referenciada pero sin implementación — el generador falla
-    al generar el handler.
-
 **B8b — Commands: `method` referencia `domainMethods` existentes**
 - Para cada UC con `type: command` cuyo `method` no sea `upsert` ni `delete`:
   - ¿Existe una entrada en `aggregates[aggregate].domainMethods[]` cuyo `name` coincide con `method`?
@@ -274,6 +267,13 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
 **B8d — `repositoryMethod` en use cases (campo eliminado)**
 - Para cada UC: ¿tiene el campo `repositoryMethod`?
   - UC con `repositoryMethod` → 🔴 ERROR: campo eliminado en el nuevo formato. Eliminar del UC (la persistencia la infiere el generador desde la lógica del handler).
+
+**B8e — useCases[].rules[] → domainRules existentes**
+- Para cada UC con `rules[]` declarado: cada ID en la lista, ¿existe como `id` en
+  algún `aggregates[].domainRules[]` del BC?
+  - ID en `rules[]` que no corresponde a ninguna domainRule → 🔴 ERROR: la
+    validación queda referenciada pero sin implementación — el generador falla
+    al generar el handler.
 
 **B9 — UC event-triggered → domainEvents.consumed[]**
 - Cada UC con `trigger.kind: event`, ¿tiene `trigger.event` en `domainEvents.consumed[]`?
