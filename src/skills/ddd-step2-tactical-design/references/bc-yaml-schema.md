@@ -356,7 +356,14 @@ aggregates:
           - name: {param}
             type: {DSL-type}        # tipo canónico o declarado en enums/valueObjects
         returns: void | {AggregateName}  # void si no devuelve nada; tipo del agregado para creaciones (factory)
-        emits: {NombreEvento | null}     # evento de dominio emitido tras ejecución exitosa; null si no emite
+        emits: {NombreEvento | null}     # string: evento único; null: no emite
+        # emits también puede ser lista cuando la operación emite múltiples eventos:
+        # emits:
+        #   - OrderCompleted
+        #   - PaymentSettled
+        #   - InventoryReserved
+        # Cada entrada debe referenciar un evento en domainEvents.published[].
+        # Usar lista cuando la operación coordina más de un cambio de estado observable.
 
 
 # ─── USE CASES ──────────────────────────────────────────────────────────────
@@ -542,10 +549,40 @@ repositories:
 
 errors:
 
-  # Un error por cada violation posible del dominio
-  - code: {ERROR_CODE}               # SCREAMING_SNAKE_CASE, e.g. PRODUCT_NOT_FOUND
-    httpStatus: 400 | 404 | 409 | 422 | 500
-    errorType: {ErrorTypeName}      # PascalCase con sufijo Error, e.g. ProductNotFoundError
+  # Un error por cada violation posible del dominio.
+  # ⚠️ PROHIBIDO: la clave `constraintName` en errors[]. El constraint de unicidad va en
+  #    aggregates[].domainRules[].constraintName cuando type: uniqueness. El generador
+  #    rechaza claves fuera de la whitelist: {code, httpStatus, description, message, title,
+  #    errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}.
+
+  - code: {ERROR_CODE}               # requerido — SCREAMING_SNAKE_CASE, único en el BC
+    httpStatus: 404                  # Whitelist exacta (14 valores):
+                                     #   400 | 401 | 402 | 403 | 404 | 408 | 409 | 412 | 415 | 422 | 423 | 429 | 503 | 504
+                                     # Default: 422 (BusinessException). ⚠️ 500 NO está en la whitelist.
+    description: |                   # opcional — renderizada como Javadoc en la clase Java generada
+      {descripción del error y cuándo ocurre en el dominio}
+    errorType: {ErrorTypeName}       # opcional — override del nombre de clase Java generada.
+                                     # PascalCase con sufijo Error (e.g. ProductNotFoundError).
+                                     # Default: derivado mecánicamente de code (PRODUCT_NOT_FOUND → ProductNotFoundError).
+    chainable: false                 # opcional (default false). true → genera ctor(Throwable cause).
+                                     # Usar cuando el error envuelve una excepción de infraestructura
+                                     # (DataAccessException, TimeoutException, etc.) que el Fase 3
+                                     # dev necesita preservar en el stack trace.
+    usedFor: auto                    # opcional (default auto). auto | manual.
+                                     # auto: el generador emite WARN si no hay ninguna referencia al code
+                                     #       en domainRules, notFoundError, lookups, fkValidations, validations.
+                                     # manual: suprime el warning — indica que el throw lo escribe Fase 3.
+                                     # Nota: errores con kind: infrastructure se excluyen del warning automáticamente.
+    messageTemplate: "Product {id} not found"   # opcional — mensaje parametrizado.
+                                     # Placeholders {nombre} deben corresponder 1:1 con args[].name.
+    args:                            # requerido si messageTemplate tiene placeholders; vacío si no hay.
+      - name: id                     # camelCase Java identifier (^[a-z][a-zA-Z0-9_]*$)
+        type: UUID                   # tipo Java válido: UUID, String, int, long, BigDecimal, etc.
+    kind: business                   # opcional (default business). business | infrastructure.
+    triggeredBy: ""                  # solo válido si kind: infrastructure.
+                                     # FQN o nombre simple de la clase de excepción del runtime
+                                     # que el advice global traduce a este error de dominio.
+                                     # Ej: "org.springframework.dao.DataIntegrityViolationException"
 
 
 # ─── INTEGRATIONS ────────────────────────────────────────────────────────────
@@ -597,15 +634,63 @@ integrations:
 
 # ─── DOMAIN EVENTS ───────────────────────────────────────────────────────────
 
+# ─── DOMAIN EVENTS ───────────────────────────────────────────────────────────
+
 domainEvents:
 
   published:
-    - name: {EventName}              # PascalCase, pasado: ProductCreated, OrderConfirmed
+    - name: {EventName}              # PascalCase, tiempo pasado: ProductActivated, OrderConfirmed
       description: {cuándo se emite y qué significa para el negocio}
+      version: 1                     # opcional (default 1) — versión del schema del evento.
+                                     # Incrementar solo ante cambios breaking del payload.
+      scope: both                    # opcional (default both).
+                                     #   internal     → solo listeners del mismo BC
+                                     #   integration  → solo para BCs externos / sistemas externos
+                                     #   both         → ambos (default; el más común)
+      channel: {routing-key-o-topic} # opcional — canal AsyncAPI exacto (routing-key en RabbitMQ,
+                                     # topic en Kafka). Si se omite, el generador deriva del nombre
+                                     # del evento en kebab-case con puntos (ProductActivated → product.activated).
+      allowHiddenLeak: true          # opcional (default false) — opt-in CONSCIENTE para incluir en
+                                     # el payload un campo marcado hidden: true en el agregado.
+                                     # Solo justificado en eventos scope: integration | both que
+                                     # deben transportar datos de auditoría o cifrados.
+      broker:                        # opcional — hints de broker para el publicador
+        partitionKey: {fieldName}    # campo del payload usado como partition key (Kafka)
+        headers:                     # headers adicionales del mensaje
+          {headerName}: "{value}"
+        retry:                       # política de reintentos del publicador
+          maxAttempts: 3
+          backoff: fixed | exponential
+          initialMs: 500
+          maxMs: 5000
+        dlq:                         # dead-letter del lado publicador
+          afterAttempts: 3
+          target: {exchange.routing-key | topic}
       payload:
+        # ⚠️ NO declarar: eventId, eventType, eventVersion, occurredAt, sourceBc, correlationId, causationId.
+        # El generador los inyecta automáticamente como EventMetadata (primer campo del record).
+        # Si se declaran, el generador filtra el campo y emite un WARN de deprecación.
         - name: {field}
-          type: {canonical-type}
-          required: true | false     # omitir si siempre requerido
+          type: {canonical-type | EnumName | ValueObjectName}
+          required: true | false
+          source: aggregate          # opcional — obligatorio cuando la fuente no es unívoca.
+                                     # Opciones:
+                                     #   aggregate    → this.get{Field}() del agregado raíz (default)
+                                     #   param        → parámetro del domainMethod
+                                     #   timestamp    → Instant.now() (para campos DateTime extra)
+                                     #   constant     → valor literal fijo
+                                     #   derived      → expresión derivada o calculada
+                                     # ⚠️ PROHIBIDO: source: auth-context en payloads de eventos
+                                     #    (INT-025). Los datos del contexto de auth no deben viajar
+                                     #    en eventos de integración — viola el principio de bajo
+                                     #    acoplamiento con el sistema de identidad externo.
+          field: {aggregateFieldName}   # solo cuando source: aggregate y el nombre del payload
+                                        # difiere del nombre del campo en el agregado
+          param: {paramName}            # solo cuando source: param — nombre del parámetro del domainMethod
+                                        # ⚠️ INT-026: el param DEBE existir en domainMethods[method].params[]
+          value: "{literal}"            # solo cuando source: constant — valor literal fijo
+          derivedFrom: {origen}         # solo cuando source: derived — origen semántico (documentación)
+          expression: "{expr}"          # solo cuando source: derived — expresión en lenguaje natural
 
   consumed:
     - name: {EventName}
@@ -613,7 +698,12 @@ domainEvents:
       description: {efecto que produce este evento en este BC}
       payload:
         - name: {field}
-          type: {canonical-type}
+          type: {canonical-type | EventDtoName}
+          # Usar EventDtoName (declarado en eventDtos[]) cuando el campo es un objeto
+          # complejo que pertenece al BC productor (ej: List[OrderLineSnapshot]).
+      # ⚠️ NO declarar retry ni dlq en consumed[] — son config de infraestructura.
+      #    Configurar en system.yaml o archivos de entorno del proyecto.
+      #    El generador ignora estos campos con GEN-WARN.
 ```
 
 ---
@@ -716,11 +806,30 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] `repositories` tiene `countBy...` para cada regla de tipo `crossAggregateConstraint`; retorna `Int` (mayúscula)
 - [ ] `repositories` tiene `delete` para cada regla de tipo `deleteGuard`
 - [ ] Params opcionales en métodos de listado tienen `required: false`
-- [ ] `errors[]` tiene una entrada por cada `errorCode` referenciado en `domainRules`
-- [ ] `errors[]` tiene una entrada por cada código en `notFoundError` de los use cases
-- [ ] `errors[]` tiene una entrada por cada código `422` de negocio en query UCs que no tiene domainRule (crear la domainRule `statePrecondition` correspondiente)
+**Errors:**
+- [ ] `errors[]` tiene una entrada por cada `errorCode` referenciado en `domainRules`, `notFoundError`, `lookups[]`, `fkValidations[]`, `validations[]`
 - [ ] `errors[]` tiene una entrada por cada código que aparece en `{bc-name}-flows.md` o en `{bc-name}-internal-api.yaml`
-- [ ] Todo código en `errors[]` está referenciado en al menos uno de los anteriores (sin huérfanos)
+- [ ] Todo código en `errors[]` está referenciado en al menos uno de los anteriores (sin huérfanos; o tiene `usedFor: manual`)
+- [ ] `errors[].httpStatus` pertenece a la whitelist exacta: `400 | 401 | 402 | 403 | 404 | 408 | 409 | 412 | 415 | 422 | 423 | 429 | 503 | 504`. ⚠️ `500` NO está permitido.
+- [ ] Ningún `errors[]` tiene la clave `constraintName` — esa clave va en `aggregates[].domainRules[].constraintName`
+- [ ] Si un error tiene `messageTemplate`, también tiene `args[]` con todos los placeholders cubiertos
+- [ ] Si un error tiene `kind: infrastructure`, tiene `triggeredBy` con el FQN de la excepción del runtime
+- [ ] Errores lanzados únicamente desde código de Fase 3 (no desde reglas YAML) tienen `usedFor: manual` para suprimir el warning de huérfano
+
+**Domain Events:**
+- [ ] Ningún `published[].payload[]` declara los campos canónicos automáticos: `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId` — el generador los inyecta vía `EventMetadata`
+- [ ] Ningún `published[].payload[]` tiene `source: auth-context` — prohibido en payloads de eventos (INT-025)
+- [ ] Todo campo `payload[].source: param` referencia un nombre que existe en `aggregates[].domainMethods[{method}].params[]` (INT-026)
+- [ ] Si `published[]` tiene `scope: internal` y hay BCs externos consumiendo el evento → cambiar a `integration` o `both`
+- [ ] Si `allowHiddenLeak: true` está presente, el campo del payload referencia explícitamente un campo `hidden: true` del agregado (la excepción es intencional y documentada)
+- [ ] Ningún `consumed[]` tiene claves `retry` ni `dlq` — configuración de infraestructura que va en `system.yaml`
+- [ ] Si `consumed[].payload[]` incluye tipos complejos de otro BC → el tipo está declarado en `eventDtos[]` (NO en `valueObjects[]`)
+
+**Aggregates — concurrencia y sideEffects:**
+- [ ] Aggregates con alta contención entre comandos concurrentes tienen `concurrencyControl: optimistic`
+- [ ] Aggregates que participan en sagas con procesos largos tienen `concurrencyControl: optimistic`
+- [ ] `domainRules[].type: sideEffect` no tiene `errorCode` (no produce error visible al cliente — es efecto documentado para Fase 3)
+- [ ] Si `domainMethods[].emits` es lista, cada entrada está declarada en `domainEvents.published[]`
 
 **Flags de visibilidad:**
 - [ ] `id` tiene `readOnly: true` + `defaultValue: generated`
@@ -731,7 +840,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
       — `Page<X>` → `Page[X]`, `List<X>` → `List[X]`, `Enum<X>` → nombre del enum directamente
 - [ ] Campos inyectados del contexto de auth tienen `readOnly: true` + `source: authContext`
 - [ ] Campos write-only (passwords, tokens) tienen `hidden: true`
-- [ ] Campos puramente internos tienen `internal: true`
+- [ ] Campos puramente internos (contadores técnicos, scores) tienen `internal: true`
 
 **useCases (nuevos campos):**
 - [ ] Todo use_case que llama `findById` o busca una entidad in-memory tiene `notFoundError`. Formato lista `[CODE1, CODE2]` si ambos aplican.

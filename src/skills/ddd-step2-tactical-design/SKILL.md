@@ -247,6 +247,215 @@ o pedir que el productor agregue la versión al payload del evento antes de usar
 
 ---
 
+### 1.4 Guía de Decisión — Cuándo Aplicar Cada Característica
+
+Esta sección responde la pregunta "¿cuándo debo usar X?" para cada característica importante del generador. Aplicar activamente durante el diseño.
+
+---
+
+#### `concurrencyControl: optimistic` — ¿cuándo declararlo?
+
+| Señal en el diseño | Decisión |
+|---|---|
+| Múltiples casos de uso pueden modificar el mismo agregado en paralelo (ej: diferentes usuarios actualizan distintos campos del mismo pedido) | ✅ `concurrencyControl: optimistic` |
+| El agregado participa como `step` en una saga con procesos largos (lectura → espera → escritura; la instancia puede cambiar entre la lectura y la escritura) | ✅ `concurrencyControl: optimistic` |
+| Solo el creador puede modificar el agregado, o las modificaciones son secuenciales por diseño | ❌ Omitir |
+| El agregado es `readModel: true` (proyección de lectura) | ❌ Omitir — las proyecciones se hidratan vía eventos, no por commands concurrentes |
+
+---
+
+#### `returns` en commands — ¿cuándo declararlo?
+
+| Señal en el OpenAPI | Decisión |
+|---|---|
+| `POST /resources` → `201 Created` con body del recurso creado | ✅ `returns: {AggregateResponse}` o `returns: {ProjectionName}` |
+| `PATCH /resources/{id}/action` → `200 OK` con estado actualizado | ✅ `returns: {AggregateResponse}` |
+| `POST /resources` → `201 Created` + header `Location`, sin body | ❌ Omitir `returns` (handler void, controller void) |
+| `PATCH /resources/{id}` → `204 No Content` | ❌ Omitir `returns` |
+| `DELETE /resources/{id}` → `204 No Content` | ❌ Omitir `returns` |
+| Command de tipo `async` (job tracking) | ❌ Omitir `returns` — el status se consulta por separado |
+
+> **Regla práctica:** Si el OpenAPI declara `responses.<2xx>.content.application/json` en un command → declarar `returns`. Si no hay body → omitir.
+
+---
+
+#### `emits` en domainMethods — ¿string o lista?
+
+| Señal | Decisión |
+|---|---|
+| La operación produce un único cambio de estado observable | `emits: NombreEvento` (string) |
+| La operación coordina múltiples cambios de estado observables en una sola transacción atómica (ej: completar pedido emite `OrderCompleted`, `PaymentSettled`, `InventoryReleased`) | `emits:` como lista |
+| La operación no produce eventos de integración | `emits: null` |
+
+> No fragmentar artificialmente un `domainMethod` en varios solo para emitir un evento por cada uno. Si la transacción es una sola, el método es uno solo — aunque emita múltiples eventos.
+
+---
+
+#### `scope` en eventos publicados — ¿`internal`, `integration` o `both`?
+
+| Señal | Decisión |
+|---|---|
+| El evento lo consumen **solo** otros use cases dentro del mismo BC (reacción interna) | `scope: internal` |
+| El evento lo consumen **solo** BCs externos o sistemas de integración | `scope: integration` |
+| El evento lo consumen tanto listeners internos como BCs externos | `scope: both` (default) |
+| Duda → conservador | `scope: both` — el generador produce ambos listeners y no hay costo por tener ambos |
+
+> **Nota:** `scope: internal` excluye el evento del AsyncAPI público del BC. Si hay un BC externo en `system.yaml` que lo consume, cambiar a `integration` o `both`.
+
+---
+
+#### Proyección persistente (`persistent: true`) vs `readModel: true` en agregado — ¿cuál usar?
+
+| Señal | Decisión |
+|---|---|
+| El BC necesita leer datos de otro BC para **tomar decisiones en tiempo de escritura** (ej: validar que el producto existe antes de agregarlo al carrito) | `readModel: true` en el agregado raíz |
+| El BC necesita datos de otro BC solo para **consultas de lectura** (listados, búsquedas, reportes) | `persistent: true` en la proyección |
+| Los datos del BC fuente cambian frecuentemente y el BC consumidor siempre lee el estado más reciente | `readModel: true` — el event listener actualiza el agregado vía use case |
+| Los datos del BC fuente cambian poco y el BC consumidor los usa para presentación | `persistent: true` — más liviano, sin use cases de actualización |
+| El BC fuente publica múltiples eventos de actualización parcial sobre el mismo concepto | `persistent: true` con `additionalSources[]` |
+| La consistencia eventual es inaceptable (el BC necesita datos síncronos y garantizados) | Integración HTTP sincrónica via `outgoingCalls[]` — ni `readModel` ni `persistent` |
+
+---
+
+#### `idempotency` — ¿cuándo declararlo?
+
+| Señal | Decisión |
+|---|---|
+| El command puede llegar duplicado por reintentos del cliente (pago, creación de pedido, transferencias) | ✅ `idempotency: { header: Idempotency-Key, ttl: PT24H, storage: database }` |
+| El command es consumido desde un evento de broker (no HTTP) | ❌ Omitir — la idempotencia de eventos se gestiona con `EventMetadata.eventId` en el consumer |
+| El command es un query o una lectura | ❌ Omitir |
+| El command es idempotente por naturaleza (PATCH que solo actualiza un campo simple) | ❌ Omitir — no hay ganancia y agrega complejidad |
+
+> Usar `storage: redis` solo si el proyecto tiene Redis en la infraestructura declarada en `system.yaml`. Usar `storage: database` por defecto.
+
+---
+
+#### `authorization.ownership` — ¿cuándo declararlo?
+
+| Señal | Decisión |
+|---|---|
+| Solo el propietario del recurso puede ejecutar el command (ej: un usuario solo puede editar su propio perfil) | ✅ `ownership: { field: userId, claim: sub, allowRoleBypass: true }` |
+| Cualquier usuario con el rol correcto puede ejecutar el command sobre cualquier recurso | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
+| El recurso no tiene campo de ownership (ej: catálogo gestionado por admins) | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
+
+---
+
+#### `fkValidations[]` — ¿cuándo declararlo y qué ruta elegir?
+
+**Regla general:** Declarar `fkValidations[]` siempre que el command recibe un UUID que referencia un recurso de otro agregado y la existencia del referenciado es invariante del caso de uso.
+
+**Ruta según contexto:**
+
+| Contexto | Ruta | Cómo expresarlo |
+|---|---|---|
+| FK referencia a un agregado del **mismo BC** | Inline repo | Sin campo `bc` — el generador inyecta `repo.findById().isEmpty()` |
+| FK referencia a un BC externo con **LRM local** (`readModel: true` en el mismo BC) | LRM query | Con campo `bc: {bc-name}` — el generador usa el repo del readModel |
+| FK referencia a un BC externo **sin LRM** | ServicePort | Con campo `bc: {bc-name}` + entrada en `integrations.outbound[]` — el generador genera `{Bc}ServicePort` con `exists*()` |
+
+> Si la existencia del FK no es una invariante (el recurso referenciado puede haber sido borrado y el comportamiento es acceptable), no declarar `fkValidations[]` — documentar en `{bc-name}-flows.md` el comportamiento esperado.
+
+---
+
+#### `notFoundError` vs `lookups[]` — ¿cuál usar?
+
+| Situación | Decisión |
+|---|---|
+| Solo hay un agregado principal cargado via `loadAggregate: true` | `notFoundError: [ENTITY_NOT_FOUND]` |
+| Se cargan múltiples entidades distintas (ej: el pedido Y cada línea del pedido por separado) | `lookups[]: [{aggregate: X, param: xId, errorCode: X_NOT_FOUND}, ...]` |
+| Los errores de "no encontrado" son distintos según el tipo de entidad | `lookups[]` — permite errorCode distinto por entidad |
+| Solo hay un agregado pero se necesita un errorCode específico distinto al genérico | `notFoundError: [SPECIFIC_CODE]` |
+
+> `notFoundError` y `lookups[]` son **mutuamente excluyentes** en el mismo UC. Usar uno u otro, nunca ambos.
+
+---
+
+#### `validations[]` en useCases — ¿cuándo declarar y qué escribir?
+
+Usar `validations[]` cuando existe una regla de negocio **cross-field** o **contextual** que no puede expresarse como `domainRule` en el agregado porque depende de los valores de entrada del command específico (no del estado persistido del agregado).
+
+```yaml
+validations:
+  - id: VAL-001
+    expression: "El precio de venta no puede ser menor que el precio de costo"
+    errorCode: PRICE_BELOW_COST
+```
+
+- **`expression` siempre en lenguaje natural** — describe la condición de negocio, nunca código Java.
+- No duplicar una `domainRule` existente como `validation[]` — el generador ya genera el guard del domainRule.
+- Si la validación se puede expresar como `domainRule` en el agregado → prefiere `domainRule` (más cercana al dominio).
+
+---
+
+#### `implementation: scaffold` — ¿cuándo decidir y qué documentar?
+
+| Condición | Decisión |
+|---|---|
+| Todos los params del `domainMethod` resolvibles desde `input[]` | `full` |
+| Al menos un param del `domainMethod` no resolvible desde `input[]` | `scaffold` |
+| Evalúa `crossAggregateConstraint` (requiere consulta a otro agregado) | `scaffold` |
+| Aplica `sideEffect` (crea entidad adicional como historial, log, audit trail) | `scaffold` |
+| UC con transición de estado condicional (`condition: RULE-ID`) | `scaffold` |
+| UC de tipo `query` — **siempre** | `full` |
+
+> **Corolario obligatorio:** Todo UC con `implementation: scaffold` debe tener al menos un flujo dedicado en `{bc-name}-flows.md` con happy path concreto (datos de ejemplo reales, no abstractos) + orden de evaluación de reglas + efectos secundarios.
+
+---
+
+#### `autoDerive: false` en repositories — ¿cuándo declararlo?
+
+`autoDerive: false` desactiva la derivación automática de métodos `findBy{Campo}` desde `domainRules[].type: uniqueness`. Usar cuando:
+- La regla de unicidad tiene lógica de validación especial que no encaja en el método derivado estándar.
+- Ya se declaró manualmente un método `findBy{Campo}` con signatura diferente a la que el generador derivaría.
+- La unicidad se valida en la DB via constraint y no se requiere método de consulta previa.
+
+Por defecto (sin `autoDerive: false`) el generador deriva el método automáticamente.
+
+---
+
+#### `allowHiddenLeak: true` en eventos — ¿cuándo justificado?
+
+Solo justificado cuando:
+1. El campo `hidden: true` contiene datos que el BC consumidor necesita para procesar el evento (ej: un hash de contraseña para sincronización entre BCs de identidad).
+2. El consumidor es un sistema interno controlado (no un sistema externo público).
+3. Existe documentación en `{bc-name}-spec.md` que justifica la decisión de seguridad.
+
+> En la mayoría de los casos, si un campo es `hidden: true` es porque no debe salir del BC. Cuestionar el diseño antes de usar `allowHiddenLeak: true`.
+
+---
+
+#### `bulk` vs múltiples commands individuales — ¿cuándo usar `bulk`?
+
+| Señal | Decisión |
+|---|---|
+| El actor envía una lista de entidades para procesar en una sola llamada HTTP (importación masiva, activación en lote) | ✅ `bulk: { itemType: X, maxItems: N, onItemError: continue }` |
+| Las entidades del lote deben procesarse en una transacción atómica (todas o ninguna) | ✅ `bulk: { ..., onItemError: abort }` |
+| El actor procesa entidades una por una o el tamaño del lote siempre es 1 | ❌ Command individual sin `bulk` |
+| El procesamiento del lote puede tomar más de unos segundos | Considerar `async: { mode: jobTracking }` + `bulk` combinado |
+
+---
+
+#### `async` (jobTracking/fireAndForget) — ¿cuándo declararlo?
+
+| Señal | Decisión |
+|---|---|
+| El command inicia un proceso que puede tardar segundos o minutos (ej: generación de reporte, importación grande) | ✅ `async: { mode: jobTracking, statusEndpoint: /jobs/{jobId} }` |
+| El command dispara un proceso en segundo plano que el actor no necesita rastrear | ✅ `async: { mode: fireAndForget }` |
+| El command es transaccional y responde en menos de 1-2 segundos | ❌ Command síncrono sin `async` |
+
+---
+
+#### `errorType` override — ¿cuándo usar?
+
+Usar `errorType` solo cuando el nombre derivado automáticamente del `code` es ambiguo, muy largo, o no sigue la convención del proyecto destino:
+```yaml
+- code: PRODUCT_NOT_FOUND     # genera: ProductNotFoundError (correcto, no necesita override)
+- code: CAT_001               # genera: Cat001Error (ambiguo) → errorType: CategoryNotFoundError
+```
+
+Por defecto (sin `errorType`), el generador deriva el nombre mecánicamente de `code` y el resultado suele ser correcto para codes en `SCREAMING_SNAKE_CASE` descriptivos.
+
+---
+
 ## Fase 2: Clarificación con el Usuario
 
 **Siempre preguntar antes de asumir** cuando haya ambigüedad. Usar `vscode_askQuestions`
@@ -1630,8 +1839,12 @@ Recopilar códigos de error desde **cuatro fuentes** (unión de los cuatro conju
 
 Para cada código único resultante de la unión, crear una entrada `errors[]`:
   - `code`: SCREAMING_SNAKE_CASE (e.g. `PRODUCT_NOT_FOUND`, `SKU_ALREADY_EXISTS`)
-  - `httpStatus`: código HTTP de la response donde aparece (400, 404, 409, 422...)
-  - `errorType`: PascalCase derivado del code, con sufijo `Error` (e.g. `ProductNotFoundError`, `SkuAlreadyExistsError`)
+  - `httpStatus`: código HTTP de la response donde aparece. **Whitelist exacta (14 valores):** `400 | 401 | 402 | 403 | 404 | 408 | 409 | 412 | 415 | 422 | 423 | 429 | 503 | 504`. ⚠️ `500` NO está en la whitelist — si el OpenAPI lo declara, usar el código de negocio más cercano (422 para errores de dominio, 503 para infraestructura).
+  - `errorType`: PascalCase derivado del code, con sufijo `Error` (e.g. `ProductNotFoundError`, `SkuAlreadyExistsError`). Solo declarar si el nombre derivado mecánicamente del `code` no es correcto.
+  - Para errores con mensajes variables (ej: "Categoría X no encontrada"): añadir `messageTemplate` + `args[]`.
+  - Para errores que envuelven excepciones de infraestructura (timeout, DB, broker): añadir `chainable: true`.
+  - Para errores que el código de Fase 3 lanzará manualmente (no referenciados por reglas YAML): añadir `usedFor: manual` para suprimir el warning de huérfano.
+  - ⚠️ **PROHIBIDO:** declarar `constraintName` en `errors[]`. El nombre del constraint físico de unicidad va en `aggregates[].domainRules[].constraintName` (tipo `uniqueness`). El generador rechaza claves fuera de la whitelist de `errors[]`.
 
 Verificar que cada `errorCode` en `domainRules` tiene su entrada correspondiente en `errors[]`.
 Verificar que cada código en `notFoundError` de todos los UCs tiene su entrada en `errors[]`.
@@ -1657,9 +1870,67 @@ Por cada UC en `useCases[]` con `rules[]` no vacío:
    - El YAML es la fuente de verdad; spec.md es documentación derivada
 4. Solo actualizar el campo **Reglas de negocio** — no tocar flujo principal, precondiciones ni postcondiciones
 
+#### C.8 — Verificación Final de Consistencia Cross-Sección
+
+Antes de declarar el YAML v2 terminado, realizar esta verificación cruzada mecánica:
+
+**Errores y reglas:**
+- [ ] Cada `errorCode` en `domainRules[].errorCode` existe en `errors[].code`
+- [ ] Cada código en `useCases[].notFoundError[]` existe en `errors[].code`
+- [ ] Cada código en `useCases[].lookups[].errorCode` existe en `errors[].code`
+- [ ] Cada código en `useCases[].fkValidations[].error` existe en `errors[].code`
+- [ ] Cada código en `useCases[].validations[].errorCode` existe en `errors[].code`
+- [ ] Ningún `errors[].httpStatus` es `500` (no está en la whitelist del generador)
+- [ ] Ningún `errors[]` tiene la clave `constraintName`
+
+**Domain events:**
+- [ ] Ningún `published[].payload[]` declara `eventId`, `eventType`, `eventVersion`, `occurredAt`, `sourceBc`, `correlationId`, `causationId`
+- [ ] Ningún `published[].payload[]` tiene `source: auth-context`
+- [ ] Todo `payload[].source: param` referencia un `name` que existe en `domainMethods[method].params[]`
+- [ ] Ningún `consumed[]` declara `retry` ni `dlq`
+- [ ] Si `published[].scope: internal` → verificar que no hay BCs externos consumiendo ese evento en `system.yaml`
+
+**Aggregates:**
+- [ ] Aggregates con múltiples comandos concurrentes o en sagas con procesos largos tienen `concurrencyControl: optimistic`
+- [ ] Ningún `domainRules[].type: sideEffect` tiene `errorCode` (los sideEffects no producen error visible)
+- [ ] Cada `domainMethods[].emits` (string o lista) referencia eventos en `domainEvents.published[]`
+
+**UseCases:**
+- [ ] Todo UC con `implementation: scaffold` tiene al menos un flujo en `{bc-name}-flows.md`
+- [ ] Todo UC command cuyo OpenAPI retorna un body en `2xx` tiene `returns:` declarado
+- [ ] Ningún UC declara `derived_from` ni `derivedFrom` como clave de nivel superior
+
 ---
 
 ### Árbol de artefactos completo
+
+```
+arch/{bc-name}/
+├── {bc-name}.yaml              ← v2 (enriquecido, fuente de verdad para el generador)
+├── {bc-name}-spec.md
+├── {bc-name}-flows.md
+├── {bc-name}-open-api.yaml          ← endpoints públicos (personas + sistemas externos)
+├── {bc-name}-internal-api.yaml      ← endpoints BC-a-BC (condicional)
+├── {bc-name}-async-api.yaml
+└── diagrams/
+    ├── {bc-name}-diagram.mmd                 ← siempre
+    ├── {bc-name}-diagram-domain-model.mmd    ← siempre
+    ├── {bc-name}-diagram-{entity}-states.mmd ← 1 por enum con transitions (ej: category-states, product-states)
+    └── {bc-name}-diagram-{op-kebab}-seq.mmd  ← 1 por operación outbound (ej: product-activated-seq)
+```
+
+---
+
+## Fase 10: Principios de Calidad del Diseño Táctico
+
+**Agregado vs Entidad:** Si la entidad tiene identidad propia fuera del root (puede
+buscarse directamente, tiene su propio ciclo de vida) → es un agregado separado.
+
+**Value Object vs propiedad primitiva:** Si el valor tiene validación de negocio propia,
+se usa en múltiples lugares con la misma semántica, o es un tipo compuesto → es un VO.
+
+**Granularidad de casos de uso:** Un CU = una intención del usuario. Si dos pasos
+siempre ocurren juntos y uno no tiene sentido sin el otro → un solo CU.
 
 ```
 arch/{bc-name}/
