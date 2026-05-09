@@ -305,6 +305,37 @@ Checklist de completitud antes de avanzar al Paso 2 táctico:
 - [ ] Considerar `outboxRetentionDays` ≥ 1 (sin él, `outbox_event` crece indefinidamente en producción)
 - [ ] Considerar `processedEventRetentionDays` ≥ 1 — valor > max-redelivery-timeout del broker (sin él, `processed_event` crece indefinidamente en producción)
 
+#### Lo que el generador produce para las sagas declaradas
+
+**Solo coreografía es soportada.** El generador produce únicamente sagas `style: choreography`.
+Las sagas orquestadas (con coordinador central y estado de saga persistido) no son soportadas.
+
+Cuando `system.yaml` contiene `sagas[]` no vacío, el generador produce estos artefactos compartidos:
+
+| Artefacto | Ruta | Descripción |
+|---|---|---|
+| `SagaStep.java` | `shared/domain/annotations/` | Anotación custom con enum `Role` (TRIGGER / SUCCESS / FAILURE / COMPENSATION) |
+| `CorrelationContext.java` | `shared/infrastructure/correlation/` | ThreadLocal + MDC para propagar `correlationId` entre hops async |
+| `CorrelationFilter.java` | `shared/infrastructure/web/` | Filtro HTTP que extrae / genera `X-Correlation-Id` en cada request |
+| `{SagaName}Steps.java` | `shared/application/sagas/` | Una por saga — constantes del nombre de saga y de los eventos por paso |
+
+El generador también inyecta `@SagaStep` en los listeners y handlers de cada BC participante,
+basándose en un **índice de eventos** construido automáticamente desde `system.yaml#/sagas`.
+La condición para que la anotación aparezca en un BC es **dual**:
+1. El evento debe estar en `system.yaml#/sagas` (en `trigger.event`, `onSuccess`, `onFailure` o `compensation`).
+2. El evento debe estar declarado en `domainEvents.published[]` o `domainEvents.consumed[]`
+   del `{bc}.yaml` de ese BC (responsabilidad del Paso 2 — Diseño Táctico).
+
+Si un evento aparece en `system.yaml` pero **NO** en el `{bc}.yaml` correspondiente → el generador
+no produce listener ni handler para ese evento y la anotación `@SagaStep` no se emite.
+**No hay error de build** — el índice simplemente no encuentra match y la anotación se omite silenciosamente.
+
+**Efecto colateral importante:** cuando `sagas[]` es no vacío (aunque sea un solo paso),
+`sagasEnabled=true` en **todos** los BCs del proyecto. Esto significa que `CorrelationContext.set()`
+y `CorrelationContext.clear()` se inyectan en **todos** los listeners del proyecto — no solo en los
+de los BCs participantes. Es el mecanismo que garantiza correlación end-to-end sin configuración
+extra por BC.
+
 ---
 
 ### 2.6 Auditoría de Completitud de Integraciones — OBLIGATORIA ANTES DE GENERAR ARTEFACTOS
@@ -735,6 +766,26 @@ Reglas del schema:
 - Todos los nombres de eventos siguen la misma regla **PascalCase inglés** que los contratos de integración.
 - Cada evento en `onSuccess`, `onFailure` y `compensation` debe existir como contrato en la integración `from: {bc}, to: ..., pattern: event` del BC emisor (agregar si falta).
 - `onFailure` y `compensation` son opcionales por paso: omitir si el paso no puede fallar o si no tiene compensación.
+- **`compensation` debe ser siempre un string PascalCase** — el nombre del evento que *confirma* que la
+  compensación fue ejecutada. **Nunca** declarar como objeto con sub-propiedades: si se hace, la constante
+  en `{SagaName}Steps.java` se renderiza como `[object Object]` y el índice de anotaciones no funciona
+  (fallo silencioso sin error de build).
+
+  ```yaml
+  # ✅ Correcto
+  compensation: StockReleased
+
+  # ❌ Incorrecto — rompe el generador silenciosamente
+  compensation:
+    bc: inventory
+    action: release-stock
+  ```
+
+- El **disparador de una compensación** no es el evento `compensation` de `system.yaml`, sino el `onFailure`
+  del paso posterior que falla. Ejemplo: `inventory` tiene `compensation: StockReleased` en el paso 1, pero
+  el evento que activa esa compensación es `PaymentFailed` (`onFailure` del paso 2 de `payments`). Ese evento
+  debe declararse en `consumed[]` de `inventory` con un UC `sagaStep.role: compensation`. El generador **no**
+  crea ese listener automáticamente a partir del campo `compensation` de `system.yaml`.
 
 ### 3.1.1 Capacidades extendidas de `system.yaml` soportadas por el generador
 

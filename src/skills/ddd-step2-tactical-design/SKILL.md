@@ -1582,6 +1582,86 @@ useCases:
     implementation: scaffold
 ```
 
+#### Reglas de diseño para BCs participantes en saga
+
+**`sagaStep` es obligatorio en todo UC que participa en una saga:**
+El generador inyecta `@SagaStep` en los listeners basándose en el índice de eventos construido
+desde `system.yaml`. Sin `sagaStep` en el UC, el handler carece del contexto de saga para
+logs y observabilidad completa. Declarar siempre `sagaStep` en cualquier UC cuyo `trigger.event`
+aparezca en `system.yaml#/sagas` (como `trigger.event`, `triggeredBy`, `onSuccess`, `onFailure`
+o `compensation`).
+
+Referencia de campos de `sagaStep`:
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `saga` | string PascalCase | Nombre exacto de la saga en `system.yaml#/sagas[*].name` |
+| `order` | integer | Posición del paso en la saga (coincide con `steps[*].order` en `system.yaml`) |
+| `role` | `step` \| `compensation` | `step`: participante del happy path; `compensation`: ejecuta la acción de reversión |
+| `compensatedBy` | UC-ID (string) | Solo cuando `role: step` — ID del UC compensador (trazabilidad, no procesado por el generador) |
+
+**`implementation: scaffold` para TODOS los UCs de saga, sin excepción:**
+Los UCs de saga siempre involucran coordinación cross-BC, lógica de compensación o manejo de
+estados intermedios que requieren implementación manual en Fase 3. Nunca marcar `full` un UC
+con `sagaStep` declarado — aunque el método del dominio parezca sencillo, el contexto de saga
+introduce invariantes de concurrencia que el generador no puede resolver solo.
+
+**`consumed[]` para eventos de saga — Forma A (preferida) vs Forma B:**
+Cuando el BC tiene un UC formal en `useCases[]` para el evento de saga (happy path o
+compensación), usar **Forma A** en `consumed[]`. El generador localiza automáticamente
+el UC con `trigger.kind: event, trigger.event: {EventName}`:
+
+```yaml
+# ✅ Forma A — preferida cuando existe UC formal (incluyendo UCs de compensación)
+consumed:
+  - name: PaymentFailed
+    sourceBc: payments
+    description: Triggers stock compensation (ReleaseStock UC-INV-005).
+```
+
+Usar **Forma B** (con `command:` explícito y `payload[]`) solo cuando no existe UC formal
+para ese evento — caso excepcional, reservado para handlers muy simples sin lógica propia:
+
+```yaml
+# Forma B — solo sin UC formal (caso excepcional)
+consumed:
+  - name: PaymentFailed
+    producer: payments
+    command: ReleaseStock
+    queueKey: inventory-payment-failed
+    payload:
+      - name: orderId
+        type: Uuid
+```
+
+**asyncAPI — canales obligatorios para TODOS los eventos de saga de este BC:**
+Cada evento publicado o consumido por este BC que aparezca en `system.yaml#/sagas` debe
+tener su canal declarado en `{bc-name}-async-api.yaml`:
+- `domainEvents.published[]` → canal en sección `publish` del AsyncAPI
+- `domainEvents.consumed[]` (triggeredBy y compensation triggers) → canal en sección `subscribe`
+
+Sin esta declaración, el generador no produce los listeners de mensajería para esos eventos.
+
+**CorrelationContext — no declarar manualmente:**
+`CorrelationContext.set()` y `CorrelationContext.clear()` son inyectados automáticamente
+por el generador en **todos** los listeners del proyecto cuando `sagasEnabled=true` (al
+menos una saga declarada en `system.yaml`). No declarar estas llamadas en flujos ni en
+código — el generador las gestiona con un bloque `finally` que garantiza la limpieza
+incluso ante excepciones.
+
+#### Checklist de saga participation (ejecutar antes de finalizar yaml v2)
+
+- [ ] Cada `triggeredBy` de la saga donde `step.bc` es este BC → declarado en `consumed[]` con UC formal y `sagaStep` correcto
+- [ ] Cada `onSuccess` / `onFailure` donde `step.bc` es este BC → declarado en `published[]` + canal en asyncAPI
+- [ ] Si este paso tiene `compensation` en `system.yaml` → el evento que DISPARA esa compensación (el `onFailure` del paso posterior) está en `consumed[]` con UC de `sagaStep.role: compensation`
+- [ ] El payload de cada evento de compensación consumido incluye el ID del recurso a revertir (ej: `reservationId`)
+- [ ] El payload de cada evento publicado de saga incluye el `correlationId` de negocio (ej: `orderId`) en todos los pasos
+- [ ] Todos los UCs participantes tienen `implementation: scaffold`
+- [ ] Todos los UCs de saga tienen `sagaStep` declarado con `saga`, `order` y `role` correctos
+- [ ] Todos los canales de eventos de saga (published y consumed) están declarados en `{bc-name}-async-api.yaml`
+- [ ] Aggregates participantes con procesos largos o accedidos concurrentemente tienen `concurrencyControl: optimistic`
+- [ ] Cada UC de saga tiene su flujo en `{bc-name}-flows.md` (happy path + flujo de compensación si `role: step`)
+
 ---
 
 ## Fase 4: Especificación de Casos de Uso — {bc-name}-spec.md
@@ -1687,7 +1767,7 @@ Sirven como especificación ejecutable para tests de integración.
 - Al menos 2-3 casos borde por flujo (errores, límites, duplicados)
 - Flujos de integración (cómo responde este BC a llamadas de otros BCs)
 - Flujos de eventos consumidos (incluyendo el caso de ID no encontrado)
-- **Flujo de compensación para cada UC con `sagaStep.role: step`**: qué estado revierte este BC al recibir el evento de compensación, y qué evento de confirmación emite para señalizar que la compensación fue exitosa
+- **Flujo de compensación para cada UC con `sagaStep.role: step`**: qué estado revierte este BC al recibir el evento de compensación, qué condiciones deben cumplirse (ej: la reserva debe estar en estado `RESERVED`), y qué evento de confirmación emite para señalizar que la compensación fue exitosa. Incluir también el caso borde de compensación idempotente (qué ocurre si se recibe el evento compensador dos veces)
 
 > **Regla de cobertura scaffold (no negociable):** Todo UC que recibirá `implementation: scaffold` en el YAML **debe tener ≥1 flujo dedicado** en `{bc-name}-flows.md`. Un UC scaffold sin flujo propio es un gap táctico — Fase 3 no tendrá especificación ejecutable para implementarlo.
 >
@@ -2082,7 +2162,13 @@ Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`
      - Omitir cuando no aplica ningún caso.
      - Cada código en `notFoundError` DEBE tener su entrada en `errors[]` con `httpStatus: 404`.
    - `implementation`: `full` | `scaffold` (ver tabla de criterios más abajo)
-   - `sagaStep` (opcional): presente solo si este UC es un paso o compensación de un saga declarado en `system.yaml`. Campos: `saga`, `order`, `role` (`step` | `compensation`), `compensatedBy` (ID del UC compensador, solo cuando `role: step`).
+   - `sagaStep` (opcional): presente solo si este UC es un paso o compensación de un saga declarado en `system.yaml`. Campos:
+     - `saga` (string PascalCase): nombre exacto de la saga tal como está en `system.yaml#/sagas[*].name`.
+     - `order` (integer): coincide con `steps[*].order` de la saga en `system.yaml`.
+     - `role` (`step` | `compensation`): `step` para el handler del happy path de un paso de saga; `compensation` para el handler que ejecuta la acción compensatoria cuando un paso posterior falla.
+     - `compensatedBy` (UC-ID, string): solo cuando `role: step` — ID del UC compensador de este paso (ej: `UC-INV-005`). Campo de trazabilidad — no procesado por el generador.
+
+     **Regla:** Siempre combinado con `implementation: scaffold`. El generador inyecta `@SagaStep` en el listener del BC cuando el evento del UC aparece en el índice de saga (construido desde `system.yaml`), pero sin `sagaStep` en el UC el contexto de correlación no queda completo en el handler.
 
 **Campos específicos de commands (`type: command`):**
    - `method`: **nombre plano** del método de dominio (sin firma, sin paréntesis, sin tipo de retorno). Resolver así:
@@ -2261,6 +2347,15 @@ Antes de declarar el YAML v2 terminado, realizar esta verificación cruzada mec�
 - [ ] Todo UC con `implementation: scaffold` tiene al menos un flujo en `{bc-name}-flows.md`
 - [ ] Todo UC command cuyo OpenAPI retorna un body en `2xx` tiene `returns:` declarado
 - [ ] Ningún UC declara `derived_from` ni `derivedFrom` como clave de nivel superior
+
+**Saga participants (solo si este BC participa en alguna saga declarada en `system.yaml`):**
+- [ ] Todo UC participante de saga tiene `sagaStep` declarado con `saga`, `order` y `role` correctos
+- [ ] Todo UC de saga tiene `implementation: scaffold`
+- [ ] Todo UC de saga tiene al menos un flujo en `{bc-name}-flows.md` (incluyendo flujo de compensación para `role: step`)
+- [ ] Ningún `consumed[]` de saga usa Forma B (con `command:`) cuando existe UC formal para ese evento
+- [ ] El payload de cada evento consumido de saga incluye los campos mínimos para identificar y revertir el recurso
+- [ ] El payload de cada evento publicado de saga incluye el `correlationId` de negocio en todos los pasos
+- [ ] Todos los canales de eventos de saga (published y consumed) están declarados en `{bc-name}-async-api.yaml`
 
 ---
 
