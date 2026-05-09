@@ -129,6 +129,9 @@ El generador soporta un vocabulario extendido para cada sección del BC.
   - `deleteGuard` — requiere `targetAggregate` + `targetRepositoryMethod`.
   - `crossAggregateConstraint` — requiere `targetAggregate` + `field` + `expectedStatus`.
 
+#### Value Objects
+- `immutable: true` — marca el VO como inmutable. El generador aplica `List.copyOf()` defensivo en listas. **Obligatorio para VOs `Snapshot`** (VOs que capturan el estado de una entidad para eventos de dominio). Un VO inmutable no tiene setters y sus colecciones son defensivamente copiadas en el constructor.
+
 #### Domain Events
 - `published[]`:
   - `version` (entero ≥1, default 1).
@@ -161,10 +164,11 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 
 #### Errors
 - `code` SCREAMING_SNAKE_CASE.
+- `description:` — texto libre que se emite como **Javadoc** en la clase de error generada. Añadir siempre que el código no sea autoexplicativo; ayuda al equipo de Fase 3 a entender cuándo lanzar el error.
 - `httpStatus` whitelist: `400, 401, 402, 403, 404, 408, 409, 412, 415, 422, 423, 429, 503, 504`.
 - `errorType` (override del nombre de la clase de error generada; PascalCase con sufijo `Error`).
 - `chainable: true` — habilita envolver la causa original (la excepción del runtime que disparó el error).
-- `usedFor: auto|manual` (default auto).
+- `usedFor: auto|manual` (default auto). Usar `manual` para errores que se lanzan manualmente en Fase 3 (sin referencia en ninguna `domainRule` ni `fkValidation`) — evita el warning de huérfano del generador.
 - `messageTemplate` + `args[]` — mensaje parametrizado. Placeholders deben coincidir con `args[].name`.
 - `kind: business|infrastructure`. `triggeredBy: <identificador completamente cualificado de la clase de excepción del runtime destino>` solo válido si `kind: infrastructure` (clase de excepción de la plataforma, no de domain rule).
 - **NO declarar `constraintName` en `errors[]`** — el validador rechaza la clave (whitelist estricta `{code, httpStatus, description, message, title, errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}`). El nombre del índice único es detalle de infraestructura del almacenamiento: va en `aggregates[].domainRules[].constraintName` cuando `type: uniqueness`. El generador empareja `errorCode` ↔ rule automáticamente.
@@ -187,6 +191,9 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `returns: BinaryStream` (solo queries).
 - `Range[T]`, `SearchText { fields[] }`.
 - `trigger.kind: event` con `consumes`, `fromBc`, `filter` (booleano).
+- `description:` — texto libre emitido como Javadoc en el Command/QueryObject y en el handler. Aplicar siempre en UCs no triviales para documentar la intención de negocio.
+- `public: true` — endpoint HTTP sin JWT. Solo para `trigger.kind: http`. Añade el path a `permitAll()` en `SecurityConfig` y omite `@PreAuthorize`. Mutuamente excluyente con `authorization` (si ambos presentes, `public: true` gana y el generador emite warning).
+- `cacheable: { ttl, keyFields, cacheWhen }` — solo para `type: query` con `trigger.kind: http`. Genera `@Cacheable` en el handler y `CacheConfig` con `RedisCacheManager` por TTL. Requiere `cacheProvider: redis` en `dsl-springboot.json` (el build falla si falta). `ttl` obligatorio (ISO-8601, ej: `PT5M`). `keyFields[]` y `cacheWhen[]` deben coincidir con nombres en `input[]`.
 
 #### Repositories — capacidades extendidas
 - Operadores whitelist: `EQ, LIKE_CONTAINS, LIKE_STARTS, LIKE_ENDS, GTE, LTE, IN`.
@@ -453,6 +460,77 @@ Usar `errorType` solo cuando el nombre derivado automáticamente del `code` es a
 ```
 
 Por defecto (sin `errorType`), el generador deriva el nombre mecánicamente de `code` y el resultado suele ser correcto para codes en `SCREAMING_SNAKE_CASE` descriptivos.
+
+---
+
+#### `public: true` en use cases — ¿cuándo declararlo?
+
+| Señal | Decisión |
+|---|---|
+| El endpoint es de solo lectura y no expone datos de usuario ni personalizados (catálogo público, landing page, lookup de países) | ✅ `public: true` |
+| El endpoint es un webhook receiver que autentica por firma de payload, no por JWT | ✅ `public: true` (la verificación de firma se implementa manualmente en Fase 3) |
+| El endpoint retorna datos distintos según el usuario autenticado | ❌ Requiere JWT — omitir `public` |
+| El endpoint ejecuta cualquier escritura (command) | ❌ Omitir — los commands siempre requieren identidad del actor |
+| El endpoint está detrás de un BFF que ya valida el JWT | ❌ Omitir — el BFF delega el JWT al microservicio |
+
+> **Nota de seguridad:** `public: true` elimina la verificación de JWT pero no desactiva rate limiting ni IP filtering (configurados fuera del generador). Solo válido para `trigger.kind: http`; en `trigger.kind: event` no tiene efecto.
+
+---
+
+#### `cacheable` — ¿cuándo declararlo en un query?
+
+| Señal | Decisión |
+|---|---|
+| El query retorna datos estáticos o de muy baja frecuencia de cambio (catálogos, árboles de categorías, listas de países) | ✅ `cacheable: { ttl: PT1H }` |
+| El query retorna detalles de una entidad por ID (lectura frecuente, escritura poco frecuente) | ✅ `cacheable: { ttl: PT5M, keyFields: [entityId] }` |
+| El query retorna el estado en tiempo real de un proceso activo (pedido en tránsito, saldo de cuenta) | ❌ Omitir — los datos cambian tan frecuentemente que la caché introduce inconsistencias inaceptables |
+| El query retorna datos personalizados por usuario (carrito, perfil, wishlist) | ❌ Omitir — la caché compartiría datos entre usuarios o requeriría keys complejas |
+| La infraestructura no tiene Redis (`cacheProvider: redis` en `dsl-springboot.json`) | ❌ Omitir — el build falla |
+
+> **`cacheWhen`:** usar solo cuando el query tiene parámetros opcionales cuya ausencia cambia radicalmente el scope del resultado (ej: `SearchProductsByCategory` solo se cachea cuando `categoryId` no es nulo). **Solo válido en `type: query`.** Declarar `cacheable` en un command aborta el build.
+
+---
+
+#### Tipo de retorno en `repositories[]` — ¿cuál elegir?
+
+| Necesidad | `returns` | Cuándo |
+|---|---|---|
+| Listado paginado con total de elementos (UI de tabla con páginas y contador) | `Page[T]` | Requiere param `pageable` o par `page`+`size` |
+| Listado paginado sin total (scroll infinito, cursor paginado) | `Slice[T]` | Más eficiente: no ejecuta `COUNT(*)` |
+| Procesamiento incremental de millones de filas (exports, batch) | `Stream[T]` | Scroll interno; no cargar todo en memoria |
+| Lista completa sin paginación (volumen máximo pequeño y conocido por diseño) | `List[T]` | Peligroso si el volumen puede crecer |
+| Un registro opcional (puede no existir) | `T?` | Siempre en `findBy*` que puede no encontrar |
+| Un registro obligatorio (su ausencia es error de programación, no de negocio) | `T` | Raro — preferir `T?` con `orElseThrow` en el handler |
+| Verificar existencia sin cargar el objeto (guard, deduplicación) | `Boolean` | Para `existsBy*` |
+| Contar registros (para validaciones de límite o estadísticas) | `Long` o `Int` | `Long` para conteos grandes, `Int` para cardinalidades pequeñas |
+
+> **Regla anti-`Stream[T]`:** no usar en handlers que terminan en un response HTTP — Spring cierra la sesión JPA antes de que el stream se consuma completamente. Usar solo en procesos batch que consumen el stream dentro de la misma transacción.
+
+---
+
+#### `findByIdForUpdate` — ¿cuándo declararlo?
+
+| Señal | Decisión |
+|---|---|
+| El handler lee el agregado y luego lo modifica, y la concurrencia es alta (múltiples transacciones sobre el mismo registro) | ✅ `findByIdForUpdate` (Phase 3 opt-in — genera `@Lock(PESSIMISTIC_WRITE)`) |
+| El agregado ya declara `concurrencyControl: optimistic` | ❌ Redundante — el `@Version` detecta conflictos; agregar lock pesimista solo aumenta el overhead |
+| El proceso es una saga donde el conflicto debe detectarse *antes* de ejecutar la acción (no después de fallar) | ✅ `findByIdForUpdate` — el lock pesimista previene el conflicto; el optimista lo detecta post-hecho |
+| La probabilidad de colisión es baja (la mayoría de los escenarios de negocio) | ❌ `concurrencyControl: optimistic` — menor overhead, más escalable |
+
+> **Comparativa:** optimista (`@Version`) detecta conflictos al hacer flush, bajo overhead, ideal para baja colisión. Pesimista (`findByIdForUpdate`) bloquea la fila, necesario cuando el rollback y reintento son inviables o muy costosos.
+
+---
+
+#### `description` en errors y use cases — ¿cuándo añadir?
+
+| Elemento | ¿Añadir `description`? | Efecto en el generador |
+|---|---|---|
+| Error con código críptico o no autoexplicativo (ej: `RULE_VLD_004`) | ✅ Siempre | Genera Javadoc en la clase de error |
+| Error con código descriptivo (`PRODUCT_NOT_FOUND`) | ✅ Recomendado si el motivo exacto no es obvio del código | Genera Javadoc |
+| UC con lógica no trivial o múltiples precondiciones de negocio | ✅ Siempre | Genera Javadoc en el Command/Query y en el handler |
+| UC simple tipo CRUD sin reglas de negocio especiales | Opcional — el `name` ya documenta la intención | — |
+
+> `description` en los errores y use cases se convierte en Javadoc en el código generado. Es la única documentación automática del comportamiento; evita que el equipo de Fase 3 tenga que leer el YAML para entender cada clase.
 
 ---
 
@@ -773,7 +851,8 @@ Reglas de diseño:
 - **Solo en agregados que NO son `readModel: true`**. Los readModels usan `upsert`/`delete` como valores especiales de `method` en el UC — son operaciones de repositorio directo, no métodos de dominio. No declararlos aquí.
 - `name` — camelCase. Debe coincidir con el valor `method` del UC que lo referencia.
 - `params` — solo los parámetros que el método necesita que **no sean el agregado mismo**. El agregado cargado vía `loadAggregate: true` **no es un param**: el generador lo inyecta implícitamente. Omitir `params` si el método no recibe parámetros externos.
-- `returns` — `void` si el método no retorna nada; tipo del agregado si es una factory (crea la entidad raíz).
+- `returns` — `void` si el método no retorna nada; **nombre exacto del agregado raíz** si es el método factory `create` (ej: `returns: Category`, `returns: Product`).
+  > ⚠️ **CRÍTICO — método `create`:** DEBE declarar siempre `returns: <AggregateName>` — **nunca `returns: void`**. El generador solo emite el método estático `public static <Aggregate> create(...)` cuando `returns` es el nombre del agregado. Con `returns: void` la creación queda inaccesible desde fuera del paquete y el handler no puede construir el agregado → **error de compilación en el proyecto destino** (fallo silencioso durante la generación, visible solo al compilar). Correcto: `returns: Category` / `returns: Product` / `returns: Order`. Incorrecto: `returns: void` en un método llamado `create`.
 - `emits` — nombre del evento publicado al completarse, o **lista de nombres** si el método emite múltiples eventos (ej: `emits: [ProductActivated, CategoryUpdated]`). `null` si no emite. No declarar `null` explícitamente si se omite el campo — usar `emits: null` solo cuando sea el valor real (no para omitir).
 - El generador resuelve cada `params[]` desde estas fuentes en orden: `input[]` del UC (por nombre), luego `outgoingCalls[].bindsTo` del UC, luego constantes del dominio (para `implementation: scaffold`).
 

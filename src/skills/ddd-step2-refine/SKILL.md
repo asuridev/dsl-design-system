@@ -832,6 +832,15 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`trigger.kind: event`**: requiere `consumes` (nombre del evento), `fromBc`,
   y opcionalmente `filter` (expresión booleana). Falta `fromBc` → 🔴 ERROR.
 
+- **`public: true`**: solo válido en `trigger.kind: http`. En `trigger.kind: event` no tiene efecto → 🔵 SUGERENCIA: eliminarlo para evitar confusión.
+  - `public: true` + `authorization` declarados simultáneamente → 🟡 ALERTA: el generador emite warning y `public: true` gana (el bloque `authorization` se ignora). Eliminar `authorization` si la intención es un endpoint público.
+  - `public: true` en un `type: command` → 🟡 ALERTA: los commands necesitan identidad del actor para auditoría. Solo aplicar a queries a menos que la escritura sea explícitamente anónima por diseño y esté justificada en la spec.
+
+- **`cacheable` block**: solo válido en `type: query`. En commands → 🔴 ERROR (el generador lo rechaza).
+  - `ttl` es obligatorio (ISO-8601, ej: `PT5M`, `PT1H`). Ausente → 🔴 ERROR.
+  - `keyFields[]` y `cacheWhen[]` deben coincidir exactamente con nombres de campos en `input[]` del UC. Nombre que no existe en `input[]` → 🔴 ERROR.
+  - `cacheable` sin `cacheProvider: redis` en `dsl-springboot.json` → 🔴 ERROR (el build aborta con mensaje explícito).
+
 #### E7 — Repositories: whitelist de métodos y operadores
 
 - **Operadores en `methods[].params[].operator`** whitelist:
