@@ -565,6 +565,15 @@ actors:
     description: Internal automated process (scheduler, saga trigger).
 ```
 
+**G8 — `infrastructure.authServer` y endpoints protegidos**
+
+- Si el diseño declara BCs con endpoints no completamente públicos (actores distintos, `authorization`, roles o permisos), ¿está declarado `infrastructure.authServer: true`?
+  - BCs con endpoints protegidos sin `authServer: true` → 🔴 ERROR: el generador no produce `SecurityConfig.java`, `SecurityContextUtil.java` ni los archivos `auth-server.yaml` por entorno. Sin estos artefactos, los UCs con `authorization` en bc.yaml generarán código que llama a `SecurityContextHolder` sin ninguna configuración del resource server — fallo en runtime.
+- Si `authServer: true` está declarado pero **todos** los endpoints del sistema son completamente públicos (`public: true` en todos los UCs) → 🔵 SUGERENCIA: considerar si `authServer: true` es necesario; declararlo sin endpoints protegidos genera artefactos de seguridad que no se usarán.
+- Si `authServer: true` y el diseño tiene integraciones BC→BC con `auth.type: internal-jwt`, verificar que el flujo de propagación del token tiene sentido: el BC que inicia la cadena debe recibir el JWT del actor (no de otro BC). Traza de propagación: actor → BC1 (recibe JWT) → BC2 (`internal-jwt` propagado) → ... → BCn.
+  - BC que recibe `internal-jwt` pero inicia la cadena sin un actor real → 🟡 ALERTA: el token a propagar puede ser `null` si el flujo comienza sin autenticación.
+- Si el sistema tiene actores distintos con diferentes niveles de acceso (customer vs admin) y `authServer: true` está ausente → 🟡 ALERTA: sin `authServer`, el generador no configura los guards de autorización por rol/permiso; cualquier usuario podría acceder a cualquier endpoint.
+
 ---
 
 ### Resultado de la Fase 1B

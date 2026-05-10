@@ -706,10 +706,26 @@ infrastructure:   → technology decisions from Step 1
 | `database.type` | `relational` | relational \| document \| key-value \| graph |
 | `database.isolationStrategy` | `schema-per-bc` | schema-per-bc \| db-per-bc \| prefix-per-bc |
 | `messageBroker` | `true` (si hay canales async) | true \| omitir si no hay message-broker |
+| `authServer` | **decisión explícita requerida** | `true` \| omitir si no hay autenticación JWT |
 
 Cuando apliques un default, docuéntalo en el campo `notes` de esa sección.
 Si el diseño no tiene integraciones por eventos, omite `messageBroker`.
 La tecnología concreta del broker y la base de datos (RabbitMQ, Kafka, PostgreSQL…) es decisión del generador de código (Fase 2) — no se declara en el Paso 1.
+
+> **`authServer: true` — Regla de decisión obligatoria:**
+> Declara `authServer: true` en `infrastructure` si **cualquiera** de estas condiciones se cumple:
+> - Al menos un UC del sistema usará `authorization` (roles, permisos, scopes, ownership)
+> - Al menos un endpoint no es completamente público (accesible sin JWT)
+> - El sistema tiene diferentes actores con distintos niveles de acceso (admin vs customer vs system)
+>
+> **Qué genera:** `SecurityConfig.java`, `SecurityContextUtil.java`, configuración JWT resource server,
+> y archivos `auth-server.yaml` por entorno (dev/test/staging/prod).
+>
+> **Omitir** solo si el sistema no tiene ninguna autenticación JWT (e.g., servicio puramente interno
+> accedido solo desde red privada sin tokens). En ese caso, el generador no produce ningún artefacto
+> de seguridad y todos los endpoints son accesibles sin autenticación.
+>
+> El proveedor concreto (Keycloak, Cognito, Auth0) es decisión de la Fase 2 — no se declara aquí.
 
 **Patrones de integración válidos:**
 
@@ -855,9 +871,118 @@ externalSystems:
         path: /v1/charges/{chargeId}/refund   # path variable extraído automáticamente
 ```
 
-Campos del generador por operación: `name`, `method`, `path`, `request.fields[]`, `response.fields[]`, `domain.returnType`, `domain.fields[]`. El campo `direction` no es leído por el generador.
+Campos del generador por operación: `name`, `method`, `path`, `request.fields[]`, `response.fields[]`, `domain.returnType`, `domain.fields[]`. El campo `direction` no es leído por el generador en la generación del adaptador (es solo documentación de diseño).
 
 Tipos wire-format en `request.fields[].type` / `response.fields[].type`: `String`, `Integer`, `Long`, `Boolean`, `Decimal` (→ `BigDecimal`), `Instant`, `UUID` (→ `String` en DTO, `java.util.UUID` en domain record).
+
+> **`direction: inbound`** — Usar cuando el sistema externo llama a **nuestra** API (webhooks, callbacks).
+> Ejemplos: un payment gateway envía un callback POST con el resultado del pago; un proveedor de
+> notificaciones llama de vuelta para confirmar entrega. En este caso, el generador **no** produce
+> un adaptador saliente — el endpoint receptor se diseña en el OpenAPI del BC que maneja el callback
+> y el handler táctico en su UC correspondiente. Declarar `direction: inbound` en la operación es
+> documentación de diseño que aclara quién inicia la llamada, pero no cambia la generación de código.
+
+#### `externalSystems[].schemas` — tipos compuestos reutilizables para APIs complejas
+
+Usar cuando la API externa envía o recibe **objetos anidados complejos** (no solo campos escalares).
+Sin `schemas`, cada campo del `request`/`response` de las operaciones debe ser un escalar —
+si la API real tiene objetos anidados, el diseñador tendría que aplanar la estructura, perdiendo
+la correspondencia con el contrato real del sistema externo.
+
+**Cuándo usar `schemas` vs campos escalares inline:**
+
+| Escenario | Usar `schemas` | Usar campos inline |
+|---|---|---|
+| La API externa tiene objetos anidados (ej: `address.street`, `address.city`) | ✅ | ❌ |
+| El mismo tipo complejo aparece en múltiples operaciones del externo | ✅ | ❌ |
+| Todos los campos de `request`/`response` son escalares simples | ❌ | ✅ |
+| Un solo objeto anidado, en una sola operación | Opcional | ✅ si es simple |
+
+**Cómo declarar `schemas`:**
+
+```yaml
+externalSystems:
+  - name: payment-gateway
+    description: Third-party payment processor
+    type: payment-gateway
+    schemas:
+      # Cada clave PascalCase → genera {Key}Dto.java en adapters/{ext}/dtos/
+      ChargeRequest:
+        - name: cardToken
+          type: String
+          optional: false
+        - name: amount
+          type: Decimal
+          optional: false
+        - name: currency
+          type: String
+          optional: false
+      ChargeResponse:
+        - name: chargeId
+          type: String
+          optional: false
+        - name: status
+          type: String
+          optional: false
+        - name: failureReason    # campos opcionales llevan optional: true
+          type: String
+          optional: true
+      LineItem:
+        - name: productId
+          type: String
+          optional: false
+        - name: quantity
+          type: Integer
+          optional: false
+        - name: unitPrice
+          type: Decimal
+          optional: false
+      OrderSummary:
+        - name: orderId
+          type: String
+          optional: false
+        - name: items
+          type: List<LineItem>   # referencia a otro schema del mismo externo
+          optional: false
+    operations:
+      - name: chargePayment
+        method: POST
+        path: /v1/charges
+        request:
+          fields:
+            - name: charge
+              type: ChargeRequest      # ← referencia al schema
+        response:
+          fields:
+            - name: result
+              type: ChargeResponse     # ← referencia al schema
+```
+
+**Reglas de `schemas`:**
+- Nombres en **PascalCase** — generan `{Name}Dto.java` en `adapters/{ext}/dtos/`
+- Los schemas son **locales al sistema externo** — no se comparten entre distintos `externalSystems`
+- Un campo puede referenciar otro schema del mismo externo: `type: OtroSchema` o `type: List<OtroSchema>`
+- Referencias circulares (`A` referencia `B` que referencia `A`) generan `INT-022` bloqueante
+- Schema declarado pero no referenciado en ninguna operación → genera `INT-023` (warn, no bloqueante)
+- Tipos permitidos en campos de schema:
+
+| Tipo en YAML | Java generado | Notas |
+|---|---|---|
+| `String` | `String` | — |
+| `Integer` | `Integer` | — |
+| `Long` | `Long` | — |
+| `Boolean` | `Boolean` | — |
+| `Decimal` | `BigDecimal` | — |
+| `Instant` | `Instant` | — |
+| `UUID` | `String` (DTO) / `java.util.UUID` (domain record) | — |
+| `NombreSchema` | `{NombreSchema}Dto` | Referencia a schema del mismo externo |
+| `List<String>` | `List<String>` | — |
+| `List<NombreSchema>` | `List<{NombreSchema}Dto>` | Lista de objetos del schema referenciado |
+
+**Qué genera el generador con `schemas`:**
+- Un Java record `{SchemaName}Dto.java` por cada clave del `schemas` map
+- Los campos con `optional: true` se mapean a tipos `@Nullable` en el DTO generado
+- El `AclMapper` traduce `{SchemaName}Dto` → tipo de dominio según el bloque `domain` de cada operación
 
 #### `infrastructure.reliability` — patrón outbox y consumer idempotency
 
@@ -901,6 +1026,41 @@ Cuándo activar `consumerIdempotency: true`:
 > la fila en `processed_event` persiste aunque el use case no completó. En el siguiente redelivery,
 > la guardia descarta el mensaje — el use case **nunca se reintenta**. Los fallos deben
 > manejarse dentro del use case (retry interno, compensación) — no vía redelivery del broker.
+
+#### `infrastructure.authServer: true` — Activar cuando el sistema usa JWT
+
+```yaml
+infrastructure:
+  authServer: true    # declarar cuando algún endpoint requiere autenticación JWT
+```
+
+**Cuándo declarar `authServer: true`** — aplica si **cualquiera** de estas condiciones:
+- Al menos un UC del sistema declara `authorization` (`rolesAnyOf`, `permissionsAnyOf`, `scopesAnyOf`, `ownership`)
+- Al menos un endpoint no es completamente público (accesible sin token válido)
+- El sistema tiene actores distintos con niveles de acceso diferenciados (customer vs admin vs system)
+
+**Qué genera el generador con este flag activado:**
+
+| Artefacto generado | Ubicación | Propósito |
+|---|---|---|
+| `SecurityConfig.java` | `shared/infrastructure/security/` | Configuración JWT resource server: rutas protegidas vs `permitAll()` |
+| `SecurityContextUtil.java` | `shared/infrastructure/security/` | Utilidad para extraer claims del JWT en runtime |
+| `auth-server.yaml` | `resources/config/` ×4 entornos | URLs del servidor de auth por entorno (dev/test/staging/prod) |
+
+**Consecuencias de omitir `authServer: true` cuando el sistema sí tiene autenticación:**
+- El generador no produce ningún artefacto de seguridad.
+- Los UCs con `authorization` en el YAML táctico generarán código de handler que llama a
+  `SecurityContextHolder` sin la configuración mínima del resource server — fallo en runtime.
+- Los endpoints se generarán sin `@PreAuthorize` — cualquier usuario puede acceder.
+
+**`authServer: false` / omitir** — solo si el sistema es puramente interno (accedido solo
+desde red privada, sin endpoints HTTP expuestos directamente a usuarios o sistemas externos
+que requieran autenticación). En ese caso, todos los endpoints son accesibles sin JWT.
+
+> **Proveedor concreto:** Keycloak, Cognito, Auth0, etc. es decisión de Fase 2 (build
+> interactivo del generador) — **no se declara en `system.yaml`**.
+
+---
 
 #### `infrastructure.integrations.defaults` — Solo `auth` implementado (nivel 3 de fallback)
 

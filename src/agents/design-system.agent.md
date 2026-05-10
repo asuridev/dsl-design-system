@@ -50,7 +50,9 @@ Si falta información crítica para definir los Bounded Contexts, agrupa TODAS l
 Aplica el análisis del skill:
 - Event Storming mental: identifica eventos de negocio naturales (hechos pasados significativos)
 - Clasifica BCs: Core (diferenciador), Supporting (necesario), Generic (delegable)
-- Ejecuta el checklist de dependencias implícitas de ciclo de vida (Fase 2.4 del skill): para cada BC Core con ciclo de vida, verifica si algún BC Supporting debe reaccionar a sus eventos de activación o cierre
+- Ejecuta el checklist de dependencias implícitas de ciclo de vida (§2.4 del skill): para cada BC Core con ciclo de vida, verifica si algún BC Supporting debe reaccionar a sus eventos de activación o cierre
+- Identifica sagas cuando hay flujos de transacción distribuida entre múltiples BCs (§2.5 del skill): definir pasos, eventos de activación/compensación y BC coordinador
+- Ejecuta el audit de completitud de integraciones (§2.6 del skill, Pasos A-H) — OBLIGATORIO antes de generar artefactos: incluye detección de snapshot at write time (Paso G) y presentación al usuario de la decisión Local Read Model vs HTTP síncrono para cada integración BC-a-BC (Paso H)
 - Define integraciones con el patrón correcto (customer-supplier / event / acl) y canal correcto (http / message-broker)
 - Los `contracts[].name` en integraciones `channel: message-broker` SIEMPRE en inglés PascalCase (`OrderConfirmed`, no `PedidoConfirmado`)
 
@@ -108,6 +110,12 @@ Para cada BC Core que tenga agregados con ciclo de vida (estados ACTIVE/DISCONTI
 **Naming de contratos message-broker:**
 - ¿Todos los `contracts[].name` en integraciones `channel: message-broker` están en inglés PascalCase?
 - Un mismatch (`PedidoConfirmado` en lugar de `OrderConfirmed`) es un gap táctico — corregir ahora
+
+**Infraestructura e integración (Checklist G del skill):**
+- ¿`infrastructure.reliability` está declarado si el sistema tiene sagas o integraciones con sistemas externos críticos? (G1/G4)
+- ¿Todos los `externalSystems[]` tienen `operations[]` declaradas con nombre y descripción? (G2)
+- ¿Las integraciones con sistemas externos incluyen bloque `auth` y `resilience`? (G3)
+- Si `actors[]` está declarado, ¿todos los valores son kebab-case y coincidirán con los `useCases[].actor` del Paso 2? (G7)
 
 ### 2.3 Clasificar hallazgos
 

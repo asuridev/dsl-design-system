@@ -528,7 +528,7 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
 - **Hints obligatorios por tipo**:
   | type | Hints requeridos | Hints opcionales |
   |---|---|---|
-  | `uniqueness` | `field` (o `fields[]` para clave compuesta) + `errorCode` | `constraintName` en snake_case |
+  | `uniqueness` | `field` (camelCase) + `errorCode` | `constraintName` en snake_case |
   | `statePrecondition` | `errorCode` | — |
   | `terminalState` | `errorCode` (opcional) | — |
   | `sideEffect` | `description` | — (sin `errorCode`) |
@@ -947,11 +947,13 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 
 - **`auth.type` whitelist**: `none, api-key, bearer, oauth2-cc, mTLS`. Otro → 🔴 ERROR.
 
-- **Resilience block**: `{ timeoutMs, connectTimeoutMs, retries: { maxAttempts,
-  waitDurationMs }, circuitBreaker: { failureRateThreshold } }`.
+- **Resilience block**: `{ timeoutMs, connectTimeoutMs, retries: { maxAttempts, waitDuration (string con unidad: "500ms", "1s") }, circuitBreaker: { failureRateThreshold, waitDurationInOpenState (string con unidad: "30s") } }`.
   - `timeoutMs > connectTimeoutMs` recomendado → 🔵 SUGERENCIA si invertido.
   - `failureRateThreshold` ∈ [0, 100].
   - `retries.maxAttempts < 1` → 🔴 ERROR.
+  - `retries.waitDuration` como entero sin unidad (ej: `500` en lugar de `"500ms"`) → 🔴 ERROR: el generador no lo procesa; el valor debe ser un string con unidad.
+  - `circuitBreaker.waitDurationInOpenState` como entero sin unidad → 🔴 ERROR: mismo problema.
+  - Campo `waitDurationMs` (con sufijo `Ms`) → 🔴 ERROR: nombre de campo incorrecto; el campo correcto es `waitDuration`.
 
 - **Precedencia bc.yaml > system.yaml**: si una integración declara `auth` o
   `resilience` localmente, esa configuración prevalece sobre `system.yaml`.

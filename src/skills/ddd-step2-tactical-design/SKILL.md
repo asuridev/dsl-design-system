@@ -1260,6 +1260,25 @@ integrations:
       pattern: customerSupplier | acl | conformist
       protocol: http | grpc
       description: propósito de la integración
+      auth:           # OPCIONAL — sobreescribe auth declarada en system.yaml para esta integración
+        type: none | api-key | bearer | oauth2-cc | mTLS | internal-jwt
+        # Campos adicionales según type (igual que en system.yaml):
+        # valueProperty: nombre-propiedad-spring   # para api-key | bearer
+        # header: X-Api-Key                        # solo api-key (default: X-Api-Key)
+        # tokenEndpoint: https://...               # solo oauth2-cc
+        # credentialKey: nombre-secret             # solo oauth2-cc
+      resilience:     # OPCIONAL — sobreescribe resilience declarada en system.yaml para esta integración
+        circuitBreaker:
+          failureRateThreshold: 50
+          waitDurationInOpenState: 30s
+          slidingWindowSize: 20
+          minimumNumberOfCalls: 10
+          permittedNumberOfCallsInHalfOpenState: 3
+        retries:                        # PLURAL obligatorio — sub-campos activan @Retry
+          maxAttempts: 3                # debe ser > 1 para activar la anotación
+          waitDuration: 500ms           # string con unidad — "500ms", "1s", etc.
+        connectTimeoutMs: 5000
+        timeoutMs: 15000               # 15000 para BC→BC; 30000 para sistemas externos
       operations:
         - name: {nombre-operacion}    # mismo nombre que en system.yaml contracts
           description: qué hace esta llamada
@@ -1278,6 +1297,27 @@ integrations:
           definedIn: {bc-name}-open-api.yaml
           endpoint: {METHOD /path}
 ```
+
+**Cuándo agregar `auth` y `resilience` en `outbound[]`** — solo cuando este BC necesita
+configuración distinta a la declarada en `system.yaml` para esa integración:
+
+| Escenario | Acción |
+|---|---|
+| La integración en `system.yaml` ya declara `auth`/`resilience` adecuados | Omitir estos bloques en bc.yaml — se heredan automáticamente |
+| Este BC requiere un mecanismo de auth diferente al declarado en `system.yaml` | Declarar `auth` aquí — sobreescribe para este BC específico |
+| Este BC requiere timeouts/retries distintos (ej: SLA más estricto) | Declarar `resilience` aquí — sobreescribe para este BC |
+| La integración en `system.yaml` no declara `auth`/`resilience` y se necesitan | Declarar aquí, o subir la declaración a `system.yaml` (preferido) |
+
+**Precedencia de auth/resilience** (de mayor a menor prioridad):
+1. `bc.yaml outbound[name].auth/resilience` (este bloque)
+2. `system.yaml integrations[from=este-bc, to=target].auth/resilience`
+3. `system.yaml externalSystems[name=target].auth/resilience` (solo para `type: externalSystem`)
+4. `system.yaml infrastructure.integrations.defaults.auth` (solo auth, no resilience)
+
+> **`retries` debe ser PLURAL** — el generador lee `retries.maxAttempts`, no `retry`. Un campo
+> `retry:` o `retries.max:` en lugar de `retries.maxAttempts:` produce INT-015 bloqueante.
+> Los valores de duración (`waitDuration`, `waitDurationInOpenState`) siempre son strings con
+> unidad: `"500ms"`, `"1s"`, `"30s"` — nunca valores numéricos sueltos.
 
 Los nombres de operaciones deben coincidir exactamente con los `contracts` declarados
 en `arch/system/system.yaml` para la misma integración.

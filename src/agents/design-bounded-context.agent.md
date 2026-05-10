@@ -60,7 +60,7 @@ Para cada integración `channel: http` hacia otro BC interno en system.yaml:
 
 Generar en orden:
 
-1. **bc.yaml v1** — secciones: `bc`, `type`, `description`, `enums`, `valueObjects`, `aggregates`, `integrations`, `domainEvents`
+1. **bc.yaml v1** — secciones: `bc`, `type`, `description`, `enums`, `valueObjects`, `eventDtos`, `aggregates`, `integrations`, `domainEvents`
    - `domainRules`: incluir `id` y `description`. Incluir `type` si es inequívoco.
    - No incluir aún: `useCases`, `repositories`, `errors`
    - Para cada `domainMethods[]`: el método `create` **debe declarar `returns: {NombreAgregado}`** (nunca `void`) — el build falla con error S23 si es `void` o distinto.
