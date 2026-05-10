@@ -57,6 +57,25 @@ enums:
 
 # ─── VALUE OBJECTS ───────────────────────────────────────────────────────────
 
+# ─── CUÁNDO NO usar valueObjects[] ──────────────────────────────────────────
+#
+# Un valueObject[] DEBE ser utilizado como `type` de alguna propiedad en
+# aggregates[] o entities[]. Si el concepto sólo aparece como `returns` de un
+# use case (i.e., su único propósito es transportar datos hacia el llamador),
+# NO es un VO — es una proyección y debe ir en projections[].
+#
+# Regla de oro:
+#   VO   → concepto del dominio propio; tiene invariantes o validaciones;
+#           se usa como `type` en el modelo de datos del agregado.
+#   Projection → shape de lectura; ninguna invariante de negocio;
+#                 sólo aparece en `returns`.
+#
+# Caso frecuente de error:
+#   Un "snapshot" inmutable diseñado para una respuesta de internal-API o
+#   de query se declara en valueObjects[] porque es inmutable. Pero la
+#   inmutabilidad NO es criterio suficiente para ser VO. Si el objeto no
+#   participa en el modelo del agregado, va en projections[].
+
 valueObjects:
 
   - name: {Name}
@@ -133,6 +152,30 @@ eventDtos:
 # Cuándo definir aquí (nombrado) vs inline en `returns`:
 #   - Nombrado: el mismo shape lo retornan ≥2 UCs, o el concepto tiene nombre semántico en el negocio
 #   - Inline:   shape simple de un único UC
+
+# ─── PROYECCIONES — incluyendo respuestas de internal-API ───────────────────
+#
+# Todo shape retornado en `returns` de un use case de tipo query va aquí,
+# sin importar si es para un endpoint público, interno (BC-a-BC) o de saga.
+#
+# Criterio para usar projections[] vs valueObjects[]:
+#   ┌─────────────────────────────────┬───────────────┬────────────────┐
+#   │ Característica                  │ valueObjects  │ projections    │
+#   ├─────────────────────────────────┼───────────────┼────────────────┤
+#   │ Tiene invariantes / validaciones│ ✅            │ ❌             │
+#   │ Usado como `type` en agregados  │ ✅            │ ❌ (prohibido) │
+#   │ Solo aparece en `returns`       │ ❌            │ ✅             │
+#   │ Puede ser inmutable             │ ✅            │ ✅ (no importa)│
+#   │ Generado en domain.valueobject  │ ✅            │ ❌             │
+#   │ Generado en application.dtos    │ ❌            │ ✅             │
+#   └─────────────────────────────────┴───────────────┴────────────────┘
+#
+# Caso especial — snapshot de internal-API:
+#   Cuando un BC expone un endpoint interno (internal-api.yaml) y la
+#   respuesta es un shape propio (ej: ProductPriceSnapshot), ese shape
+#   va en projections[] aunque sea inmutable y tenga nombre de "snapshot".
+#   El generador lo emitirá en application.dtos y lo importará correctamente
+#   en el QueryHandler y en el Query record.
 
 projections:
 
@@ -937,6 +980,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Cada `returns` de tipo query referencia un nombre en `projections[]`, el nombre de un agregado del BC, o es lista inline de propiedades
 - [ ] Ningún nombre en `projections[]` tiene sufijo `*Response`, `*Dto`, `*Request` o `*Payload`
 - [ ] Ninguna propiedad en `aggregates[]` ni `entities[]` usa un nombre de `projections[]` como `type`
+- [ ] Ningún shape que aparece **sólo** en `returns` (nunca como `type` de un agregado) está declarado en `valueObjects[]` — si es exclusivamente un shape de lectura, debe estar en `projections[]`
 
 **Proyecciones persistentes (`persistent: true`):**
 - [ ] Cada proyección con `persistent: true` tiene `source: { kind: event, event, from }` + `keyBy` + `upsertStrategy`

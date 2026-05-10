@@ -461,7 +461,7 @@ nivel de control necesario sobre la lógica de proyección.
 El patrón descrito en las secciones anteriores. El diseñador declara un agregado con
 `readModel: true` y escribe explícitamente:
 - Los use cases de tipo `trigger.kind: event` que manejan cada evento fuente.
-- Los métodos de dominio (`upsert`, `delete`) sobre el agregado.
+- Los métodos de dominio (`upsert`, `delete`) sobre el agregado, declarados en `domainMethods[]`.
 - Los flows Given/When/Then para cada caso de sincronización.
 
 **Cuándo usarlo:**
@@ -469,6 +469,102 @@ El patrón descrito en las secciones anteriores. El diseñador declara un agrega
   condicional al actualizar campos).
 - Se necesita control explícito sobre el flujo de manejo de errores del event handler.
 - Los casos de uso necesitan documentación en `spec.md` y `flows.md` para la Fase 3.
+
+#### Regla obligatoria: todo UC con `method ≠ create` debe tener `domainMethods[]`
+
+> **⚠️ Error de diseño frecuente:** Declarar un UC con `method: upsert` (o cualquier
+> método que no sea `create`) sin el correspondiente `domainMethods[]` en el agregado.
+> Esto produce código que no compila: el generador intenta llamar `.upsert()` sobre una
+> variable nunca declarada y un método que no existe en la clase de dominio.
+
+La regla es: **por cada valor de `uc.method` distinto de `create` que aparece en un UC**,
+debe existir una entrada en `aggregates[].domainMethods[]` con el mismo nombre.
+
+**Ejemplo correcto — UC `upsert` con `domainMethods` declarado:**
+
+```yaml
+aggregates:
+  - name: CustomerAddressSnapshot
+    root: CustomerAddressSnapshot
+    readModel: true
+    sourceBC: customers
+    sourceEvents:
+      - AddressUpdated
+    properties:
+      - name: id
+        type: Uuid
+        readOnly: true
+        defaultValue: generated
+      - name: addressId        # campo clave para upsert — único, no el PK interno
+        type: Uuid
+        required: true
+        unique: true
+        indexed: true
+      - name: customerId
+        type: Uuid
+        required: true
+      - name: street
+        type: String(255)
+        required: true
+      # ... resto de campos mútables ...
+    domainMethods:             # ← OBLIGATORIO: declarar el método upsert aquí
+      - name: upsert
+        description: >
+          Updates all mutable fields from the incoming AddressUpdated event.
+          The addressId is the idempotency key — never updated.
+        params:
+          - name: customerId
+            type: Uuid
+          - name: street
+            type: String
+          - name: city
+            type: String
+          - name: state
+            type: String
+          - name: postalCode
+            type: String
+          - name: country
+            type: String
+          - name: isDefault
+            type: Boolean
+
+useCases:
+  - id: UC-ADDR-001
+    name: UpsertCustomerAddressSnapshot
+    type: command
+    actor: system
+    trigger:
+      kind: event
+      consumes: AddressUpdated
+      fromBc: customers
+    aggregate: CustomerAddressSnapshot
+    method: upsert              # ← debe tener domainMethods.upsert declarado arriba
+    implementation: scaffold    # ← siempre scaffold para upsert de read model:
+                                #   el generador NO puede inferir el patrón find-or-create
+    input:
+      - name: addressId
+        type: Uuid
+        source: body
+        required: true
+      - name: customerId
+        type: Uuid
+        source: body
+        required: true
+      # ... resto de inputs ...
+```
+
+> **¿Por qué `implementation: scaffold` y no `full` para upsert de read model?**
+>
+> El patrón upsert requiere:
+> 1. Buscar la entidad existente por clave única (ej. `findByAddressId`)
+> 2. Si no existe → crear nueva instancia con todos los campos
+> 3. Si existe → llamar al método de dominio con los campos mutables
+> 4. Persistir
+>
+> El generador no puede auto-derivar este patrón porque no sabe cuál campo usar como
+> clave de búsqueda ni cómo distinguir entre creación y actualización. El uso de
+> `implementation: scaffold` produce un cuerpo con `// TODO` que la Fase 3 completa
+> con la lógica explícita de find-or-create.
 
 ### Mecanismo B — `persistent: true` en `projections[]` (automático)
 
