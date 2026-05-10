@@ -205,6 +205,7 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `trigger.kind: event` con `consumes`, `fromBc`, `filter` (booleano).
 - `description:` — texto libre emitido como Javadoc en el Command/QueryObject y en el handler. Aplicar siempre en UCs no triviales para documentar la intención de negocio.
 - `public: true` — endpoint HTTP sin JWT. Solo para `trigger.kind: http`. Añade el path a `permitAll()` en `SecurityConfig` y omite `@PreAuthorize`. Mutuamente excluyente con `authorization` (si ambos presentes, `public: true` gana y el generador emite warning).
+- `notes:` — texto libre, **solo referencia documental** (ignorado por el generador). Usar para anotar decisiones de implementación que complementan `description` pero no son descripción funcional del UC (ej: `notes: El slug se genera server-side; el cliente no lo provee.`). **No confundir con `description`**: `description` documenta *qué hace* el UC; `notes` documenta *cómo o por qué* se tomó una decisión de diseño.
 - `cacheable: { ttl, keyFields, cacheWhen }` — solo para `type: query` con `trigger.kind: http`. Genera `@Cacheable` en el handler y `CacheConfig` con `RedisCacheManager` por TTL. Requiere `cacheProvider: redis` en `dsl-springboot.json` (el build falla si falta). `ttl` obligatorio (ISO-8601, ej: `PT5M`). `keyFields[]` y `cacheWhen[]` deben coincidir con nombres en `input[]`.
 
 #### Repositories — capacidades extendidas
