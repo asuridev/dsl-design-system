@@ -505,6 +505,21 @@ useCases:
         params: [{paramName}, ...]  # nombres de input[] pasados al puerto; omitir si ninguno
         bindsTo: {domainMethodParam} # parámetro de domainMethods[method].params al que se asigna el resultado
     implementation: full | scaffold  # full = todos los params resolvibles; scaffold = TODOs pendientes
+    authorization:                  # opcional — omitir solo si el endpoint es público (`public: true`)
+      rolesAnyOf:                   # RBAC por rol — claim JWT: realm_access.roles
+        - ROLE_ADMIN                # con o sin prefijo ROLE_; el generador normaliza para hasAnyRole()
+      permissionsAnyOf:             # RBAC granular — claim JWT: permissions — formato recurso:accion
+        - catalog:write             # ⚠️ usar dos puntos, nunca puntos (catalog.write es incorrecto)
+      scopesAnyOf:                  # OAuth2 Scopes — claim JWT: scope — sin prefijo SCOPE_
+        - catalog:write             # el generador añade SCOPE_ automáticamente
+      ownership:                    # guarda imperativa en el handler — no genera @PreAuthorize
+        field: ownerId              # campo del agregado que identifica al propietario
+        claim: sub                  # claim del JWT con el ID del usuario actual
+        allowRoleBypass:            # roles que pueden saltarse la verificación de ownership
+          - ROLE_ADMIN              # con o sin prefijo ROLE_; el generador normaliza
+    # public: true                  # mutuamente excluyente con authorization
+    #                               # añade el path a permitAll() en SecurityConfig, omite @PreAuthorize
+    #                               # solo para trigger.kind: http
     sagaStep:                       # opcional — solo si es paso o compensación de una Saga
       saga: {SagaName}              # debe existir en sagas[].name en system.yaml
       order: {N}                    # posición en el flujo feliz (1-based); omitir cuando role: compensation
@@ -982,4 +997,9 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Todo use_case que recibe FKs de otros agregados tiene `fkValidations[]`
 - [ ] `condition` en transiciones de enum es un RULE-ID o `none` (nunca texto libre)
 - [ ] Todo use_case tiene `implementation: full | scaffold`
+- [ ] Todo UC con `trigger.kind: http` que requiere autenticación declara `authorization` (o `public: true` si es endpoint público)
+- [ ] `permissionsAnyOf[]` usa formato `recurso:accion` (dos puntos) — nunca puntos (`recurso.accion`)
+- [ ] `scopesAnyOf[]` declara los scopes **sin** prefijo `SCOPE_` (el generador lo añade)
+- [ ] Si declara `ownership`, al menos un `input[]` tiene `loadAggregate: true` o existe `lookups[]` que carga el agregado
+- [ ] `public: true` y `authorization` no coexisten en el mismo UC
 - [ ] Todo UC con `implementation: scaffold` tiene ≥1 flujo **dedicado** en `{bc-name}-flows.md` (ver DECISIÓN-001 en SKILL.md y regla 5.2). Un UC scaffold sin flujo dedicado es un gap táctico bloqueante.

@@ -195,7 +195,7 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
 - `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
 - `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`.
-- `authorization`: `rolesAnyOf[]`, `ownership: { field, claim, allowRoleBypass }`.
+- `authorization`: cuatro estrategias combinables — `rolesAnyOf[]` (RBAC por rol; el generador evalúa `realm_access.roles` del JWT), `permissionsAnyOf[]` (RBAC granular con permisos en formato `recurso:accion`; evalúa el claim `permissions`), `scopesAnyOf[]` (OAuth2 Scopes; escribir sin prefijo, el generador añade `SCOPE_` automáticamente), `ownership: { field, claim, allowRoleBypass }` (guarda imperativa en el handler — no genera `@PreAuthorize`). Cuando se combinan los tres campos de `@PreAuthorize`, el generador los une con `and` en orden fijo: `scopesAnyOf` → `rolesAnyOf` → `permissionsAnyOf`. **Mutuamente excluyente con `public: true`**. ⚠️ **Prerequisito:** `arch/system/system.yaml` debe declarar `infrastructure.authServer: true`; sin este flag el generador no produce `SecurityConfig.java` ni ninguna protección Spring Security. Ver guía de decisión en §1.4 y en `references/use-cases-design-decisions.md §8`.
 - Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
 - `bulk: { itemType, maxItems, onItemError: continue|abort }`.
 - `async: { mode: jobTracking|fireAndForget, statusEndpoint }`.
@@ -439,13 +439,55 @@ en la tabla `processed_event` **antes** de despachar el use case, en una transac
 
 ---
 
-#### `authorization.ownership` — ¿cuándo declararlo?
+#### Estrategia de `authorization` — ¿cuándo usar cada campo?
 
-| Señal | Decisión |
+| Campo | Pregunta que responde | Expresión generada | Caso típico |
+|---|---|---|---|
+| `rolesAnyOf[]` | ¿Qué **función** tiene el usuario? | `hasAnyRole('ADMIN')` | Backoffice/admin con roles estables (< 5) |
+| `permissionsAnyOf[]` | ¿Qué **operación** puede realizar el usuario? | `hasAnyAuthority('orders:cancel')` | RBAC maduro — muchos roles, permisos granulares |
+| `scopesAnyOf[]` | ¿Qué puede hacer este **token / cliente**? | `hasAnyAuthority('SCOPE_catalog:write')` | M2M, APIs públicas, clientes OAuth2 externos |
+| `ownership` | ¿Es el usuario el **propietario** del recurso? | guarda imperativa en handler | Portal de autoservicio — usuario gestiona solo sus recursos |
+
+**Convención de permisos (`permissionsAnyOf`):** formato `recurso:accion` en minúsculas con guiones para recursos compuestos. Ejemplos: `orders:cancel`, `catalog:write`, `user-profile:update`. El generador mapea directamente a `hasAnyAuthority(...)`.
+
+**Convención de scopes (`scopesAnyOf`):** escribir **sin** prefijo `SCOPE_`. El generador lo añade: `catalog:write` → `hasAnyAuthority('SCOPE_catalog:write')`.
+
+**Orden en SpEL cuando se combinan múltiples campos:** siempre `scopesAnyOf` → `rolesAnyOf` → `permissionsAnyOf`, unidos con `and`.
+
+**Señales para elegir la combinación:**
+
+| Escenario | Estrategia recomendada |
 |---|---|
-| Solo el propietario del recurso puede ejecutar el command (ej: un usuario solo puede editar su propio perfil) | ✅ `ownership: { field: userId, claim: sub, allowRoleBypass: [ROLE_ADMIN] }` |
-| Cualquier usuario con el rol correcto puede ejecutar el command sobre cualquier recurso | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
-| El recurso no tiene campo de ownership (ej: catálogo gestionado por admins) | ❌ Solo `rolesAnyOf[]`, sin `ownership` |
+| Endpoint llamado por otro servicio (M2M) o cliente OAuth2 externo | Solo `scopesAnyOf` |
+| Admin / operator de backoffice con roles estables | Solo `rolesAnyOf` |
+| Muchos tipos de usuario con permisos distintos sobre el mismo recurso | Solo `permissionsAnyOf` |
+| API que sirve tanto M2M como usuarios humanos con rol | `scopesAnyOf` + `rolesAnyOf` |
+| Portal de cliente: usuario solo actúa sobre sus propios recursos | `rolesAnyOf` + `ownership` |
+| Admin puede sobrescribir la restricción de propiedad | `ownership` + `allowRoleBypass: [ROLE_ADMIN]` |
+| Endpoint sin autenticación (catálogo público, health check) | `public: true` — mutuamente excluyente con `authorization` |
+
+**`ownership` — requisitos de generación:**
+- Al menos un `input[]` debe tener `loadAggregate: true`, o debe existir un `lookups[]` que cargue el agregado. El generador compara `aggregate.{field}` con `currentUserClaim(claim)` en el handler.
+- `allowRoleBypass[]` acepta roles con o sin prefijo `ROLE_`; el generador normaliza.
+- **No genera `@PreAuthorize`** — la guarda es imperativa en el body del handler, no en la anotación.
+
+```yaml
+# Ejemplo — portal de cliente con override de admin
+authorization:
+  rolesAnyOf: [ROLE_CUSTOMER, ROLE_ADMIN]
+  ownership:
+    field: customerId       # propiedad del agregado
+    claim: sub              # claim del JWT con el ID del usuario actual
+    allowRoleBypass: [ROLE_ADMIN]  # ROLE_ADMIN puede actuar sobre recursos ajenos
+
+# Ejemplo — API M2M + usuarios humanos con rol
+authorization:
+  scopesAnyOf: [catalog:write]       # el token debe tener el scope
+  rolesAnyOf: [ROLE_CATALOG_MANAGER] # Y el usuario debe tener el rol
+# → @PreAuthorize("hasAnyAuthority('SCOPE_catalog:write') and hasAnyRole('CATALOG_MANAGER')")
+```
+
+Para criterios detallados con todos los casos edge, ver `references/use-cases-design-decisions.md §8`.
 
 ---
 

@@ -170,6 +170,16 @@ infrastructure:
     notes: >            # explicar si es default o decisión explícita
       ...
 
+  authServer: true      # INCLUIR (como true) cuando algún UC del sistema use el bloque
+                        # `authorization` (rolesAnyOf, permissionsAnyOf, scopesAnyOf, ownership)
+                        # o cuando haya endpoints que NO son públicos.
+                        # Activa en el generador: SecurityConfig.java, SecurityContextUtil.java,
+                        # JWT resource server y parámetros auth-server.yaml por entorno.
+                        # OMITIR solo si el sistema no tiene ninguna autenticación JWT
+                        # (p. ej. servicio puramente interno sin endpoints HTTP expuestos).
+                        # El proveedor concreto (keycloak, cognito) se elige en Fase 2
+                        # durante el build interactivo — no se declara en el diseño.
+
   messageBroker: true   # INCLUIR (como true) cuando el diseño tenga integraciones
                         # con channel: message-broker. OMITIR si no hay ninguna.
                         # La tecnología concreta (RabbitMQ, Kafka, etc.) es decisión
@@ -243,6 +253,7 @@ infrastructure:
 ### Consistencia
 - Todo `from` y `to` en `integrations` debe ser un `name` de `boundedContexts` o `externalSystems`
 - Si un `channel` es `message-broker`, debe existir `infrastructure.messageBroker: true`
+- Si algún BC tiene UCs con bloque `authorization` (o endpoints no públicos), debe existir `infrastructure.authServer: true`
 - Si `deployment.strategy` es `modular-monolith`, `database.isolationStrategy` debe ser `schema-per-bc` (recomendado) o `db-per-bc`
 - Si `channel` es `message-broker`, cada elemento de `contracts[]` DEBE ser un objeto con `name` y `channel`. Si `channel` es `http | grpc | websocket`, cada elemento DEBE ser un string camelCase.
 - Todo `externalSystem` referenciado por una `integration` (como `from` o `to`) DEBE declarar `operations[]` no vacío (INT-014).

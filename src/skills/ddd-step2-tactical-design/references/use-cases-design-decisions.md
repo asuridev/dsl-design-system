@@ -300,43 +300,160 @@ Cuando la operación involucra BCs distintos:
 
 ---
 
-## §8 — Autorización: `rolesAnyOf` vs `permissionsAnyOf` vs combinados
+## §8 — Autorización: cuándo usar `rolesAnyOf`, `permissionsAnyOf`, `scopesAnyOf` y `ownership`
 
-El generador acepta tres formas de autorización en un UC:
+> **Prerequisito en `system.yaml`:** Para que el generador produzca `SecurityConfig.java`,
+> `SecurityContextUtil.java` y toda la infraestructura Spring Security, el archivo
+> `arch/system/system.yaml` **debe** declarar `infrastructure.authServer: true`.
+> Sin este flag, cualquier bloque `authorization` en los BCs se ignora y no se genera
+> ninguna protección de endpoint.
+>
+> ```yaml
+> # arch/system/system.yaml
+> infrastructure:
+>   authServer: true   # activa Spring Security + JWT resource server en todos los BCs
+> ```
+>
+> El proveedor concreto (`keycloak`, `cognito`) se elige durante el build de Fase 2
+> mediante el CLI interactivo y se guarda en `dsl-springboot.json`.
+
+### Las cuatro estrategias y qué genera cada una
 
 ```yaml
-# Solo por rol — cualquiera de los roles puede ejecutar el UC
 authorization:
-  rolesAnyOf: [ADMIN, MANAGER]
+  rolesAnyOf:            # RBAC clásico por función de usuario
+    - ROLE_ADMIN
+    - ROLE_MANAGER
 
-# Solo por permiso — más granular que el rol
-authorization:
-  permissionsAnyOf: [products.activate, catalog.manage]
+  permissionsAnyOf:      # RBAC granular por operación (formato recurso:accion)
+    - catalog:create
+    - catalog:write
 
-# Combinado — el usuario DEBE tener el rol Y el permiso (AND lógico)
-authorization:
-  rolesAnyOf: [OPERATOR]
-  permissionsAnyOf: [products.activate]
+  scopesAnyOf:           # OAuth2 Scopes — capacidad del token / cliente
+    - catalog:write      # escribir sin prefijo; el generador añade SCOPE_ automáticamente
 
-# Con restricción de ownership — además del rol, el recurso debe pertenecer al usuario
-authorization:
-  rolesAnyOf: [CUSTOMER]
-  ownership:
-    field: customerId        # campo del agregado o del comando
-    claim: sub               # claim del JWT que identifica al usuario
-    allowRoleBypass:         # lista de roles que pueden actuar sobre recursos ajenos
-      - ROLE_ADMIN
+  ownership:             # guarda imperativa en el handler — no genera @PreAuthorize
+    field: ownerId       # campo del agregado que identifica al propietario
+    claim: userId        # claim del JWT con el ID del usuario actual
+    allowRoleBypass:
+      - ROLE_ADMIN       # roles que pueden saltarse la verificación de ownership
 ```
 
-**Criterio:**
-- `rolesAnyOf` solo → control de acceso grueso basado en el rol del usuario.
-- `permissionsAnyOf` solo → control fino cuando los roles no son suficientes
-  (diferentes usuarios del mismo rol tienen permisos distintos).
-- Ambos → el usuario debe cumplir los dos (AND). Usar cuando el permiso de negocio
-  es más restrictivo que el rol asignado.
-- `ownership` → el recurso debe pertenecer al usuario autenticado (multi-tenant,
-  self-service). `allowRoleBypass: [ROLE_ADMIN]` si los admins deben poder actuar sobre
-  recursos de cualquier usuario.
+| Campo | Expresión SpEL generada | Claim JWT evaluado |
+|---|---|---|
+| `rolesAnyOf: [ROLE_ADMIN]` | `@PreAuthorize("hasAnyRole('ADMIN')")` | `realm_access.roles` |
+| `permissionsAnyOf: [catalog:write]` | `@PreAuthorize("hasAnyAuthority('catalog:write')")` | `permissions` (claim personalizado) |
+| `scopesAnyOf: [catalog:write]` | `@PreAuthorize("hasAnyAuthority('SCOPE_catalog:write')")` | `scope` |
+| `ownership` | guarda imperativa en handler (sin `@PreAuthorize`) | — |
+
+Cuando se combinan varios campos de `@PreAuthorize`, el orden en la expresión es siempre **`scopesAnyOf` → `rolesAnyOf` → `permissionsAnyOf`**, unidos con `and`.
+
+---
+
+### Criterio de selección: ¿cuándo usar cada estrategia?
+
+#### `rolesAnyOf[]` — roles de usuario
+
+**Usar cuando:**
+- El sistema tiene un conjunto acotado de roles (≤ 5) y es estable a largo plazo
+- Los usuarios son internos (operadores, administradores de backoffice)
+- La granularidad de roles es suficiente para expresar quién puede hacer qué
+
+**No usar cuando:**
+- Hay > 5 roles o el modelo evoluciona frecuentemente (riesgo de role explosion)
+- Diferentes usuarios del mismo rol tienen acceso diferente por operación → usar `permissionsAnyOf`
+- El cliente es otro servicio → usar `scopesAnyOf`
+
+**Convención:** declarar con o sin prefijo `ROLE_` — el generador normaliza para `hasAnyRole()`.
+
+---
+
+#### `permissionsAnyOf[]` — permisos granulares
+
+**Usar cuando:**
+- La organización tiene muchos tipos de usuarios con acceso parcial a recursos
+- Diferentes operaciones sobre el mismo recurso tienen restricciones distintas
+  (ej: puede leer pero no eliminar)
+- Se requiere auditar el acceso a nivel de operación
+- El modelo de roles puede crecer — los permisos permiten combinaciones sin crear nuevos roles
+
+**No usar cuando:**
+- El sistema tiene pocos roles bien delimitados → `rolesAnyOf` es suficiente
+- El cliente es otro servicio → `scopesAnyOf`
+
+**Convención de nombres:** `recurso:accion` en minúsculas con guiones para recursos compuestos.
+
+```
+✅ catalog:write    ✅ orders:cancel    ✅ user-profile:update    ✅ catalog:read
+❌ catalog.write    ❌ CATALOG_WRITE    ❌ catalogWrite
+```
+
+El generador mapea directamente a `hasAnyAuthority('{permiso}')` sin transformación.
+
+---
+
+#### `scopesAnyOf[]` — scopes OAuth2
+
+**Usar cuando:**
+- El cliente es otro servicio (comunicación M2M / machine-to-machine)
+- La API es consumida por aplicaciones de terceros u OAuth2 clients externos
+- Se necesita limitar qué puede hacer un token de client credentials
+  (independientemente del usuario que lo autorizó)
+- El sistema es multi-tenant y diferentes tenants tienen diferentes scopes contratados
+
+**No usar cuando:**
+- Solo hay usuarios humanos interactivos → `rolesAnyOf` o `permissionsAnyOf`
+- El endpoint es completamente interno (solo llamado por el propio backend)
+
+**Convención:** escribir el scope **sin** prefijo `SCOPE_`. El generador lo añade:
+`catalog:write` → `hasAnyAuthority('SCOPE_catalog:write')`.
+
+---
+
+#### `ownership` — propiedad del recurso
+
+**Usar cuando:**
+- El recurso tiene un campo que identifica al propietario (`ownerId`, `userId`, `customerId`)
+- La regla de negocio es: "solo el propietario puede actuar sobre su propio recurso"
+- Se necesita que ciertos roles administrativos puedan sobrescribir la restricción
+
+**No usar cuando:**
+- El recurso no tiene concepto de propietario (catálogos, configuraciones globales)
+- Cualquier usuario con el rol correcto puede actuar sobre cualquier recurso
+
+**Requisito técnico:** Al menos un `input[]` debe tener `loadAggregate: true`, o debe
+existir un `lookups[]` que cargue el agregado. El generador necesita el agregado cargado
+para comparar `aggregate.{field}` con `SecurityContextUtil.currentUserClaim(claim)`.
+
+`allowRoleBypass[]` acepta roles con o sin `ROLE_`. Si se omite, ningún rol puede
+saltarse la verificación. La guarda generada es **imperativa en el body del handler**
+— no genera `@PreAuthorize`.
+
+---
+
+### Tabla de combinaciones más comunes
+
+| Escenario | Estrategia |
+|---|---|
+| Admin de backoffice gestiona cualquier recurso | Solo `rolesAnyOf` |
+| RBAC maduro con muchos tipos de usuario y permisos granulares | Solo `permissionsAnyOf` |
+| API consumida solo por otros servicios (M2M) | Solo `scopesAnyOf` |
+| API que sirve tanto M2M como usuarios humanos con rol | `scopesAnyOf` + `rolesAnyOf` |
+| Portal de cliente: usuario solo actúa sobre sus propios recursos | `rolesAnyOf` + `ownership` |
+| Admin puede sobrescribir la restricción de propiedad | `ownership` + `allowRoleBypass: [ROLE_ADMIN]` |
+| Endpoint sin autenticación (catálogo público, health check, registro) | `public: true` (ver §16) |
+
+---
+
+### Errores frecuentes de diseño
+
+| Error | Solución |
+|---|---|
+| `permissionsAnyOf: [catalog.write]` (formato con punto) | Usar `catalog:write` (dos puntos) — el generador los mapea sin transformación |
+| `scopesAnyOf: [SCOPE_catalog:write]` (prefijo ya incluido) | Usar `catalog:write` — el generador añade `SCOPE_` |
+| `ownership` sin `loadAggregate: true` ni `lookups[]` | Añadir `loadAggregate: true` al input con el ID del agregado (o declarar `lookups[]`) |
+| `public: true` + `authorization` en el mismo UC | Eliminar `authorization` — `public: true` tiene precedencia (warning del generador) |
+| Omitir `authorization` asumiendo que el API gateway ya valida | Siempre declarar `authorization` — el generador produce Spring Security defensivo |
 
 ---
 
