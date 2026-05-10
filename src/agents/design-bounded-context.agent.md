@@ -171,25 +171,37 @@ Esta fase ejecuta el validador de coherencia de integraciones contra los artefac
 Ejecutar en terminal desde la raíz del proyecto (donde existe `arch/`):
 
 ```
-dsl validate --bc {bc-name}
+node tools/dsl-validate/bin/dsl.js validate --bc {bc-name}
 ```
 
 ### Paso 2 — Interpretar el resultado
 
 - **Salida `✔ All validations passed`** → validación limpia. Avanzar a Fase 3.
-- **Líneas con `✖`** → hay errores. Continuar con el Paso 3.
-- **Solo líneas con `⚠` (ningún `✖`)** → solo advertencias. Documentarlas en el resumen de Fase 3. Avanzar a Fase 3.
+- **Líneas con `✖`** → hay errores. Continuar con el Paso 3 (errores primero).
+- **Líneas con `⚠` (con o sin `✖`)** → hay advertencias. Continuar con el Paso 3b tras resolver los errores.
 
-### Paso 3 — Corregir y reiterar
+### Paso 3 — Corregir errores y reiterar
 
 Por cada línea con `✖` en la salida:
 1. Identificar el artefacto y la ubicación a partir del texto entre paréntesis al final de la línea, p. ej. `(catalog.yaml#/useCases[2])` o `(system.yaml#/integrations[0])`.
-2. Aplicar la corrección mínima al archivo afectado según la tabla de abajo.
+2. Aplicar la corrección mínima al archivo afectado según la **Tabla de errores** de abajo.
 3. Volver al Paso 1 y re-ejecutar el comando.
 
 **Límite de iteraciones:** Si después de **3 ciclos de corrección** el validador sigue reportando errores `✖`, detener la iteración y presentar al usuario los errores que permanecen con la causa raíz y la corrección manual recomendada. No continuar iterando.
 
-### Tabla de correcciones por código de diagnóstico
+### Paso 3b — Evaluar y corregir advertencias
+
+Cuando ya no haya líneas `✖`, procesar cada línea `⚠` de la salida:
+
+1. Consultar la **Tabla de advertencias** de abajo para determinar si la corrección es **segura** (solo toca bc.yaml, async-api.yaml o bc-open-api.yaml) o requiere confirmación del usuario (toca system.yaml).
+2. **Correcciones seguras** → aplicar directamente sin preguntar al usuario.
+3. **Correcciones que tocan system.yaml** → usar el Protocolo Checklist D (preguntar antes de editar).
+4. Cuando una advertencia no tiene corrección técnica posible (ej: INT-027 con un campo de versión que no existe semánticamente en el dominio) → documentarla como decisión de diseño explícita en bc-spec.md y avanzar.
+5. Tras corregir todas las advertencias posibles → volver al Paso 1 y re-ejecutar el comando.
+
+**Límite compartido:** El contador de 3 ciclos del Paso 3 es compartido con el Paso 3b. Si se alcanzan 3 ciclos en total (errores + advertencias), detener e informar al usuario.
+
+### Tabla de errores por código de diagnóstico
 
 | Código / Patrón | Causa típica | Corrección |  
 |-----------------|--------------|------------|
@@ -217,6 +229,20 @@ Por cada línea con `✖` en la salida:
 | `Structural: fkValidations` | Uso de `field` o `notFoundError` (claves incorrectas) | Renombrar a `param` y `error` respectivamente |
 | `Structural: Decimal missing precision/scale` | Propiedad `type: Decimal` sin `precision` y/o `scale` | Agregar los dos atributos numéricos |
 | `Structural: prohibited type` | Uso de tipo Java nativo (ej: `String`, `int`, `BigDecimal`) | Reemplazar con el tipo canónico equivalente (ej: `String(n)`, `Integer`, `Decimal`) |
+
+### Tabla de advertencias por código de diagnóstico
+
+Las advertencias no impiden la generación pero indican diseño degradado o drift entre artefactos.
+
+| Código | Causa típica | Corrección | ¿Auto-corregible? |
+|--------|-------------|------------|:------------------:|
+| `INT-005` | El `channel` del contrato de evento en system.yaml difiere de la convención `{from}.{entidad}.{evento-kebab}` | Actualizar `channel` en `system.yaml#/integrations[].contracts[]` al valor de convención indicado en el mensaje → Protocolo Checklist D | No |
+| `INT-006` | Outbound a sistema externo usa `pattern` distinto de `acl` en system.yaml | Corregir `pattern: acl` en `system.yaml#/integrations[]` → Protocolo Checklist D | No |
+| `INT-008` | Sistema externo sin operaciones declaradas en system.yaml; generación de adaptador ACL omitida | Agregar operaciones faltantes en `system.yaml#/externalSystems[name].operations[]` → Protocolo Checklist D | No |
+| `INT-018` | `channel` en `domainEvents.published[]` de bc.yaml no coincide con la dirección del canal en async-api.yaml | Alinear el campo `channel` en bc.yaml con el canal expuesto en async-api.yaml (el mensaje de advertencia indica ambos valores) | **Sí** |
+| `INT-019` | Type drift: un campo de `payload[]` en bc.yaml tiene un tipo incompatible con el schema del mensaje AsyncAPI | Alinear el tipo en el schema del mensaje en async-api.yaml (si el bc.yaml es la fuente de verdad) o corregir el tipo en bc.yaml | **Sí** |
+| `INT-027` | Projection con `upsertStrategy: versionGuarded` pero el evento fuente no incluye el campo de versión en `payload[]` | Agregar el campo (por defecto `version`, o el valor de `eventVersionField`) a `domainEvents.published[].payload[]` del evento fuente. Si el campo de versión no existe semánticamente en el dominio, cambiar `upsertStrategy` a `lastWriteWins` y documentar la decisión en bc-spec.md | **Sí** |
+| `GEN-WARN-001` | Campo de payload de evento consumido con tipo no declarado como scalar, enum, VO ni eventDto en este BC | Re-declarar el tipo en `eventDtos[]` del BC consumidor (opción recomendada) o en `valueObjects[]` | **Sí** |
 
 ---
 
