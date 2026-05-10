@@ -854,6 +854,27 @@ domainEvents:
           # complejo que pertenece al BC productor (ej: List[OrderLineSnapshot]).
       # ⚠️ NO declarar retry ni dlq en consumed[] — son config de infraestructura.
       #    El generador los ignora con GEN-WARN.
+
+    # ── Forma C (saga-awareness-only, sin UC, sin listener) ──────────────
+    # Usar cuando el evento DEBE estar en consumed[] para satisfacer la topología
+    # declarada en system.yaml y en {bc}-async-api.yaml, pero este BC no tiene
+    # ninguna acción de dominio que ejecutar al recibirlo.
+    #
+    # Caso típico: compensaciones de saga cuyo efecto en este BC ya se materializó
+    # por un evento anterior. Ejemplo: `orders` ya canceló la orden al recibir
+    # `StockReservationFailed`; cuando llega `StockReleased` (confirmación de la
+    # compensación del inventario), orders no tiene nada que hacer.
+    #
+    # El generador:
+    #   ✅ Registra la cola y el binding en el broker config (topología correcta)
+    #   ❌ NO genera listener Java (no hay comando que despachar)
+    #   ✅ Suprime el warning "has no use case with trigger.kind=event"
+    - name: {EventName}
+      sourceBc: {bc-name}
+      listenerRequired: false        # REQUERIDO en Forma C — indica que la ausencia de UC es intencional
+      description: >
+        Saga-awareness only: {razón por la que este BC conoce el evento pero no actúa}.
+        Declarado para satisfacer la topología de system.yaml e {bc}-async-api.yaml.
 ```
 
 ---
@@ -974,6 +995,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] Si `allowHiddenLeak: true` está presente, el campo del payload referencia explícitamente un campo `hidden: true` del agregado (la excepción es intencional y documentada)
 - [ ] Ningún `consumed[]` tiene claves `retry` ni `dlq` — configuración de infraestructura que va en `system.yaml`
 - [ ] Si `consumed[].payload[]` incluye tipos complejos de otro BC → el tipo está declarado en `eventDtos[]` (NO en `valueObjects[]`)
+- [ ] Todo evento en `consumed[]` sin UC correspondiente (`trigger.kind: event, consumes: {name}`) tiene `listenerRequired: false` declarado explícitamente — si falta, el generador emitirá un warning y no generará listener
 
 **Aggregates — concurrencia y sideEffects:**
 - [ ] Aggregates con alta contención entre comandos concurrentes tienen `concurrencyControl: optimistic`
