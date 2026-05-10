@@ -1,7 +1,7 @@
 ---
 name: design-bounded-context
 description: "Diseña el dominio táctico completo de un Bounded Context (Paso 2) y luego valida automáticamente la coherencia interna del BC y su alineación con arch/system/ usando el skill de refinamiento. Úsalo cuando quieras diseñar o refinar el dominio táctico de un BC: ingresa el nombre del BC y el agente produce los seis artefactos canónicos (bc.yaml, bc-spec.md, bc-flows.md, bc-open-api.yaml, bc-async-api.yaml, diagrams/) más un informe de validación con correcciones aplicadas."
-tools: [read, edit, search, terminal, vscode/askQuestions]
+tools: [read, edit, search, execute, vscode/askQuestions]
 argument-hint: "Nombre del BC a diseñar (debe existir en arch/system/system.yaml). Opcionalmente: decisiones de diseño ya tomadas, preferencias de integración o restricciones de negocio específicas."
 ---
 
