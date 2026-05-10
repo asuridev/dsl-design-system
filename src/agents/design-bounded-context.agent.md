@@ -1,7 +1,7 @@
 ---
 name: design-bounded-context
 description: "Diseña el dominio táctico completo de un Bounded Context (Paso 2) y luego valida automáticamente la coherencia interna del BC y su alineación con arch/system/ usando el skill de refinamiento. Úsalo cuando quieras diseñar o refinar el dominio táctico de un BC: ingresa el nombre del BC y el agente produce los seis artefactos canónicos (bc.yaml, bc-spec.md, bc-flows.md, bc-open-api.yaml, bc-async-api.yaml, diagrams/) más un informe de validación con correcciones aplicadas."
-tools: [read, edit, search, vscode/askQuestions]
+tools: [read, edit, search, terminal, vscode/askQuestions]
 argument-hint: "Nombre del BC a diseñar (debe existir en arch/system/system.yaml). Opcionalmente: decisiones de diseño ya tomadas, preferencias de integración o restricciones de negocio específicas."
 ---
 
@@ -82,8 +82,10 @@ Generar en orden:
 ### Etapa C — bc.yaml v2 (enriquecimiento para generación de código)
 
 Reescribir bc.yaml completando:
-8. `domainRules`: asignar `type` y `errorCode` a todas las reglas
+8. `domainRules`: asignar `type` a todas las reglas y `errorCode` a todas **excepto `sideEffect`**
     > ⚠️ `condition` y `state` no son claves válidas en `domainRules[]` — el generador rechaza ambas con error. La condición va en `description` (texto para Fase 3); el estado terminal es implícito en `type: terminalState`.
+    > ⚠️ `sideEffect` → sin `errorCode` (el generador no emite error visible al cliente — es anotación de diseño pura para Fase 3).
+    > ⚠️ `uniqueness` requiere `field` (camelCase) obligatorio — sin `field` el generador falla con 🔴 ERROR. `fields[]` (plural) no existe en la whitelist; usar solo `field` (singular).
 9. Properties: marcar `unique: true` e `indexed: true` según reglas y query params GET
 10. `useCases[]`: construir cada UC con todos los campos requeridos (`id`, `name`, `type`, `actor`, `trigger`, `aggregate`, `method`, `rules`, `notFoundError`, `fkValidations`, `implementation`, `sagaStep` si aplica)
     > ⚠️ `repositoryMethod` y `emits` no son campos de `useCases[]`: `repositoryMethod` fue eliminado (la persistencia la infiere el generador) y `emits` fue movido a `aggregates[].domainMethods[]`.
@@ -91,10 +93,12 @@ Reescribir bc.yaml completando:
     > ⚠️ `fkValidations[]`: los campos correctos son `param` (no `field`) y `error` (no `notFoundError`) — el generador rechaza los nombres incorrectos con 🔴 ERROR.
     > ⚠️ `idempotency.storage`: único valor válido es `cache` — los valores `database` y `redis` están deprecados y el generador los rechaza.
     > ⚠️ `pagination.direction`: debe ser `ASC` o `DESC` en mayúsculas — el generador mapea el valor literalmente al enum del runtime; `asc`/`desc` minúsculas abortan el build.
+    > ⚠️ `derivedFrom` / `derived_from` no son campos válidos en `useCases[]` — el generador rechaza claves desconocidas. Para trazabilidad usar `rules: [RULE-ID]`; `derivedFrom` solo aplica en `domainMethods[]`, `repositories[].queryMethods[]` y `projections[]`.
 11. `repositories[]`: derivar métodos desde las 4 fuentes (implicit, domainRules uniqueness, openapi GET params, crossAggregateConstraint)
     > ⚠️ Listados con filtros (GET con query params) → declarar en `queryMethods[]`, **no** en `methods[]`. Para parámetros de búsqueda que no coinciden con una propiedad del agregado (ej: `search`, `q`), declarar `filterOn[]` + `operator` — sin ellos el generador no puede construir la cláusula WHERE y aborta con 🔴 ERROR.
     > ⚠️ ReadModels (`readModel: true`): solo admiten `findById`, `findBy{unique}` y `upsert` — **nunca `save` ni `delete`**.
 12. `errors[]`: declarar todos los códigos con `httpStatus` — incluir todos los `notFoundError`, `fkValidations[].error` y `errorCode` de domainRules
+    > ⚠️ NO declarar `constraintName` en `errors[]` — el validador aplica whitelist estricta y rechaza la clave. El nombre del índice único va en `aggregates[].domainRules[].constraintName` (solo en reglas `type: uniqueness`).
 
 **Al terminar Etapa C, no presentar resumen al usuario. Pasar inmediatamente a Fase 2.**
 
@@ -155,6 +159,64 @@ Si se detecta que bc.yaml declara algo que no existe en system.yaml:
 | 🟡 ALERTA de calidad (candidato a agregado, VO faltante) | Presentar al usuario y aplicar si confirma |
 | 🔵 SUGERENCIA (naming, convención) | Aplicar directamente con nota en el resumen |
 | Discrepancia con system.yaml | Protocolo Checklist D (siempre preguntar) |
+
+---
+
+## Fase 2.5 — Validación de coherencia (`dsl validate`)
+
+Esta fase ejecuta el validador de coherencia de integraciones contra los artefactos producidos. Detecta errores estructurales y de coherencia entre bc.yaml, system.yaml y los contratos AsyncAPI que la Fase 2 no puede detectar sin evaluar el YAML contra las reglas del validador.
+
+### Paso 1 — Ejecutar el validador
+
+Ejecutar en terminal desde la raíz del proyecto (donde existe `arch/`):
+
+```
+dsl validate --bc {bc-name}
+```
+
+### Paso 2 — Interpretar el resultado
+
+- **Salida `✔ All validations passed`** → validación limpia. Avanzar a Fase 3.
+- **Líneas con `✖`** → hay errores. Continuar con el Paso 3.
+- **Solo líneas con `⚠` (ningún `✖`)** → solo advertencias. Documentarlas en el resumen de Fase 3. Avanzar a Fase 3.
+
+### Paso 3 — Corregir y reiterar
+
+Por cada línea con `✖` en la salida:
+1. Identificar el artefacto y la ubicación a partir del texto entre paréntesis al final de la línea, p. ej. `(catalog.yaml#/useCases[2])` o `(system.yaml#/integrations[0])`.
+2. Aplicar la corrección mínima al archivo afectado según la tabla de abajo.
+3. Volver al Paso 1 y re-ejecutar el comando.
+
+**Límite de iteraciones:** Si después de **3 ciclos de corrección** el validador sigue reportando errores `✖`, detener la iteración y presentar al usuario los errores que permanecen con la causa raíz y la corrección manual recomendada. No continuar iterando.
+
+### Tabla de correcciones por código de diagnóstico
+
+| Código / Patrón | Causa típica | Corrección |  
+|-----------------|--------------|------------|
+| `INT-001` | Evento declarado en system.yaml no publicado por el BC `from` | Agregar el evento a `domainEvents.published[]` en el bc.yaml del BC `from` |
+| `INT-002` | Evento declarado en system.yaml no consumido por el BC `to` | Agregar el evento a `domainEvents.consumed[]` en el bc.yaml del BC `to` |
+| `INT-003` | Integración HTTP sin entrada recíproca `inbound[]` / `outbound[]` | Agregar la operación faltante en `integrations.inbound[]` del BC receptor y en `integrations.outbound[]` del BC emisor |
+| `INT-004` | ACL con `to` que no existe en `externalSystems[]` | El sistema externo falta en system.yaml → aplicar Protocolo Checklist D |
+| `INT-006` | `outbound[]` en bc.yaml sin `integrations[]` recíproco en system.yaml | Verificar con el usuario → Protocolo Checklist D |
+| `INT-007` | Evento consumido que ningún BC publica | Verificar con el usuario → Protocolo Checklist D |
+| `INT-008` | Contrato ACL con operación no declarada en `externalSystems[].operations[]` | Agregar la operación al system.yaml o corregir el nombre del contrato |
+| `INT-009` | Operación `outbound[type=externalSystem]` no declarada en `externalSystems[].operations[]` | Corregir el nombre de la operación o agregarla al system.yaml |
+| `INT-010` | Projection `persistent: true` sin `source.kind: event` o evento no publicado | Agregar `source: { kind: event, event: NombreEvento, from: bc-origen }` |
+| `INT-011` | Projection persistente sin `keyBy` o property referenciada inexistente | Agregar `keyBy: nombrePropiedad` apuntando a una `properties[]` existente |
+| `INT-012` | `additionalSources` con evento no publicado por el BC `from` indicado | Corregir `from` o el nombre del evento en `additionalSources[]` |
+| `INT-013` | `saga.trigger.event` no publicado por el BC `trigger.bc` | Corregir el nombre del evento o el BC disparador en la saga |
+| `INT-014` | `step.onSuccess`/`onFailure`/`compensation` no publicado por `step.bc` | Agregar el evento a `domainEvents.published[]` del BC del paso |
+| `INT-015` | `auth.type: oauth2-cc` sin `tokenEndpoint` o `credentialKey` | Agregar los dos campos faltantes en el bloque `auth` |
+| `INT-016`–`INT-021` | Desajuste entre AsyncAPI y bc.yaml (mensajes/canales/payload) | Alinear nombres de mensajes/canales o campos de payload entre ambos archivos |
+| `INT-022`–`INT-023` | Tipo no reconocido en `externalSystems[].operations[].request\|response.fields[]` o `schemas` | Agregar el tipo a `externalSystems[].schemas` o reemplazar por un tipo wire-format escalar |
+| `Structural: unsupported attribute` | Clave no permitida en `useCases[]` (ej: `derivedFrom`, `repositoryMethod`) | Eliminar la clave inválida; ver whitelist en §10 Etapa C |
+| `Structural: unsupported type` | `useCases[].type` con valor distinto de `command`/`query` | Corregir a `command` o `query` |
+| `Structural: trigger.kind: http requires operationId` | UC HTTP sin `trigger.operationId` | Agregar `operationId` que coincida con la operación en el OpenAPI |
+| `Structural: idempotency.storage` | Valor distinto de `cache` | Cambiar a `storage: cache` |
+| `Structural: pagination.defaultSort.direction` | Mayúsculas incorrectas | Cambiar a `ASC` o `DESC` en mayúsculas |
+| `Structural: fkValidations` | Uso de `field` o `notFoundError` (claves incorrectas) | Renombrar a `param` y `error` respectivamente |
+| `Structural: Decimal missing precision/scale` | Propiedad `type: Decimal` sin `precision` y/o `scale` | Agregar los dos atributos numéricos |
+| `Structural: prohibited type` | Uso de tipo Java nativo (ej: `String`, `int`, `BigDecimal`) | Reemplazar con el tipo canónico equivalente (ej: `String(n)`, `Integer`, `Decimal`) |
 
 ---
 

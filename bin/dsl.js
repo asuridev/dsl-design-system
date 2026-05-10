@@ -7,6 +7,7 @@ const chalk = require('chalk');
 const packageJson = require('../package.json');
 const { registerInit } = require('../src/commands/init');
 const { registerPreview } = require('../src/commands/preview');
+const { registerValidate } = require('../src/commands/validate');
 
 const program = new Command();
 
@@ -17,6 +18,7 @@ program
 
 registerInit(program);
 registerPreview(program);
+registerValidate(program);
 
 // Show help when no command is provided
 if (process.argv.length <= 2) {
