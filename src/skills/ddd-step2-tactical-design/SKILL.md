@@ -191,7 +191,16 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - **No declarar `derived_from` ni `derivedFrom` en useCases** — el generador rechaza claves desconocidas en `useCases[]`. La trazabilidad del UC ya viene dada por su `id` (UC-XXX-NNN) y por `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.event` (eventos). Para enlazar a reglas de PRD usar `rules: [RULE-ID, ...]`. `derivedFrom` solo aplica a artefactos derivados: `aggregates[].domainMethods[]`, `repositories[].queryMethods[]`, `aggregates[].properties[]` con `source: derived`, `projections[].properties[]` y `domainEvents[].payload[]` con `source: derived`.
 - `validations[]` (array): `id`, `expression` (**lenguaje natural** — describe la condición en términos de negocio; el generador emite `// TODO` con el texto y Fase 3 lo implementa en Java; **nunca escribir código Java aquí**), `errorCode`, `description`.
 - `lookups[]`: `param` + (`aggregate` o `nestedIn`) + `errorCode`. **Mutuamente excluyente con `notFoundError`**. Usar `lookups[]` cuando hay más de un agregado a cargar o cuando los errores son distintos por agregado; `notFoundError` cuando solo hay un agregado principal cargado por `loadAggregate: true`.
-- `input[]` extendido: `default`, `max`, `source: header` + `headerName`.
+- **`input[].source` es obligatorio en toda entrada** — el generador rechaza con error de build cualquier input sin `source` declarado. Valores permitidos y cuándo usarlos:
+  | `source` | Cuándo usar |
+  |---|---|
+  | `body` | Campos del JSON body — commands HTTP (POST/PUT/PATCH). Valor más frecuente en commands. |
+  | `query` | Parámetros de URL `?campo=valor` — queries de filtrado/listado (GET). |
+  | `path` | Segmentos de URL `/{id}`. Siempre `required: true`. Combinar con `loadAggregate: true` si el input carga el agregado principal. |
+  | `authContext` | Claims del JWT extraídos del contexto de seguridad. No aparece en el OpenAPI. |
+  | `header` | Header HTTP personalizado. Requiere `headerName`. |
+  | `multipart` | Parte de formulario multipart. Requiere `type: File` + `partName`. |
+- `input[]` extendido: `default` (solo si `required: false`), `max` (numéricos y listas).
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
 - `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
 - `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`.

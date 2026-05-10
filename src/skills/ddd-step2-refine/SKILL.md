@@ -758,6 +758,14 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
     presente → 🔵 SUGERENCIA: redundante.
   - `max` solo en tipos numéricos o de tamaño (List, String). En otros → 🔴 ERROR.
 
+- **`input[].source` es obligatorio en toda entrada** — el generador rechaza con error de build cualquier input sin `source`. Ausente → 🔴 ERROR. Guía:
+  - Commands HTTP (POST/PUT/PATCH): campos del JSON body → `source: body`.
+  - Queries HTTP (GET): filtros en URL `?campo=valor` → `source: query`.
+  - Segmentos de URL `/{id}` → `source: path` (siempre `required: true`).
+  - Claims del JWT → `source: authContext`.
+  - Header HTTP personalizado → `source: header` + `headerName`.
+  - Formulario multipart → `source: multipart` + `type: File` + `partName`.
+
 - **`input.source: header`** requiere `headerName`. Falta → 🔴 ERROR.
 
 - **`pagination` block** (en queries):
