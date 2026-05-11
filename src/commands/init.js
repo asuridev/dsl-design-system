@@ -10,6 +10,8 @@ const inquirer = require('inquirer');
 const DSL_VALIDATE_SOURCES = [
   { src: ['commands', 'validate.js'],             dest: ['src', 'commands', 'validate.js'] },
   { src: ['utils', 'arch-readers.js'],            dest: ['src', 'utils', 'arch-readers.js'] },
+  { src: ['utils', 'canonical-types.js'],         dest: ['src', 'utils', 'canonical-types.js'] },
+  { src: ['utils', 'bc-yaml-validator.js'],       dest: ['src', 'utils', 'bc-yaml-validator.js'] },
   { src: ['utils', 'integration-validator.js'],   dest: ['src', 'utils', 'integration-validator.js'] },
   { src: ['utils', 'naming.js'],                  dest: ['src', 'utils', 'naming.js'] },
   { src: ['utils', 'openapi-contract.js'],        dest: ['src', 'utils', 'openapi-contract.js'] },

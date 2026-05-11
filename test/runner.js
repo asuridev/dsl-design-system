@@ -263,6 +263,41 @@ components:
 `);
 }
 
+async function writeTacticalInvalidArch(projectDir, bcYaml) {
+  await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
+system:
+  name: tactical-invalid-system
+  description: Invalid tactical fixture system.
+  domainType: core
+boundedContexts:
+  - name: catalog
+    type: core
+    purpose: Manages catalog data.
+    aggregates:
+      - name: Product
+        root: Product
+        entities: []
+externalSystems: []
+integrations: []
+infrastructure: {}
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), bcYaml);
+}
+
+async function assertTacticalValidationFails(bcYaml, expectedCode) {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeTacticalInvalidArch(projectDir, bcYaml);
+
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notStrictEqual(result.status, 0, output);
+    assert.match(output, new RegExp(expectedCode));
+  });
+}
+
 test('dsl init scaffolds design assets and validator', async () => {
   await withTempProject(async (projectDir) => {
     const result = runNode([CLI, 'init'], { cwd: projectDir });
@@ -274,6 +309,8 @@ test('dsl init scaffolds design assets and validator', async () => {
       path.join('.github', 'agents'),
       path.join('tools', 'dsl-validate', 'bin', 'dsl.js'),
       path.join('tools', 'dsl-validate', 'src', 'utils', 'integration-validator.js'),
+      path.join('tools', 'dsl-validate', 'src', 'utils', 'canonical-types.js'),
+      path.join('tools', 'dsl-validate', 'src', 'utils', 'bc-yaml-validator.js'),
       path.join('tools', 'dsl-validate', 'src', 'utils', 'openapi-contract.js'),
       path.join('tools', 'dsl-validate', 'src', 'utils', 'openapi-usecase-validator.js'),
       path.join('tools', 'package.json'),
@@ -283,6 +320,153 @@ test('dsl init scaffolds design assets and validator', async () => {
       assert.ok(await fs.pathExists(path.join(projectDir, rel)), `Expected ${rel} to exist`);
     }
   });
+});
+
+test('copied dsl-validate rejects unsupported useCase keys before generation', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    triger:
+      kind: http
+`, 'BC-012');
+});
+
+test('copied dsl-validate rejects useCase inputs without source', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    input:
+      - name: id
+        type: Uuid
+    returns: String
+`, 'BC-021');
+});
+
+test('copied dsl-validate rejects command methods missing from aggregate domainMethods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods: []
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: ActivateProduct
+    type: command
+    aggregate: Product
+    method: activate
+`, 'BC-103');
+});
+
+test('copied dsl-validate rejects HTTP query use cases without returns', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    trigger:
+      kind: http
+      operationId: getProduct
+`, 'BC-105');
+});
+
+test('copied dsl-validate rejects uniqueness constraintName without field', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: sku
+        type: String
+    domainRules:
+      - id: PRD-RULE-001
+        type: uniqueness
+        errorCode: PRODUCT_SKU_EXISTS
+        constraintName: uk_product_sku
+errors:
+  - code: PRODUCT_SKU_EXISTS
+    httpStatus: 409
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-067');
+});
+
+test('copied dsl-validate rejects projections that embed aggregates', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+projections:
+  - name: ProductSummary
+    properties:
+      - name: product
+        type: Product
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-083');
+});
+
+test('copied dsl-validate rejects query use cases without repository queryMethods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+repositories:
+  - aggregate: Product
+    methods: []
+useCases:
+  - id: UC-CAT-001
+    name: SearchProducts
+    type: query
+    aggregate: Product
+    returns: ProductSummary
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-164');
 });
 
 test('copied dsl-validate passes a minimal valid arch', async () => {

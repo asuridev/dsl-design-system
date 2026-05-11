@@ -13,6 +13,7 @@ const {
 } = require('../utils/arch-readers');
 const { validateIntegrationCoherence, reportDiagnostics } = require('../utils/integration-validator');
 const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
+const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
 
 /**
  * Builds a simple logger object compatible with reportDiagnostics.
@@ -103,7 +104,19 @@ async function runValidate(options = {}) {
   const scope = filterBc ? `BC "${filterBc}"` : `${bcYamls.length} bounded context(s)`;
   console.log(chalk.blue(`\nValidating ${scope}...\n`));
 
-  const diagnostics = validateIntegrationCoherence(system, bcYamls, archDir, asyncApiByBc);
+  const systemActors = new Set(
+    ((system && system.actors) || [])
+      .map((actor) => actor && (actor.id || actor.name))
+      .filter(Boolean)
+  );
+  const diagnostics = [];
+  for (const bcYaml of bcYamls) {
+    diagnostics.push(...validateBcYamlAnatomy(bcYaml, {
+      systemActors: systemActors.size > 0 ? systemActors : null,
+    }));
+  }
+
+  diagnostics.push(...validateIntegrationCoherence(system, bcYamls, archDir, asyncApiByBc));
   for (const bcYaml of bcYamls) {
     diagnostics.push(...validateOpenApiUseCases(
       bcYaml,
