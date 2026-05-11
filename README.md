@@ -1338,7 +1338,7 @@ específicos por tipo.
 
 | `type` | Campos requeridos | Campos opcionales | Qué resuelve |
 |---|---|---|---|
-| `uniqueness` | `field`, `errorCode` | `constraintName` | Constraint UNIQUE + `findBy{Field}`. `constraintName` controla el nombre del índice (`snake_case`). |
+| `uniqueness` | `errorCode` | `field`, `constraintName` | Constraint UNIQUE + `findBy{Field}` cuando `field` está declarado. `constraintName` controla el nombre del índice (`snake_case`) y requiere `field`. Sin `field`, el generador acepta el diseño pero deja TODO enriquecido. |
 | `statePrecondition` | `condition`, `errorCode` | — | Guard en el método de dominio antes de transicionar. |
 | `terminalState` | `state`, `errorCode` | — | Documenta estado sin salidas. `errorCode` traduce a `InvalidStateTransitionException`. |
 | `sideEffect` | `description` | — | Lógica adicional sin error visible al cliente (ej. registrar historial). **Sin `errorCode`.** |
@@ -1452,7 +1452,6 @@ indica de dónde proviene el valor.
 | `param` | `param` | Parámetro de entrada del UC que emite el evento. |
 | `timestamp` | — | `Instant.now()` en el momento de emisión. |
 | `constant` | `value` | Literal estático. |
-| `auth-context` | `claim` | Claim del JWT (`sub`, `email`, …). |
 | `derived` | `derivedFrom[]` + `expression` | Expresión Java sobre otros campos. |
 
 ```yaml
@@ -1460,13 +1459,17 @@ payload:
   - { name: orderId, type: Uuid, source: aggregate, field: id }
   - { name: occurredOn, type: DateTime, source: timestamp }
   - { name: source, type: String, source: constant, value: "orders-bc" }
-  - { name: triggeredBy, type: String, source: auth-context, claim: sub }
+  - { name: triggeredBy, type: Uuid, source: aggregate, field: createdBy }
   - name: discount
     type: Decimal
     source: derived
     derivedFrom: [total.amount, total.discountRate]
     expression: "amount * discountRate"
 ```
+
+`source: auth-context` está prohibido en payloads publicados (`INT-025`). Para publicar
+el actor autenticado, declarar una propiedad/input con `source: authContext` y emitirla
+desde el agregado con `source: aggregate` o pasarla al método de dominio como `source: param`.
 
 ##### 5.6.1.4 `published[].broker`
 
@@ -2370,7 +2373,7 @@ Referencia rápida para validación.
 
 ### 7.9 `domainEvents.published[].payload[].source`
 
-`aggregate` · `param` · `timestamp` · `constant` · `auth-context` · `derived`.
+`aggregate` · `param` · `timestamp` · `constant` · `derived`.
 
 ### 7.10 `domainEvents.published[].broker.retry.backoff`
 

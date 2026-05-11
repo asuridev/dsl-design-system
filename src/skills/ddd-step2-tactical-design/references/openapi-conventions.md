@@ -65,6 +65,11 @@ Este sistema sigue el principio de **Command-Query Separation (CQS/CQRS)**:
 
 El cliente que necesite el estado actualizado debe hacer un GET posterior.
 
+Excepción soportada por el generador: si un command declara un response `2xx` con
+`content.application/json`, el use case correspondiente debe declarar `returns` y ese
+tipo debe coincidir con el schema de respuesta principal. Si el command no tiene body,
+`returns` se omite.
+
 ```
 # QUERIES — retornan body
 GET    /{recursos}                  → Listar con paginación          → 200 + body

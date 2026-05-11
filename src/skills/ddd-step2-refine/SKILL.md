@@ -486,7 +486,7 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 - `GET` → siempre tiene response body con datos del recurso
 - `POST` → 201 + header `Location`, sin body
 - `PATCH` / `DELETE` → 204, sin body
-  - Comando con response body → 🟡 ALERTA
+  - Comando con response body → permitido solo si el UC command declara `returns` y coincide con el schema de respuesta
   - Query sin body de respuesta → 🟡 ALERTA
 
 **C5 — OpenAPI: Money como string**
@@ -528,7 +528,7 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
 - **Hints obligatorios por tipo**:
   | type | Hints requeridos | Hints opcionales |
   |---|---|---|
-  | `uniqueness` | `field` (camelCase) + `errorCode` | `constraintName` en snake_case |
+  | `uniqueness` | `errorCode` | `field` (muy recomendado), `constraintName` en snake_case |
   | `statePrecondition` | `errorCode` | — |
   | `terminalState` | `errorCode` (opcional) | — |
   | `sideEffect` | `description` | — (sin `errorCode`) |
@@ -542,14 +542,13 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
   > estricta y rechaza ambos con error. La condición va en `description` (texto
   > legible para Fase 3); el estado terminal es implícito en el tipo. → 🔴 ERROR.
 
-- **uniqueness sin `field` → 🔴 ERROR.** El reader exige `field` para saber qué
-    columna del almacenamiento debe recibir la restricción de unicidad y para vincular
-    la excepción de violación de integridad del runtime al error correcto. Aplica
-    **siempre**, incluso cuando `constraintName` está declarado. El `field` puede
-    referenciar una propiedad del **agregado raíz o de cualquier entidad hija** del
-    mismo agregado (por ejemplo, `sku` de una entidad `ProductVariant` declarada en
-    `entities[]`). Si el campo solo existe en una entidad hija, el generador lo
-    valida igualmente.
+- **uniqueness sin `field` → 🟡 ALERTA.** El generador acepta la regla, pero no puede
+  emitir una guardia proactiva completa (`findBy{Campo}` pre-check) y deja un TODO
+  enriquecido en el handler. Declarar `field` siempre que el diseño conozca el campo
+  único. El `field` puede referenciar una propiedad del **agregado raíz o de cualquier
+  entidad hija** del mismo agregado (por ejemplo, `sku` de una entidad `ProductVariant`
+  declarada en `entities[]`). Si el campo solo existe en una entidad hija, el generador
+  lo valida igualmente.
 
   - **`constraintName` (opcional, solo en `type: uniqueness`)**: nombre físico del
     índice único en la base de datos (ej: `uk_category_name`). Si está presente:
@@ -707,8 +706,11 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   expuesto por HTTP sin `returns` hace que el generador no pueda construir el
   response body del endpoint → 🔴 ERROR.
 
-- **`returns:` en commands**: tipos válidos `Void`, `Optional[X]`, o un VO/projection.
-  Tipos canónicos crudos en commands → 🟡 ALERTA: usar `Optional[X]` o VO con nombre.
+- **`returns:` en commands**: omitir por defecto. Declarar solo si el OpenAPI del command
+  tiene `responses.<2xx>.content.application/json`. Tipos válidos: `Void`, `Optional[X]`,
+  o un VO/projection. Tipos canónicos crudos en commands → 🟡 ALERTA: usar `Optional[X]`
+  o VO con nombre. Si el OpenAPI tiene body JSON y el UC no declara `returns`, o si
+  declara `returns` pero el OpenAPI no tiene body JSON, hay drift de contrato → 🔴 ERROR.
 
 - **`returns:` en queries — nombre del agregado a secas → 🔴 ERROR.** El generador
   solo reconoce `{AggregateName}Response` (ej: `CategoryResponse`, `ProductResponse`)

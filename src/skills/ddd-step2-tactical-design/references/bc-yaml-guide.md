@@ -756,7 +756,7 @@ useCases:
 | `input` | no (omitir si vacío) | Parámetros externos que recibe el handler (evento, HTTP, authContext). |
 | `input[].source` | sí | `event.{campo}` \| `path` \| `query` \| `body` \| `authContext`. |
 | `input[].loadAggregate` | no | `true` activa `findById(param)` antes de invocar el método (commands) o como Path A (queries). Un único param por UC puede declararlo; tipo `Uuid`. |
-| `returns` | si `type: query` + `kind: http` | Nombre en `projections[]`, `{AggregateName}Response` para el DTO completo del agregado, o lista inline de propiedades. **Nunca el nombre del agregado a secas.** **Ausente en commands.** |
+| `returns` | si `type: query` + `kind: http`; o command HTTP con response JSON | Nombre en `projections[]`, `{AggregateName}Response` para el DTO completo del agregado, o lista inline de propiedades. **Nunca el nombre del agregado a secas.** En commands se omite por defecto; solo declararlo si el OpenAPI declara `responses.<2xx>.content.application/json` y debe coincidir con ese schema. |
 | `rules` | sí | Lista de RULE-IDs evaluados dentro del use case. `[]` si no aplica ninguna. |
 | `notFoundError` | no | Lista de códigos lanzados cuando la entidad no existe. Siempre lista: `[ERROR_CODE]`. Omitir cuando no aplica. |
 | `fkValidations` | si `type: command` | Lista de validaciones de FK. `[]` si no hay FK. |
@@ -1836,7 +1836,7 @@ domainEvents:
         - { name: amount, type: Decimal, source: aggregate, field: total.amount }
         - { name: occurredOn, type: DateTime, source: timestamp }
         - { name: source, type: String, source: constant, value: "orders-bc" }
-        - { name: triggeredBy, type: String, source: auth-context, claim: sub }
+        - { name: triggeredBy, type: Uuid, source: aggregate, field: createdBy }
         - { name: discount, type: Decimal, source: derived,
             derivedFrom: [total.amount, total.discountRate],
             expression: "amount * discountRate" }
@@ -1883,8 +1883,11 @@ domainEvents:
 | `param` | `param` | parámetro de entrada del use case que emite el evento |
 | `timestamp` | — | momento de emisión (timestamp del runtime destino) |
 | `constant` | `value` | literal estático |
-| `auth-context` | `claim` | claim del usuario autenticado (sub, email, …) |
 | `derived` | `derivedFrom[]` + `expression` | expresión booleana en el lenguaje de implementación destino sobre otros campos |
+
+> `source: auth-context` está prohibido en payloads de eventos (`INT-025`). Para publicar
+> el actor autenticado, declarar una propiedad o input con `source: authContext` y emitirla
+> desde el agregado con `source: aggregate` o pasarla al método de dominio como `source: param`.
 
 #### `EventMetadata` canónica (NO declarar manualmente)
 

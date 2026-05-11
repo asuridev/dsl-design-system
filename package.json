@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node bin/dsl.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test/runner.js"
   },
   "keywords": [
     "cli",
