@@ -706,7 +706,7 @@ Después de editar, verificar mentalmente:
 2. ¿Todos los `Container(id, ...)` en el diagrama tienen su `Rel(...)` correspondiente si la integración sigue existiendo?
 3. ¿El glosario de AGENTS.md refleja los términos del lenguaje ubícuo actualizado?
 4. ¿Si hay `channel: message-broker`, existe `infrastructure.messageBroker`?
-5. ¿Los contratos de integraciones `channel: message-broker` son objetos con `name` y `channel`? ¿El valor de `channel` sigue el patrón `{source-bc}.{entity}.{event-kebab}`?
+5. ¿Los contratos de integraciones `channel: message-broker` son objetos con `name` y `channel`? ¿El valor de `channel` sigue el patrón `{source-bc}.{event-name-en-dot-notation}` donde el nombre del evento (PascalCase) se convierte a kebab y todos los `-` se reemplazan por `.`? ¿No hay guiones en el canal?
 6. ¿Los nombres en PascalCase de agregados y entidades son consistentes entre system.yaml y system-spec.md?
 7. ¿Existen BCs con diseño táctico en `arch/` que referencien alguno de los elementos modificados? → Continuar a Fase 5.
 8. Si se modificó `sagas[]`: ¿todos los eventos declarados en `onSuccess`, `onFailure` y `compensation` existen como contratos en las integraciones `pattern: event` del BC emisor?

@@ -700,7 +700,7 @@ useCases:
     trigger:
       kind: event
       event: StockReservationFailed
-      channel: inventory.stock.reservation-failed
+      channel: inventory.stock.reservation.failed
     aggregate: Order
     method: cancel                # → aggregates[Order].domainMethods[cancel]
     input:

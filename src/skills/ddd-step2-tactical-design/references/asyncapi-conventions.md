@@ -30,29 +30,38 @@ servers:
 
 ## Convención de Canales
 
-El patrón de naming del canal es: `{source-bc}.{entidad-kebab}.{evento-pasado-kebab}`
+El canal se deriva **directamente del nombre del evento** (PascalCase):
+
+1. Tomar el nombre del evento: `ProductPriceUpdated`
+2. Convertir a kebab-case: `product-price-updated`
+3. Reemplazar **todos** los guiones por puntos: `product.price.updated`
+4. Anteponer el BC fuente: `catalog.product.price.updated`
+
+Fórmula: `{source-bc}.{event-name-en-dot-notation}`
 
 | Tipo | Canal | Sección YAML |
 |------|-------|-------------|
-| Evento **publicado** por este BC | `{este-bc}.{entidad}.{evento}` | `publish` |
-| Evento **consumido** de otro BC | `{otro-bc}.{entidad}.{evento}` | `subscribe` |
+| Evento **publicado** por este BC | `{este-bc}.{event-dots}` | `publish` |
+| Evento **consumido** de otro BC | `{otro-bc}.{event-dots}` | `subscribe` |
 
 ### Ejemplos reales del sistema
 
-| Canal | Publicado por | Consumido por |
-|-------|-------------|--------------|
-| `catalog.product.activated` | catalog | orders, inventory |
-| `catalog.product.price-updated` | catalog | orders |
-| `inventory.stock.updated` | inventory | catalog |
-| `orders.order.confirmed` | orders | dispatch, payments, notifications |
-| `payments.payment.captured` | payments | orders, notifications |
+| Evento | Canal | Publicado por |
+|--------|-------|---------------|
+| `ProductActivated` | `catalog.product.activated` | catalog |
+| `ProductPriceUpdated` | `catalog.product.price.updated` | catalog |
+| `StockUpdated` | `inventory.stock.updated` | inventory |
+| `OrderConfirmed` | `orders.order.confirmed` | orders |
+| `PaymentCaptured` | `payments.payment.captured` | payments |
+| `StockItemReserved` | `inventory.stock.item.reserved` | inventory |
 
 ### Reglas del nombre de canal
 
-- Todo en **kebab-case** (no camelCase, no snake_case)
-- La entidad es singular: `product`, `order`, `payment` (no `products`)
-- El evento es pasado de la acción: `activated`, `price-updated`, `stock-updated`
-- Nunca incluir el BC en el nombre del evento (ya va en el prefijo del canal)
+- **Sin guiones en ningún segmento** — el único separador válido es el punto (`.`)
+- Siempre en minúsculas; todo PascalCase se descompone en segmentos separados por puntos
+- La entidad es singular: `product`, `order`, `stock.item` (no `products`, no `stock-item`)
+- El evento expresa la acción en pasado; las palabras compuestas usan puntos: `price.updated`, `stock.updated`
+- Nunca incluir el nombre del BC dentro del nombre del evento (ya va como prefijo del canal)
 
 ---
 
@@ -62,14 +71,24 @@ Los canales no siempre se derivan por convención. La fuente de verdad es `syste
 
 ### Canales PUBLICADOS por este BC
 
-Derivar por convención: `{este-bc}.{entidad-kebab}.{evento-pasado-kebab}`
+Derivar por convención a partir del **nombre del evento de dominio**:
+
+1. Tomar nombre PascalCase del evento
+2. Convertir a kebab-case
+3. Reemplazar todos los `-` por `.`
+4. Anteponer el nombre del BC
 
 No existe referencia directa en `system.yaml` hacia los consumidores del evento.
-El nombre se construye aplicando la convención al nombre del evento de dominio.
 
 ```yaml
-# Evento de dominio: ProductActivated → canal publicado:
+# Evento: ProductActivated → product-activated → product.activated
 catalog.product.activated
+
+# Evento: ProductPriceUpdated → product-price-updated → product.price.updated
+catalog.product.price.updated
+
+# Evento: StockItemReserved → stock-item-reserved → stock.item.reserved
+inventory.stock.item.reserved
 ```
 
 ### Canales CONSUMIDOS por este BC
@@ -251,15 +270,15 @@ servers:
 
 channels:
   # ── Eventos publicados ─────────────────────────────────────────────────────
-  {bc}.{entidad}.{evento-pasado}:
+  {bc}.{event.dot.notation}:
     description: ...
     publish:
       operationId: on{EventName}
       message:
         $ref: '#/components/messages/{EventName}Message'
 
-  # ── Eventos consumidos ─────────────────────────────────────────────────────
-  {otro-bc}.{entidad}.{evento-pasado}:
+  # ── Eventos consumidos ─────────────────────────────────────────────
+  {otro-bc}.{event.dot.notation}:
     description: ...
     subscribe:
       operationId: handle{EventName}
@@ -319,7 +338,7 @@ consumidor lo consulte de forma segura.
 
 | Elemento | Convención | Ejemplo |
 |----------|-----------|---------|
-| Canal | `{bc}.{entidad}.{evento-kebab}` | `catalog.product.price-updated` |
+| Canal | `{bc}.{event.dot.notation}` | `catalog.product.price.updated` |
 | `operationId` publicado | `on{EventName}` | `onProductActivated` |
 | `operationId` consumido | `handle{EventName}` | `handleStockUpdated` |
 | Message name | `{EventName}Message` | `ProductActivatedMessage` |

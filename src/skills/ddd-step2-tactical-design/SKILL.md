@@ -1659,7 +1659,7 @@ useCases:
     trigger:
       kind: event
       event: PaymentFailed
-      channel: payments.payment.payment-failed
+      channel: payments.payment.failed
     aggregate: StockItem
     sagaStep:
       saga: CheckoutSaga
@@ -2078,8 +2078,8 @@ servers:
 
 | Tipo | Patrón de canal | Fuente | Sección |
 |------|----------------|--------|---------|
-| Evento publicado por este BC | `{bc-name}.{entidad}.{evento-kebab}` | Derivar por convención | `publish` |
-| Evento consumido de otro BC | `{source-bc}.{entidad}.{evento-kebab}` | Leer `contracts[].channel` en `system.yaml` | `subscribe` |
+| Evento publicado por este BC | `{bc-name}.{event.name.dot.notation}` | Derivar por convención | `publish` |
+| Evento consumido de otro BC | `{source-bc}.{event.name.dot.notation}` | Leer `contracts[].channel` en `system.yaml` | `subscribe` |
 
 **Canales publicados** — derivar el nombre aplicando la convención al evento de dominio.
 No hay referencia en `system.yaml` hacia los consumidores; el canal lo define el BC emisor.

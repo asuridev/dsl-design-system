@@ -112,7 +112,7 @@ y es reemplazada por integraciones de eventos desde el BC fuente hacia el BC con
     - name: ProductActivated
       channel: catalog.product.activated
     - name: ProductPriceChanged
-      channel: catalog.product.price-changed
+      channel: catalog.product.price.changed
     - name: ProductDiscontinued
       channel: catalog.product.discontinued
   notes: >

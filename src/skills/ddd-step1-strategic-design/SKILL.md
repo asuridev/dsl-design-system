@@ -611,7 +611,7 @@ allowFreeformInput: false
   channel: message-broker
   contracts:
     - name: ProductPriceChanged
-      channel: catalog.product.price-changed
+      channel: catalog.product.price.changed
   notes: >
     orders maintains a local read model (CatalogProductSnapshot) fed by catalog events.
     Designer chose LRM after explicit OWASP A04 trade-off evaluation. Eventual
@@ -741,7 +741,7 @@ La tecnología concreta del broker y la base de datos (RabbitMQ, Kafka, PostgreS
 
 > **Formato de `contracts[]` según canal:**
 > - `channel: http | grpc | websocket` → string camelCase: `iniciarCobro`
-> - `channel: message-broker` → objeto con `name` (**inglés PascalCase obligatorio**) y `channel` (nombre exacto del canal AsyncAPI en kebab-case):
+> - `channel: message-broker` → objeto con `name` (**inglés PascalCase obligatorio**) y `channel` (nombre exacto del canal AsyncAPI — **solo puntos, sin guiones**; derivado del nombre del evento: PascalCase → kebab → todos los `-` se convierten en `.`):
 >   ```yaml
 >   contracts:
 >     - name: OrderConfirmed        # ← SIEMPRE inglés PascalCase — nunca español

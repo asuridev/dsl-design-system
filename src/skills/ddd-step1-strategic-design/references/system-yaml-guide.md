@@ -477,6 +477,8 @@ Cada string en camelCase es el nombre de un endpoint que **pertenece al BC `to`*
 
 Cada objeto identifica un evento de dominio que cruza la frontera. `name` es el nombre del evento en PascalCase; `channel` es el nombre del canal tal como aparecerá en el AsyncAPI.
 
+El `channel` se deriva del nombre del evento: PascalCase → kebab-case → todos los `-` se convierten en `.` → anteponer BC. **No se usan guiones en ningún segmento del canal.**
+
 ```yaml
 - from: orders
   to: inventory
