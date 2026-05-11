@@ -12,6 +12,8 @@ const DSL_VALIDATE_SOURCES = [
   { src: ['utils', 'arch-readers.js'],            dest: ['src', 'utils', 'arch-readers.js'] },
   { src: ['utils', 'integration-validator.js'],   dest: ['src', 'utils', 'integration-validator.js'] },
   { src: ['utils', 'naming.js'],                  dest: ['src', 'utils', 'naming.js'] },
+  { src: ['utils', 'openapi-contract.js'],        dest: ['src', 'utils', 'openapi-contract.js'] },
+  { src: ['utils', 'openapi-usecase-validator.js'], dest: ['src', 'utils', 'openapi-usecase-validator.js'] },
 ];
 
 async function copyIfConfirmed(srcDir, destDir, label) {

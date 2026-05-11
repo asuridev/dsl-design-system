@@ -149,6 +149,120 @@ domainEvents:
 `);
 }
 
+async function writeHttpOperationMissingArch(projectDir) {
+  await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
+system:
+  name: http-invalid-system
+  description: Invalid HTTP fixture system.
+  domainType: core
+boundedContexts:
+  - name: catalog
+    type: core
+    purpose: Manages catalog data.
+    aggregates:
+      - name: Product
+        root: Product
+        entities: []
+externalSystems: []
+integrations: []
+infrastructure: {}
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), `
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    trigger:
+      kind: http
+      operationId: getProduct
+    input: []
+    returns: String
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog-open-api.yaml'), `
+openapi: 3.0.3
+info:
+  title: Catalog API
+  version: 1.0.0
+paths:
+  /products/{id}:
+    get:
+      operationId: findProduct
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+`);
+}
+
+async function writeHttpMissingRefArch(projectDir) {
+  await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
+system:
+  name: http-ref-invalid-system
+  description: Invalid HTTP schema fixture system.
+  domainType: core
+boundedContexts:
+  - name: catalog
+    type: core
+    purpose: Manages catalog data.
+    aggregates:
+      - name: Product
+        root: Product
+        entities: []
+externalSystems: []
+integrations: []
+infrastructure: {}
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), `
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    trigger:
+      kind: http
+      operationId: getProduct
+    input: []
+    returns: Product
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog-open-api.yaml'), `
+openapi: 3.0.3
+info:
+  title: Catalog API
+  version: 1.0.0
+paths:
+  /products/{id}:
+    get:
+      operationId: getProduct
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+components:
+  schemas: {}
+`);
+}
+
 test('dsl init scaffolds design assets and validator', async () => {
   await withTempProject(async (projectDir) => {
     const result = runNode([CLI, 'init'], { cwd: projectDir });
@@ -160,6 +274,8 @@ test('dsl init scaffolds design assets and validator', async () => {
       path.join('.github', 'agents'),
       path.join('tools', 'dsl-validate', 'bin', 'dsl.js'),
       path.join('tools', 'dsl-validate', 'src', 'utils', 'integration-validator.js'),
+      path.join('tools', 'dsl-validate', 'src', 'utils', 'openapi-contract.js'),
+      path.join('tools', 'dsl-validate', 'src', 'utils', 'openapi-usecase-validator.js'),
       path.join('tools', 'package.json'),
     ];
 
@@ -206,6 +322,32 @@ test('incremental undeveloped BC consumers are warnings, not strict failures', a
     assert.match(output, /INT-007/);
     assert.match(output, /warning\(s\) found, no errors/);
     assert.doesNotMatch(output, /error\(s\)/);
+  });
+});
+
+test('copied dsl-validate rejects missing OpenAPI operationId before generation', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeHttpOperationMissingArch(projectDir);
+
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notStrictEqual(result.status, 0, output);
+    assert.match(output, /HTTP-001/);
+  });
+});
+
+test('copied dsl-validate rejects missing OpenAPI component refs before generation', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeHttpMissingRefArch(projectDir);
+
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notStrictEqual(result.status, 0, output);
+    assert.match(output, /HTTP-008/);
   });
 });
 

@@ -3,8 +3,16 @@
 const path = require('path');
 const chalk = require('chalk');
 const fs = require('fs-extra');
-const { readSystemYaml, readBcYaml, readAsyncApiYaml, discoverBcNames } = require('../utils/arch-readers');
+const {
+  readSystemYaml,
+  readBcYaml,
+  readAsyncApiYaml,
+  readOpenApiYaml,
+  readInternalApiYaml,
+  discoverBcNames,
+} = require('../utils/arch-readers');
 const { validateIntegrationCoherence, reportDiagnostics } = require('../utils/integration-validator');
+const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
 
 /**
  * Builds a simple logger object compatible with reportDiagnostics.
@@ -78,9 +86,17 @@ async function runValidate(options = {}) {
 
   // Load AsyncAPI docs (optional per BC)
   const asyncApiByBc = new Map();
+  const openApiByBc = new Map();
+  const internalApiByBc = new Map();
   for (const bcYaml of bcYamls) {
-    const doc = readAsyncApiYaml(bcYaml.bc, cwd);
-    if (doc) asyncApiByBc.set(bcYaml.bc, doc);
+    const asyncApiDoc = readAsyncApiYaml(bcYaml.bc, cwd);
+    if (asyncApiDoc) asyncApiByBc.set(bcYaml.bc, asyncApiDoc);
+
+    const openApiDoc = readOpenApiYaml(bcYaml.bc, cwd);
+    if (openApiDoc) openApiByBc.set(bcYaml.bc, openApiDoc);
+
+    const internalApiDoc = readInternalApiYaml(bcYaml.bc, cwd);
+    if (internalApiDoc) internalApiByBc.set(bcYaml.bc, internalApiDoc);
   }
 
   // Run validation
@@ -88,6 +104,13 @@ async function runValidate(options = {}) {
   console.log(chalk.blue(`\nValidating ${scope}...\n`));
 
   const diagnostics = validateIntegrationCoherence(system, bcYamls, archDir, asyncApiByBc);
+  for (const bcYaml of bcYamls) {
+    diagnostics.push(...validateOpenApiUseCases(
+      bcYaml,
+      openApiByBc.get(bcYaml.bc) || null,
+      internalApiByBc.get(bcYaml.bc) || null,
+    ));
+  }
   const { hasErrors, errors, warnings } = reportDiagnostics(diagnostics, logger);
 
   // Summary

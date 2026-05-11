@@ -54,6 +54,36 @@ function readAsyncApiYaml(bcName, cwd) {
 }
 
 /**
+ * Reads arch/{bcName}/{bcName}-open-api.yaml relative to the given cwd.
+ * Returns the parsed document or null if the file does not exist.
+ *
+ * @param {string} bcName
+ * @param {string} cwd
+ * @returns {object|null}
+ */
+function readOpenApiYaml(bcName, cwd) {
+  const filePath = path.join(cwd, 'arch', bcName, `${bcName}-open-api.yaml`);
+  if (!fs.pathExistsSync(filePath)) return null;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return yaml.load(raw) || null;
+}
+
+/**
+ * Reads arch/{bcName}/{bcName}-internal-api.yaml relative to the given cwd.
+ * Returns the parsed document or null if the file does not exist.
+ *
+ * @param {string} bcName
+ * @param {string} cwd
+ * @returns {object|null}
+ */
+function readInternalApiYaml(bcName, cwd) {
+  const filePath = path.join(cwd, 'arch', bcName, `${bcName}-internal-api.yaml`);
+  if (!fs.pathExistsSync(filePath)) return null;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return yaml.load(raw) || null;
+}
+
+/**
  * Discovers BC names by scanning subdirectories of arch/ (excluding "system").
  * A directory is treated as a BC if it contains a file matching {dirName}.yaml.
  *
@@ -80,4 +110,11 @@ function discoverBcNames(cwd) {
   return names.sort();
 }
 
-module.exports = { readSystemYaml, readBcYaml, readAsyncApiYaml, discoverBcNames };
+module.exports = {
+  readSystemYaml,
+  readBcYaml,
+  readAsyncApiYaml,
+  readOpenApiYaml,
+  readInternalApiYaml,
+  discoverBcNames,
+};
