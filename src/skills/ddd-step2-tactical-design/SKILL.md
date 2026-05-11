@@ -137,6 +137,8 @@ El generador soporta un vocabulario extendido para cada sección del BC.
   - `returns` — obligatorio `void` o el nombre del agregado. **Para el método `create`: DEBE ser el nombre del agregado** — el build falla con error S23 si es `void` o distinto.
   - `emits` — string (evento único) o lista YAML de strings; cada entrada debe existir en `domainEvents.published[]`.
   - Formato alternativo: `params: [{name, type}]` (válido pero menos explícito que `signature`). Solo usar si el contexto hace a `signature` difícil de leer.
+- **`method: delete` — método reservado de repositorio:** un command UC puede declarar `method: delete` sin que exista un `domainMethod` con ese nombre en el agregado. El generador lo mapea directamente a `repository.deleteById(id)`. Usar exclusivamente para eliminaciones físicas. Para eliminar con lógica de negocio (guardia, validación de estado, emisión de evento) se debe declarar un `domainMethod` con nombre descriptivo (ej: `remove`, `purge`) en lugar de `delete`.
+- **`method:` — omitir si no hay comportamiento de dominio:** un command UC puede omitir `method:` cuando su propósito es puramente de infraestructura (auditoría, logging, saga compensation side-effects) y no modifica el estado del agregado. En ese caso el handler se genera con `implementation: scaffold` y la lógica va en capa aplicación. **NUNCA declarar `method:` con un nombre que no exista en `domainMethods[]` del agregado** — el build falla con error de validación.
 
 #### Value Objects
 - `immutable: true` — marca el VO como inmutable. El generador aplica `List.copyOf()` defensivo en listas. **Obligatorio para VOs `Snapshot`** (VOs que capturan el estado de una entidad para eventos de dominio). Un VO inmutable no tiene setters y sus colecciones son defensivamente copiadas en el constructor.
@@ -219,6 +221,24 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 
 #### Repositories — capacidades extendidas
 - Operadores whitelist: `EQ, LIKE_CONTAINS, LIKE_STARTS, LIKE_ENDS, GTE, LTE, IN`.
+- **`filterOn` para búsqueda multi-campo:** cuando un param debe aplicar LIKE sobre varios campos del agregado, declarar `filterOn` y `operator` **directamente en el param** (no en el método):
+  ```yaml
+  # CORRECTO — filterOn y operator van en el param
+  params:
+    - name: search
+      type: String(200)
+      required: false
+      filterOn: [name, sku]       # lista de campos del agregado a comparar
+      operator: LIKE_CONTAINS     # LIKE_CONTAINS | LIKE_STARTS | LIKE_ENDS
+  ```
+  **INCORRECTO** — `filterOn` a nivel de método (no soportado por el generador):
+  ```yaml
+  # ✗ NO USAR — el validador rechaza filterOn fuera de params[]
+  filterOn:
+    - param: search
+      targets: [name, sku]
+      operator: LIKE_CONTAINS
+  ```
 - Returns whitelist: `void, Boolean, Int, Long, T, T?, List[T], Page[T], Slice[T], Stream[T]`.
 - `derivedFrom: <RULE-ID>` (ID literal del domainRule, **sin prefijo `domainRule:`**) o `openapi:{operationId}` o `implicit`. El reader exige que `<RULE-ID>` exista en `aggregates[].domainRules[].id`.
 - Multi-field: `findByXAndY`.
@@ -406,8 +426,16 @@ en la tabla `processed_event` **antes** de despachar el use case, en una transac
 | El valor es calculable por el propio agregado usando **solo sus campos internos** (ej: `total = unitPrice * quantity`, `fullName = firstName + lastName`) | `source: derived` — el agregado lo computa sin datos externos |
 | El valor requiere consultar **otra entidad, proyección o servicio externo** para resolverse | `source: param` — el handler lo resuelve antes de llamar al domainMethod y lo pasa como parámetro |
 | El valor es el resultado de un `outgoingCall` declarado en el UC | `source: param` — el resultado se pasa vía `bindsTo` en `outgoingCalls[]` |
+| El valor es un **parámetro del domainMethod** que no existe como propiedad del agregado (ej: `lines: List[OrderLineSnapshot]` pasado a `Order.create()`) | `source: param` — el parámetro existe en `domainMethods[].signature` pero no en `properties[]` del agregado |
 | El valor es una constante fija en tiempo de diseño | `source: constant` + `value: "{literal}"` — obligatorio declarar `value:` |
 | El campo existe en el agregado y el nombre del payload coincide | `source: aggregate` (o simplemente omitir `source:` — es el valor por defecto) |
+
+> **⚠️ Regla crítica de consistencia:** los campos con `source: aggregate` deben existir como entradas en `properties[]` del **agregado que emite el evento** (el que declara el `domainMethod` con `emits:`). Las colecciones de entidades hijas (ej: `CartItem[]`, `OrderLine[]`) **no son propiedades del agregado** — el validador las rechazará. Si el payload necesita llevar una colección de entidades, el patrón correcto es:
+> 1. Definir un VO snapshot (ej: `OrderLineSnapshot`) que capture los datos necesarios.
+> 2. Declarar ese VO como parámetro del domainMethod que crea/emite el evento.
+> 3. Usar `source: param` en el payload — el handler construye los snapshots antes de llamar al domainMethod.
+>
+> **Regla de asignación de `emits:`:** un evento solo debe declararse en el `domainMethod` del agregado cuyos `properties[]` cubren todos los campos `source: aggregate` del payload. Si el evento lleva datos de otro agregado creado en la misma transacción (ej: `OrderPlaced` lleva `total` y `paymentMethod` que son propiedades de `Order`, no de `Cart`), el `emits:` debe estar en el domainMethod del agregado propietario de esos datos (`Order.create()`), no en el que inicia la transacción (`Cart.checkout()`).
 
 > **⚠️ Error crítico (INT-026):** si un campo del payload usa `source: param`, el parámetro DEBE existir en `aggregates[].domainMethods[{method}].params[]`. Si no existe, el generador emite `null` silenciosamente — el evento lleva un campo nulo sin error de build ni de compilación.
 
@@ -824,6 +852,8 @@ repositories:
 **Regla de oro:** si el método tiene un parámetro de filtro que puede variar en la query string de un GET, va en `queryMethods`. Si es un lookup puntual por un único campo o una operación de escritura, va en `methods`.
 
 > **Error frecuente:** poner métodos `list` o `search*` en `methods`. Estos métodos necesitan la generación de `@Query` JPQL que solo ocurre en `queryMethods`. El generador no genera `@Query` para métodos en `methods`.
+
+> **Error frecuente — `countBy*` en el agregado equivocado:** un método de repositorio debe declararse siempre bajo el agregado **cuyas instancias se cuentan o buscan**, no bajo el agregado que actúa como parámetro de filtro. Ejemplo: `countByCategoryId(categoryId): Long` cuenta `Product`s, por lo que va en `repositories[aggregate: Product].methods[]`, **no** en `repositories[aggregate: Category].methods[]`. Poner el método en el agregado incorrecto genera la llamada en el handler con el repositorio equivocado y produce un error de compilación (`cannot find symbol`).
 
 ---
 
