@@ -2691,6 +2691,22 @@ Los hints contienen secuencias algorítmicas (orden de llamadas, condicionales, 
 
 ---
 
+### DECISIÓN-003: Evitar palabras reservadas SQL como nombres de propiedades en entidades JPA
+
+**Fecha:** 2026-05-11  
+**Fundamento:** El generador mapea directamente `name:` de una propiedad al nombre de columna SQL. Si el nombre es una palabra reservada de PostgreSQL (p.ej. `references`, `order`, `group`, `user`, `table`, `index`, `value`, `type`, `status`, `key`), el `CREATE TABLE` falla silenciosamente y Hibernate continúa. Esto causa errores en FK de otras tablas que referencian la tabla no creada.
+
+**Síntoma clásico:** `ERROR: relation "tabla_hija" does not exist` al agregar una FK, cuando el problema real es que el `CREATE TABLE tabla_hija` falló antes por una columna con nombre reservado.
+
+**Regla activa:**
+- Los nombres de propiedades en cualquier artefacto que genere una tabla JPA **no deben ser palabras reservadas SQL** de PostgreSQL.
+- Esto incluye `aggregates[].properties[]`, `aggregates[].entities[].properties[]` y read models/projections persistidos.
+- Palabras comunes que causan problemas: `references`, `order`, `group`, `user`, `table`, `index`, `value`, `type`, `key`, `name` (partial), `default`, `select`, `where`, `from`.
+- Si la propiedad semanticamente es "referencias/comentarios adicionales", usar `addressReferences`, `additionalInfo`, `notes`, u otro nombre descriptivo no reservado.
+- Aplica especialmente a **child entities** (en `entities[]`) y **read models locales**, porque ambos generan tablas JPA independientes.
+
+---
+
 ### DECISIÓN-002: No usar `derived_from: name` en propiedades slug
 
 **Fecha:** 2026-04-20  
