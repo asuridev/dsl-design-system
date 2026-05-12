@@ -451,6 +451,10 @@ aggregates:
         targetAggregate: {DependentAggregateName}    # PascalCase — agregado que tiene los dependientes
         targetRepositoryMethod: {countMethodName}    # camelCase — método del repo que cuenta dependientes
                                                      # Ejemplo: countActiveByCategoryId
+                                                     # ⚠️ Solo UN calificador por método: un literal del enum de
+                                                     #    status (Active, Draft…), su forma negada Non{Literal}
+                                                     #    (NonDiscontinued → status <> 'DISCONTINUED'), o NonDeleted/Deleted.
+                                                     #    Calificadores compuestos (ActiveDraft) NO son válidos — build error.
 
       # ── crossAggregateConstraint ──────────────────────────────────────────
       # Invariante que requiere consultar el estado de OTRO agregado antes de ejecutar.

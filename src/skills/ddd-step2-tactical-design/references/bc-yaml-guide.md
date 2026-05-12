@@ -999,6 +999,7 @@ explícitos adicionales necesarios.
 | `search{Aggregates}` | Búsqueda semántica con múltiples filtros opcionales y texto libre. Siempre en `queryMethods`. |
 | `countBy{Campo}` | Cuenta instancias que referencian otro agregado. Para reglas `crossAggregateConstraint`. |
 | `countNonDeletedBy{Campo}` | Igual que `countBy{Campo}` pero agrega `deleted_at IS NULL`. **Usar en vez de `countActiveBy{Campo}`** — el calificador `Active` es ambiguo sin campo `status` explícito. |
+| `count{Qualifier}{Aggregates}By{Campo}` | Cuenta instancias filtradas por un literal del enum de status. **Solo un calificador simple** (`Active`, `Draft`, `Non{Literal}`…). Calificadores compuestos (`ActiveDraft`) no son válidos — el build falla. Para "todos excepto X" usar `Non{X}`: `countNonDiscontinuedProductsByCategoryId` → `WHERE status <> 'DISCONTINUED' AND categoryId = :categoryId`. |
 | `save` | Siempre. INSERT o UPDATE del agregado. Derivado implícito. |
 | `delete` | Solo si hay regla `deleteGuard`. Eliminación física. |
 
