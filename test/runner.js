@@ -469,6 +469,75 @@ domainEvents:
 `, 'BC-164');
 });
 
+test('copied dsl-validate rejects source param payloads missing from emitsList domainMethods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: activate
+        params: []
+        returns: void
+        emitsList: [ProductActivated]
+domainEvents:
+  published:
+    - name: ProductActivated
+      payload:
+        - name: productId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: activatedBy
+          type: Uuid
+          source: param
+  consumed: []
+`, 'INT-026');
+});
+
+test('copied dsl-validate accepts source param payloads declared in signature', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeTacticalInvalidArch(projectDir, `
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: activate
+        signature: "activate(activatedBy: Uuid): void"
+        returns: void
+        emitsList: [ProductActivated]
+domainEvents:
+  published:
+    - name: ProductActivated
+      payload:
+        - name: productId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: activatedBy
+          type: Uuid
+          source: param
+  consumed: []
+`);
+
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+    assert.match(output, /All validations passed/);
+  });
+});
+
 test('copied dsl-validate passes a minimal valid arch', async () => {
   await withTempProject(async (projectDir) => {
     assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);

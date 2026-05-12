@@ -137,6 +137,35 @@ function outboundOpNames(bcYaml, targetName) {
   return set;
 }
 
+function normalizeList(value) {
+  if (Array.isArray(value)) return value.filter((v) => v != null && v !== 'null');
+  if (value == null || value === 'null') return [];
+  return [value];
+}
+
+function emittedEventNames(domainMethod) {
+  return [
+    ...normalizeList(domainMethod && domainMethod.emits),
+    ...normalizeList(domainMethod && domainMethod.emitsList),
+  ];
+}
+
+function domainMethodParamNames(domainMethod) {
+  if (Array.isArray(domainMethod && domainMethod.params) && domainMethod.params.length > 0) {
+    return new Set(domainMethod.params.map((p) => p && p.name).filter(Boolean));
+  }
+  if (domainMethod && domainMethod.signature) {
+    const match = String(domainMethod.signature).match(/\(([^)]*)\)/);
+    if (!match || !match[1].trim()) return new Set();
+    return new Set(match[1].split(',').map((part) => {
+      const trimmed = part.trim();
+      const colon = trimmed.indexOf(':');
+      return (colon >= 0 ? trimmed.substring(0, colon) : trimmed).replace('?', '').trim();
+    }).filter(Boolean));
+  }
+  return new Set();
+}
+
 function expectedEventChannel(fromBc, eventName) {
   // Convención: <from>.<kebab-event-name reemplazando '-' por '.'>
   // ProductActivated → product.activated  →  catalog.product.activated
@@ -1170,8 +1199,8 @@ function checkEventParamSourceCoverage(bcYamls, diagnostics) {
     const eventParamNames = new Map();
     for (const agg of bc.aggregates || []) {
       for (const dm of agg.domainMethods || []) {
-        const paramNames = new Set((dm.params || []).map((p) => p.name).filter(Boolean));
-        for (const evName of dm.emitsList || []) {
+        const paramNames = domainMethodParamNames(dm);
+        for (const evName of emittedEventNames(dm)) {
           if (!eventParamNames.has(evName)) eventParamNames.set(evName, new Set());
           for (const n of paramNames) eventParamNames.get(evName).add(n);
         }
