@@ -545,7 +545,8 @@ useCases:
     fkValidations:                  # lista vacía [] si no hay FK; omitir en queries
       - aggregate: {AggregateName}  # agregado cuya existencia se valida
         param: {paramName}          # nombre del input[] que contiene el UUID de FK
-        error: {ERROR_CODE}         # código de error si el FK no existe
+        error: {ERROR_CODE}         # código de error si el FK no existe (preferido)
+        # notFoundError: {ERROR_CODE} # alias también aceptado por el validador
     outgoingCalls:                  # opcional — llamadas explícitas a puertos externos
       - port: {PortName}            # debe existir en integrations.outbound[]
         method: {methodName}
@@ -865,8 +866,9 @@ domainEvents:
           param: {paramName}            # solo cuando source: param — nombre del parámetro del domainMethod
                                         # ⚠️ INT-026: el param DEBE existir en domainMethods[method].params[]
           value: "{literal}"            # solo cuando source: constant — valor literal fijo
-          derivedFrom: {origen}         # solo cuando source: derived — origen semántico (documentación)
-          expression: "{expr}"          # solo cuando source: derived — expresión en lenguaje natural
+          # ⚠️ source: derived NO está soportado en payloads de eventos por el validador actual (BC-121).
+          # Si el valor es calculado, materializarlo como propiedad del agregado y usar source: aggregate,
+          # o resolverlo antes en el handler y publicarlo como source: param.
 
   consumed:
 

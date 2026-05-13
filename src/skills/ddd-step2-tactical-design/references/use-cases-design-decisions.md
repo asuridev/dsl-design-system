@@ -737,7 +737,7 @@ La trazabilidad del UC ya viene dada por:
 | Método de repositorio derivado de un operationId | `repositories[].queryMethods[].derivedFrom: openapi:listProducts` |
 | Propiedad de agregado computada | `aggregates[].properties[].source: derived` con `derivedFrom` y `expression` |
 | Propiedad de projection computada | `projections[].properties[].derivedFrom: [campo1, campo2]` |
-| Campo de payload de evento derivado | `domainEvents.published[].payload[].source: derived` |
+| Campo de payload de evento calculado | No soportado hoy por el validador en `domainEvents.published[].payload[]`; materializarlo como `source: aggregate` o resolverlo antes como `source: param` |
 
 ---
 

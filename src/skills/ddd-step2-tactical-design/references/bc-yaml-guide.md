@@ -762,7 +762,8 @@ useCases:
 | `fkValidations` | si `type: command` | Lista de validaciones de FK. `[]` si no hay FK. |
 | `fkValidations[].aggregate` | sí | Agregado cuya existencia se valida. |
 | `fkValidations[].param` | sí | Nombre del `input[]` que contiene el UUID de FK. |
-| `fkValidations[].error` | sí | Código de error si el FK no existe. |
+| `fkValidations[].error` | sí* | Código de error si el FK no existe. Campo preferido. |
+| `fkValidations[].notFoundError` | no | Alias aceptado por el validador para el mismo código de error. No usar junto con `error` en la misma entrada. |
 | `outgoingCalls` | no | Llamadas explícitas a puertos externos. Omitir si no hay. |
 | `outgoingCalls[].port` | sí | Nombre del puerto. Debe existir en `integrations.outbound[]`. |
 | `outgoingCalls[].method` | sí | Método del puerto a invocar. |
@@ -1091,7 +1092,7 @@ Un error por cada violación posible del dominio. El generador produce clases de
 Java tipadas que el `HandlerExceptions` global convierte en respuestas HTTP estructuradas.
 
 > **Regla de completitud:** todo `errorCode` referenciado en `domainRules[].errorCode`,
-> `notFoundError`, `lookups[].errorCode`, `fkValidations[].error` o `validations[].errorCode`
+> `notFoundError`, `lookups[].errorCode`, `fkValidations[].error`, `fkValidations[].notFoundError` o `validations[].errorCode`
 > DEBE existir en esta sección. El generador falla si hay un código referenciado sin declarar.
 
 > **Clave prohibida:** `constraintName` **no puede aparecer en `errors[]`**. El validador
@@ -1557,7 +1558,7 @@ domainEvents:
 | `param` | Parámetro del `domainMethod` | `param:` (alias opcional si el nombre difiere) ⚠️ INT-026: el param DEBE existir en `domainMethods[method].params[]` |
 | `timestamp` | `Instant.now()` al momento de emitir | — |
 | `constant` | Valor literal fijo | `value: "{literal}"` — **obligatorio** |
-| `derived` | Valor computado por el agregado a partir de sus propios campos | `derivedFrom` / `expression` (documentación para Fase 3) |
+| `derived` | **No soportado en payloads de eventos por el validador actual (`BC-121`)** | Materializar el valor en el agregado y emitirlo con `source: aggregate`, o resolverlo antes y emitirlo con `source: param` |
 | `auth-context` | ⚠️ **PROHIBIDO** (INT-025 — aborta el build) | — |
 
 ---
@@ -1838,9 +1839,9 @@ domainEvents:
         - { name: occurredOn, type: DateTime, source: timestamp }
         - { name: source, type: String, source: constant, value: "orders-bc" }
         - { name: triggeredBy, type: Uuid, source: aggregate, field: createdBy }
-        - { name: discount, type: Decimal, source: derived,
-            derivedFrom: [total.amount, total.discountRate],
-            expression: "amount * discountRate" }
+        # Si discount es un valor calculado, materializarlo primero en una propiedad
+        # del agregado y publicarlo con source: aggregate, o resolverlo antes y
+        # pasarlo al domainMethod para emitirlo con source: param.
       broker:
         partitionKey: customerId            # campo del payload usado como key
         headers:
@@ -1884,7 +1885,7 @@ domainEvents:
 | `param` | `param` | parámetro de entrada del use case que emite el evento |
 | `timestamp` | — | momento de emisión (timestamp del runtime destino) |
 | `constant` | `value` | literal estático |
-| `derived` | `derivedFrom[]` + `expression` | expresión booleana en el lenguaje de implementación destino sobre otros campos |
+| `derived` | no soportado en payloads de eventos | materializar el valor como propiedad del agregado (`source: aggregate`) o resolverlo antes (`source: param`) |
 
 > `source: auth-context` está prohibido en payloads de eventos (`INT-025`). Para publicar
 > el actor autenticado, declarar una propiedad o input con `source: authContext` y emitirla
