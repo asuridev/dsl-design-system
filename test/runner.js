@@ -339,6 +339,65 @@ useCases:
 `, 'BC-012');
 });
 
+test('copied dsl-validate rejects enum transition triggeredBy arrays', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - name: DRAFT
+        transitions:
+          - to: ACTIVE
+            triggeredBy: [UC-CAT-001, UC-CAT-002]
+      - name: ACTIVE
+        terminal: true
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-008');
+});
+
+test('copied dsl-validate rejects repository query params missing from useCase input', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: ownerId
+        type: Uuid
+useCases:
+  - id: UC-CAT-001
+    name: ListMyProducts
+    type: query
+    aggregate: Product
+    trigger:
+      kind: http
+      operationId: listMyProducts
+    input: []
+    returns: Page[ProductResponse]
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: list
+        params:
+          - name: ownerId
+            type: Uuid
+          - name: page
+            type: PageRequest
+        returns: Page[Product]
+        derivedFrom: openapi:listMyProducts
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-165');
+});
+
 test('copied dsl-validate rejects useCase inputs without source', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

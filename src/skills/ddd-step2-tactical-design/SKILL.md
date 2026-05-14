@@ -154,7 +154,7 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `consumed[]` — **dos formas mutuamente excluyentes**:
   - **Forma A (sin `command:`, preferida):** declarar solo `name` + `sourceBc` + `description`. El generador localiza automáticamente el UC con `trigger.kind: event, consumes: {name}` y deriva el binding completo. Usar cuando hay UC formal.
   - **Forma B (con `command: {UCName}`):** binding explícito; requiere `payload[]`. Usar para compensadores de saga o adaptadores legacy sin UC formal. Campos exclusivos de Forma B: `queueKey` (override del routing-key RabbitMQ), `topicKey` (override del topic Kafka), `filterExpr` (expresión Java booleana — si `false` el listener descarta el mensaje sin error).
-  - `sourceBc` — validado contra `system.yaml` (INT-007 si no coincide). Siempre declarar.
+  - `sourceBc` — validado contra `system.yaml` (INT-007 si no coincide). Siempre declarar y copiarlo exactamente desde `system.yaml#/integrations[].from` para el contrato de evento consumido. **No usar `from` como sustituto de `sourceBc`**: el validador de coherencia solo mira `sourceBc` para reconocer que el publisher está declarado pero aún no diseñado. Si falta `sourceBc`, un evento de un BC pendiente aparece como `INT-007` error en vez de warning.
   - `producer` — solo Javadoc; puede coincidir con `sourceBc` o diferir si hay un intermediario.
   - ⚠️ `retry` y `dlq` **NO se declaran en `consumed[]`** — son configuración de infraestructura. El generador los ignora con GEN-WARN.
 

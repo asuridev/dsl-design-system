@@ -146,6 +146,11 @@ Ejecutar **todos** los checklists en orden. No omitir checklists aunque el dise�
   `name` PascalCase en la integración `from: este-bc, channel: message-broker`?
 - Para cada evento en `domainEvents.consumed[]`, ¿existe un contrato en system.yaml con ese
   `name` en la integración `to: este-bc, channel: message-broker`?
+- Para cada evento en `domainEvents.consumed[]`, ¿declara `sourceBc` y coincide exactamente con
+  el `from` de la integración correspondiente en system.yaml?
+  - Falta `sourceBc` o no coincide → 🔴 ERROR: corregir el evento consumido. **No basta con
+    declarar `from`**; el validador usa `sourceBc` para reconocer publishers declarados pero aún
+    no diseñados y degradar `INT-007` de error a warning.
 - El `channel` del evento en el AsyncAPI, ¿coincide exactamente con el `channel` del
   contrato en system.yaml?
   - Evento sin contrato declarado → 🔴 ERROR
@@ -421,6 +426,9 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 
 **B19 — domainEvents.consumed: UC obligatorio + payload**
 - Para cada evento en `domainEvents.consumed[]`:
+  - ¿Declara `sourceBc`? ¿Ese valor coincide con el BC publisher del contrato en `system.yaml`?
+  - Evento consumido sin `sourceBc` → 🔴 ERROR: añadir `sourceBc: {publisher-bc}`. El campo `from`
+    puede mantenerse solo como documentación legacy, pero no sustituye a `sourceBc`.
   - ¿Existe un UC en `useCases[]` con `trigger.kind: event` y `trigger.event` igual al `name` de este evento?
   - Evento consumido sin UC → 🔴 ERROR: gap de diseño — el generador no puede crear el handler y la intención es ambigua. Añadir un UC con la lógica de dominio correspondiente.
 - Para cada evento en `domainEvents.consumed[]`:

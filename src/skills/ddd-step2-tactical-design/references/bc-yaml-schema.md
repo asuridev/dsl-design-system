@@ -37,6 +37,13 @@ enums:
             rules: [{RULE-ID, ...}]      # omitir si no hay reglas
             emits: {NombreEvento | null}
 
+            # triggeredBy SIEMPRE es string. NUNCA usar listas/arrays.
+            # Si varios use cases llevan al mismo estado destino, repetir la transición:
+            # - to: ESTADO_2
+            #   triggeredBy: UC-001 NombreUseCase
+            # - to: ESTADO_2
+            #   triggeredBy: UC-002 OtroUseCase
+
       - value: ESTADO_2
         description: {qué significa este estado}
         transitions:
@@ -624,6 +631,11 @@ useCases:
         source: path | query | body | authContext
         loadAggregate: true          # Path A: findById directo. El nombre del param no necesita
                                      # coincidir con queryMethods.params.
+    # Si repositories[{AggregateName}].queryMethods[].params incluye un filtro que NO
+    # viene del request HTTP (ej: customerId del usuario autenticado), declararlo aquí
+    # igualmente con source: authContext. El controller lo omitirá del request y el
+    # handler lo inyectará desde SecurityContext/JWT. No dejar params de repositorio
+    # "implícitos": el validador los rechaza porque generan handlers no compilables.
     returns: {ProjectionName} | {AggregateName}Response  # nombre declarado en projections[]
                                     # o {AggregateName}Response para el DTO del agregado completo
                                     # (NUNCA el nombre del agregado a secas — genera error de compilación)
@@ -655,6 +667,9 @@ repositories:
             required: true | false   # false para filtros opcionales
             filterOn: [{campo}]      # requerido cuando el nombre no mapea a ninguna propiedad
             operator: LIKE_CONTAINS  # requerido cuando filterOn está presente
+            # Debe existir un useCases[].input con el mismo name para el operationId
+            # referenciado por derivedFrom. Si es un filtro server-side/JWT, ese input
+            # debe usar source: authContext.
         returns: "{AggregateName}? | Page[{AggregateName}] | List[{AggregateName}]"
         derivedFrom: openapi:{operationId} | implicit
 

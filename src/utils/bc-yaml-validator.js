@@ -24,6 +24,7 @@ class BcYamlValidator {
 
   run() {
     this.validateDocumentHeader();
+    this.validateEnums();
     this.validateUseCases();
     this.validateErrors();
     this.validateDomainRulesAndAggregates();
@@ -58,6 +59,78 @@ class BcYamlValidator {
     }
     if (this.doc.bc && this.doc.bc !== this.bc) {
       this.error('BC-001', `BC yaml declares bc "${this.doc.bc}" but was loaded as "${this.bc}".`, this.loc('#/bc'));
+    }
+  }
+
+  validateEnums() {
+    const enums = asArray(this.doc.enums);
+    this.assertUnique(enums, (enumDef) => enumDef && enumDef.name, 'BC-005', 'enum name', '#/enums');
+
+    const allowedEnumKeys = new Set(['name', 'description', 'values']);
+    const allowedValueKeys = new Set(['name', 'value', 'description', 'transitions', 'terminal']);
+    const allowedTransitionKeys = new Set(['to', 'triggeredBy', 'condition', 'rules', 'emits']);
+
+    for (let i = 0; i < enums.length; i++) {
+      const enumDef = enums[i];
+      const enumLoc = this.loc(`#/enums/${i}`);
+      if (!isMapping(enumDef)) {
+        this.error('BC-005', 'enums[] contains a non-mapping entry.', enumLoc);
+        continue;
+      }
+      this.checkAllowedKeys(enumDef, allowedEnumKeys, 'BC-012', `Enum "${enumDef.name || '<unnamed>'}"`, enumLoc);
+      if (!enumDef.name) this.error('BC-005', 'An enums[] entry is missing required field "name".', `${enumLoc}/name`);
+      if (!Array.isArray(enumDef.values) || enumDef.values.length === 0) {
+        this.error('BC-005', `Enum "${enumDef.name || '<unnamed>'}" must declare a non-empty values[] list.`, `${enumLoc}/values`);
+        continue;
+      }
+
+      const declaredValues = new Set();
+      for (let j = 0; j < enumDef.values.length; j++) {
+        const valueDef = enumDef.values[j];
+        const valueLoc = `${enumLoc}/values/${j}`;
+        if (!isMapping(valueDef)) {
+          this.error('BC-006', `Enum "${enumDef.name}" values[] contains a non-mapping entry.`, valueLoc);
+          continue;
+        }
+        this.checkAllowedKeys(valueDef, allowedValueKeys, 'BC-012', `Enum "${enumDef.name}" value`, valueLoc);
+        const label = valueDef.value || valueDef.name;
+        if (!label || typeof label !== 'string') {
+          this.error('BC-006', `Enum "${enumDef.name}" has a value entry without string value/name.`, valueLoc);
+          continue;
+        }
+        if (declaredValues.has(label)) this.error('BC-006', `Enum "${enumDef.name}" declares duplicate value "${label}".`, valueLoc);
+        declaredValues.add(label);
+      }
+
+      for (let j = 0; j < enumDef.values.length; j++) {
+        const valueDef = enumDef.values[j];
+        if (!isMapping(valueDef)) continue;
+        const from = valueDef.value || valueDef.name;
+        const valueLoc = `${enumLoc}/values/${j}`;
+        if (valueDef.transitions == null) continue;
+        if (!Array.isArray(valueDef.transitions)) {
+          this.error('BC-007', `Enum "${enumDef.name}" value "${from}" transitions must be a list.`, `${valueLoc}/transitions`);
+          continue;
+        }
+        for (let k = 0; k < valueDef.transitions.length; k++) {
+          const transition = valueDef.transitions[k];
+          const transitionLoc = `${valueLoc}/transitions/${k}`;
+          if (!isMapping(transition)) {
+            this.error('BC-007', `Enum "${enumDef.name}" value "${from}" transition must be a mapping.`, transitionLoc);
+            continue;
+          }
+          this.checkAllowedKeys(transition, allowedTransitionKeys, 'BC-012', `Enum "${enumDef.name}" transition`, transitionLoc);
+          if (!transition.to || typeof transition.to !== 'string') {
+            this.error('BC-007', `Enum "${enumDef.name}" value "${from}" transition requires string field "to".`, `${transitionLoc}/to`);
+          } else if (!declaredValues.has(transition.to)) {
+            this.error('BC-007', `Enum "${enumDef.name}" value "${from}" transition.to "${transition.to}" is not declared in values[].`, `${transitionLoc}/to`);
+          }
+          if (!transition.triggeredBy || typeof transition.triggeredBy !== 'string') {
+            const actual = Array.isArray(transition.triggeredBy) ? 'array' : typeof transition.triggeredBy;
+            this.error('BC-008', `Enum "${enumDef.name}" value "${from}" transition to "${transition.to || '<missing>'}" requires triggeredBy as a single string, not ${actual}. Repeat the transition when several use cases reach the same state.`, `${transitionLoc}/triggeredBy`);
+          }
+        }
+      }
     }
   }
 
@@ -853,6 +926,7 @@ class BcYamlValidator {
         const method = allMethods[j];
         const methodLoc = `${loc}/${method._section}/${j}`;
         this.validateRepositoryMethod(repo, aggregate, method, methodLoc, allowedMethodKeys, allowedParamKeys, allowedOperators, ruleIds);
+        this.validateRepositoryMethodUseCaseInputs(repo, method, methodLoc);
       }
       const deleteMethod = asArray(repo.methods).find((m) => m && m.name === 'delete' && Array.isArray(m.params) && m.params.length === 1);
       if (deleteMethod && aggregate && aggregate.softDelete !== true) {
@@ -915,6 +989,33 @@ class BcYamlValidator {
         if (derivedFrom === 'openapi:') this.error('BC-163', 'derivedFrom: openapi: must include an operationId.', `${loc}/derivedFrom`);
       } else if (!ruleIds.has(derivedFrom)) {
         this.error('BC-163', `Repository method has derivedFrom "${derivedFrom}" but no domainRule with that id exists.`, `${loc}/derivedFrom`);
+      }
+    }
+  }
+
+  validateRepositoryMethodUseCaseInputs(repo, method, loc) {
+    if (!isMapping(method) || method._section !== 'queryMethods') return;
+    const derivedFrom = String(method.derivedFrom || '');
+    if (!derivedFrom.startsWith('openapi:') || derivedFrom === 'openapi:') return;
+    const operationId = derivedFrom.slice('openapi:'.length);
+    const useCase = asArray(this.doc.useCases).find((uc) => (
+      isMapping(uc)
+      && uc.type === 'query'
+      && uc.aggregate === repo.aggregate
+      && uc.trigger
+      && uc.trigger.kind === 'http'
+      && uc.trigger.operationId === operationId
+    ));
+    if (!useCase) return;
+
+    const inputNames = new Set(asArray(useCase.input).map((input) => input && input.name).filter(Boolean));
+    for (let i = 0; i < asArray(method.params).length; i++) {
+      const param = method.params[i];
+      if (!isMapping(param) || !param.name) continue;
+      if (param.type === 'PageRequest' || param.type === 'Pageable') continue;
+      if (param.name === 'page' || param.name === 'size' || param.name === 'sortBy' || param.name === 'sortDirection') continue;
+      if (!inputNames.has(param.name)) {
+        this.error('BC-165', `Repository queryMethod "${method.name}" derived from openapi:${operationId} declares param "${param.name}", but use case "${useCase.id}" does not declare an input with that name. If it comes from JWT/SecurityContext, declare it under useCases[].input with source: authContext.`, `${loc}/params/${i}`);
       }
     }
   }

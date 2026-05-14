@@ -23,7 +23,9 @@ const { toKebabCase } = require('./naming');
  *   INT-006  Cada `bc.integrations.outbound[]` debe tener su recíproco en
  *            `system.integrations[]` (from=bc, to=outbound.name).
  *   INT-007  Cada `bc.domainEvents.consumed[].name` debe estar en
- *            `domainEvents.published[]` de algún otro BC.
+ *            `domainEvents.published[]` de algún otro BC. Si el productor aún
+ *            no está diseñado, `sourceBc` (o `from` legacy) permite degradar
+ *            el diagnóstico a warning cuando ese BC existe en system.yaml.
  *   INT-010  Toda projection con `persistent: true` debe declarar
  *            `source: { kind: event, event, from }` y el evento debe estar
  *            publicado por el BC `from`.
@@ -377,7 +379,7 @@ function checkOrphanConsumers(bcYamls, undesignedBcs, diagnostics) {
       if (!allPublished.has(ev.name)) {
         // If sourceBc is declared in system.yaml but not yet designed (no YAML in arch/),
         // downgrade to warn — the producer BC simply hasn't been designed yet.
-        const sourceBc = ev.sourceBc;
+        const sourceBc = ev.sourceBc || ev.from;
         const isUndesigned = sourceBc && undesignedBcs.has(sourceBc);
         diagnostics.push({
           code: 'INT-007',
