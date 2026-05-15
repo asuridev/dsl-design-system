@@ -417,6 +417,34 @@ useCases:
 `, 'BC-021');
 });
 
+test('copied dsl-validate rejects idempotency on event-triggered commands', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed:
+    - name: ProductActivated
+      sourceBc: products
+useCases:
+  - id: UC-CAT-001
+    name: SyncProduct
+    type: command
+    trigger:
+      kind: event
+      event: ProductActivated
+      channel: products.product.activated
+    aggregate: ProductReadModel
+    method: upsert
+    implementation: scaffold
+    idempotency:
+      header: eventId
+      ttl: PT24H
+      storage: cache
+`, 'BC-034');
+});
+
 test('copied dsl-validate rejects command methods missing from aggregate domainMethods', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

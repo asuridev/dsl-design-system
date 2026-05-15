@@ -510,9 +510,9 @@ para Path B.
 
 ## §11 — Idempotencia: cuándo y cómo
 
-Usar `idempotency` cuando el comando puede ejecutarse más de una vez por retries del
-cliente y eso produciría efectos duplicados (pagos, confirmaciones de pedido, altas de
-entidad única).
+Usar `idempotency` solo cuando un command HTTP (`trigger.kind: http`) puede ejecutarse
+más de una vez por retries del cliente y eso produciría efectos duplicados (pagos,
+confirmaciones de pedido, altas de entidad única).
 
 ```yaml
 idempotency:
@@ -528,6 +528,8 @@ idempotency:
 - No declarar `idempotency` en comandos disparados por eventos (`trigger.kind: event`) —
   la idempotencia de mensajes se gestiona a nivel de sistema con `consumerIdempotency: true`
   en `system.yaml` (no en el handler del UC).
+- No usar `header: eventId` dentro de `useCases[].idempotency`: `eventId` pertenece a
+  `EventMetadata` y a la guardia de consumidor, no a request idempotency HTTP.
 
 ---
 

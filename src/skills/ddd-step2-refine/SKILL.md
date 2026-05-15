@@ -794,9 +794,10 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
 - **`fkValidations[].bc`** (cross-BC): si está, requiere `integrations.outbound[]`
   hacia ese BC (ver B23, ahora extendido).
 
-- **`idempotency` block** (solo commands): `{ header, ttl (ISO-8601), storage: cache }`.
+- **`idempotency` block** (solo commands con `trigger.kind: http`): `{ header, ttl (ISO-8601), storage: cache }`.
   ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza con error de build.
   - En queries → 🔴 ERROR.
+  - En commands con `trigger.kind: event` → 🔴 ERROR. La deduplicación de eventos se diseña con `system.yaml infrastructure.reliability.consumerIdempotency: true`, no con `useCases[].idempotency`.
   - `ttl` no ISO-8601 → 🔴 ERROR.
   - `storage` ≠ `cache` → 🔴 ERROR.
 
@@ -1041,6 +1042,11 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   con `trigger.kind: event` debe ser idempotente — verificar que no existan
   efectos secundarios no idempotentes. Si el UC carga agregado y aplica método,
   el dominio debe garantizar idempotencia (ej: chequeo de estado antes de mutar).
+
+- Ningún UC con `trigger.kind: event` debe declarar `useCases[].idempotency`.
+  Ese bloque es idempotencia de requests HTTP (`Idempotency-Key`), no de mensajes.
+  Si aparece `idempotency: { header: eventId, ... }` en un event-triggered UC → 🔴 ERROR:
+  eliminar el bloque y usar `consumerIdempotency: true` en `system.yaml`.
 
 - **⚠️ LIMITACIÓN CRÍTICA — verificar siempre que `consumerIdempotency: true`:**
   El generador produce un `IdempotencyGuard.tryRecord()` que registra el `eventId`

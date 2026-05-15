@@ -2054,7 +2054,12 @@ El generador elige el mecanismo según el contexto:
 En cualquier caso cross-BC, **exige** entrada en `integrations.outbound[]` para ese BC.
 Ver tabla de decisión completa en `references/use-cases-design-decisions.md §2`.
 
-#### `idempotency` (commands)
+#### `idempotency` (commands HTTP)
+
+Este bloque solo aplica a commands con `trigger.kind: http`. No declararlo en UCs
+disparados por eventos (`trigger.kind: event`), ni siquiera usando `header: eventId`:
+la idempotencia de mensajes se configura en `system.yaml` con
+`infrastructure.reliability.consumerIdempotency: true`.
 
 ```yaml
 idempotency:

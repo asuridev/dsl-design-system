@@ -205,7 +205,7 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - `input[]` extendido: `default` (solo si `required: false`), `max` (numéricos y listas).
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
 - `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
-- `idempotency` (commands): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`.
+- `idempotency` (solo commands con `trigger.kind: http`): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`. **No declararlo en UCs con `trigger.kind: event`**: la idempotencia de mensajes se modela en `system.yaml` con `infrastructure.reliability.consumerIdempotency: true`.
 - `authorization`: cuatro estrategias combinables — `rolesAnyOf[]` (RBAC por rol; el generador evalúa `realm_access.roles` del JWT), `permissionsAnyOf[]` (RBAC granular con permisos en formato `recurso:accion`; evalúa el claim `permissions`), `scopesAnyOf[]` (OAuth2 Scopes; escribir sin prefijo, el generador añade `SCOPE_` automáticamente), `ownership: { field, claim, allowRoleBypass }` (guarda imperativa en el handler — no genera `@PreAuthorize`). Cuando se combinan los tres campos de `@PreAuthorize`, el generador los une con `and` en orden fijo: `scopesAnyOf` → `rolesAnyOf` → `permissionsAnyOf`. **Mutuamente excluyente con `public: true`**. ⚠️ **Prerequisito:** `arch/system/system.yaml` debe declarar `infrastructure.authServer: true`; sin este flag el generador no produce `SecurityConfig.java` ni ninguna protección Spring Security. Ver guía de decisión en §1.4 y en `references/use-cases-design-decisions.md §8`.
 - Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
 - `bulk: { itemType, maxItems, onItemError: continue|abort }`.
@@ -388,6 +388,8 @@ Esta sección responde la pregunta "¿cuándo debo usar X?" para cada caracterí
 | El command es idempotente por naturaleza (PATCH que solo actualiza un campo simple) | ❌ Omitir — no hay ganancia y agrega complejidad |
 
 > Usar `storage: cache` (único valor soportado). El provider concreto de caché (Redis, Caffeine, etc.) se configura en `dsl-springboot.json` con la clave `cacheProvider` — no en el YAML de diseño.
+
+> Regla dura del generador y del validador de diseño: `useCases[].idempotency` solo es válido en commands HTTP. Si el UC tiene `trigger.kind: event`, omitir el bloque completo aunque exista `eventId`; usar `consumerIdempotency: true` en `system.yaml` para deduplicación de mensajes.
 
 ---
 

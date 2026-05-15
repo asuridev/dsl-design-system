@@ -611,6 +611,8 @@ useCases:
     notFoundError: [{ERROR_CODE}]    # omitir cuando no aplica
     fkValidations: []
     implementation: full | scaffold
+    # NO declarar idempotency aqui. useCases[].idempotency es solo para commands HTTP;
+    # la deduplicacion de eventos usa system.yaml infrastructure.reliability.consumerIdempotency.
 
   # ─ Query disparada por HTTP
   - id: UC-{ABREV}-{NNN}

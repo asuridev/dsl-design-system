@@ -329,6 +329,9 @@ class BcYamlValidator {
     if (!uc.idempotency.ttl || typeof uc.idempotency.ttl !== 'string' || !/^P/.test(uc.idempotency.ttl)) this.error('BC-034', `Use case "${uc.id}" idempotency.ttl must be an ISO-8601 duration.`, `${baseLoc}/idempotency/ttl`);
     if (uc.idempotency.storage !== 'cache') this.error('BC-034', `Use case "${uc.id}" idempotency.storage must be cache.`, `${baseLoc}/idempotency/storage`);
     if (uc.type !== 'command') this.error('BC-034', `Use case "${uc.id}" declares idempotency but is not a command.`, `${baseLoc}/idempotency`);
+    if (!uc.trigger || uc.trigger.kind !== 'http') {
+      this.error('BC-034', `Use case "${uc.id}" declares idempotency but trigger.kind is "${uc.trigger && uc.trigger.kind || 'undefined'}". Idempotency is only supported on HTTP-triggered commands.`, `${baseLoc}/idempotency`);
+    }
   }
 
   validateUseCaseCacheable(uc, baseLoc, allowedKeys) {
