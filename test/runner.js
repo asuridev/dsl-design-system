@@ -398,6 +398,77 @@ domainEvents:
 `, 'BC-165');
 });
 
+test('copied dsl-validate rejects unsupported count qualifier repository methods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - value: DRAFT
+      - value: ACTIVE
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: categoryId
+        type: Uuid
+      - name: status
+        type: ProductStatus
+    domainRules:
+      - id: RULE-CAT-003
+        type: sideEffect
+repositories:
+  - aggregate: Product
+    methods:
+      - name: countRetiredByCategoryId
+        params:
+          - name: categoryId
+            type: Uuid
+        returns: Long
+        derivedFrom: RULE-CAT-003
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-161');
+});
+
+test('copied dsl-validate rejects unknown qualified find repository methods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: CartStatus
+    values:
+      - value: ACTIVE
+      - value: CHECKED_OUT
+aggregates:
+  - name: Cart
+    properties:
+      - name: id
+        type: Uuid
+      - name: customerId
+        type: Uuid
+      - name: status
+        type: CartStatus
+repositories:
+  - aggregate: Cart
+    queryMethods:
+      - name: findArchivedByCustomerId
+        params:
+          - name: customerId
+            type: Uuid
+        returns: Cart?
+        derivedFrom: implicit
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-161');
+});
+
 test('copied dsl-validate rejects useCase inputs without source', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

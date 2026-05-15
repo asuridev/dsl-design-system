@@ -662,7 +662,7 @@ repositories:
     # El generador cruza los nombres de input[] del UC contra los params de cada queryMethod
     # para identificar unívocamente el método a invocar.
     queryMethods:
-      - name: findBy{Campo} | list | listBy{Param}
+      - name: findBy{Campo} | find{Qualifier}By{Campo} | list | listBy{Param}
         params:
           - name: {param}
             type: {canonical-type}
@@ -674,6 +674,9 @@ repositories:
             # debe usar source: authContext.
         returns: "{AggregateName}? | Page[{AggregateName}] | List[{AggregateName}]"
         derivedFrom: openapi:{operationId} | implicit
+
+        # find{Qualifier}By{Campo}: {Qualifier} debe resolver contra status/*Status
+        # o softDelete. Ej: findActiveByCustomerId -> status = ACTIVE AND customerId = :customerId.
 
     methods:
 
@@ -692,6 +695,14 @@ repositories:
             type: {canonical-type}
         returns: "{AggregateName}?"
         derivedFrom: {RULE-ID}        # e.g. PRD-RULE-003 (uniqueness en sku)
+
+      # ─ Lookup por estado + campo
+      - name: find{Qualifier}By{Campo}
+        params:
+          - name: {campo}
+            type: {canonical-type}
+        returns: "{AggregateName}? | List[{AggregateName}] | Page[{AggregateName}]"
+        derivedFrom: implicit         # {Qualifier} debe existir en status/*Status o softDelete
 
       # ─ Método derivado de un query param del OpenAPI
       # Naming: list (no findAll). Usar list cuando hay filtros opcionales; listBy{Param} cuando

@@ -977,7 +977,27 @@ class BcYamlValidator {
     if (method.name && method.returns) {
       const ret = String(method.returns).trim();
       if (/^findBy[A-Z]/.test(method.name) && !/\?$/.test(ret) && !/^List\[/.test(ret) && !/^Page\[/.test(ret)) this.error('BC-161', `findBy* repository methods must return T?, List[T] or Page[T].`, `${loc}/returns`);
+      const qualifiedFind = method.name.match(/^find(?!By)([A-Z][A-Za-z0-9]*)By([A-Z][A-Za-z0-9]*)$/);
+      if (qualifiedFind) {
+        const [, qualifier, fieldRaw] = qualifiedFind;
+        const field = fieldRaw.charAt(0).toLowerCase() + fieldRaw.slice(1);
+        if (this.repositoryQualifierMatchesStatus(aggregate, qualifier)) {
+          if (!/\?$/.test(ret) && !/^List\[/.test(ret) && !/^Page\[/.test(ret)) this.error('BC-161', `find{Qualifier}By* repository methods must return T?, List[T] or Page[T].`, `${loc}/returns`);
+          this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+          if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
+        } else if (aggregate && this.repositoryHasStatusQualifierSource(aggregate) && !this.repositoryQualifierMatchesEntity(aggregate, qualifier) && qualifier !== aggregate.name && this.aggregateFieldNames(aggregate).has(field)) {
+          this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+        }
+      }
       if (/^countBy[A-Z]/.test(method.name) && ret !== 'Int' && ret !== 'Long') this.error('BC-161', `countBy* repository methods must return Int or Long.`, `${loc}/returns`);
+      const qualifiedCount = method.name.match(/^count(.+)By([A-Z][A-Za-z0-9]*)$/);
+      if (qualifiedCount && !method.name.startsWith('countBy')) {
+        if (ret !== 'Int' && ret !== 'Long') this.error('BC-161', `count{Qualifier}By* repository methods must return Int or Long.`, `${loc}/returns`);
+        const [, qualifier, fieldRaw] = qualifiedCount;
+        this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+        const field = fieldRaw.charAt(0).toLowerCase() + fieldRaw.slice(1);
+        if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
+      }
       if (/^existsBy[A-Z]/.test(method.name) && ret !== 'Boolean') this.error('BC-161', `existsBy* repository methods must return Boolean.`, `${loc}/returns`);
     }
     if (method.returns && /^Page\[/.test(String(method.returns).trim()) && Array.isArray(method.params)) {
@@ -994,6 +1014,53 @@ class BcYamlValidator {
         this.error('BC-163', `Repository method has derivedFrom "${derivedFrom}" but no domainRule with that id exists.`, `${loc}/derivedFrom`);
       }
     }
+  }
+
+  repositoryQualifierMatchesStatus(aggregate, qualifier) {
+    if (!aggregate) return false;
+    if ((qualifier === 'NonDeleted' || qualifier === 'NotDeleted' || qualifier === 'Deleted') && aggregate.softDelete === true) return true;
+    const statusProp = asArray(aggregate.properties).find((p) => p && (p.name === 'status' || (p.type && String(p.type).endsWith('Status'))));
+    if (!statusProp) return false;
+    const enumDef = asArray(this.doc.enums).find((enumItem) => enumItem && enumItem.name === statusProp.type);
+    if (!enumDef) return false;
+    const values = asArray(enumDef.values).map((valueDef) => (typeof valueDef === 'string' ? valueDef : valueDef && (valueDef.value || valueDef.name))).filter(Boolean);
+    if ((qualifier === 'NonDeleted' || qualifier === 'NotDeleted' || qualifier === 'Deleted') && values.includes('DELETED')) return true;
+    const candidate = qualifier.startsWith('Non')
+      ? qualifier.slice(3).replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
+      : qualifier.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    return values.includes(candidate);
+  }
+
+  repositoryHasStatusQualifierSource(aggregate) {
+    if (!aggregate) return false;
+    if (aggregate.softDelete === true) return true;
+    const statusProp = asArray(aggregate.properties).find((p) => p && (p.name === 'status' || (p.type && String(p.type).endsWith('Status'))));
+    return !!statusProp;
+  }
+
+  repositoryQualifierMatchesEntity(aggregate, qualifier) {
+    if (!aggregate) return false;
+    return asArray(aggregate.entities).some((entity) => entity && (entity.name === qualifier || String(entity.name).endsWith(qualifier)));
+  }
+
+  validateRepositoryStatusQualifier(repo, aggregate, qualifier, methodName, loc) {
+    if (!aggregate) return;
+    if ((qualifier === 'NonDeleted' || qualifier === 'NotDeleted' || qualifier === 'Deleted') && aggregate.softDelete === true) return;
+    const statusProp = asArray(aggregate.properties).find((p) => p && (p.name === 'status' || (p.type && String(p.type).endsWith('Status'))));
+    if (!statusProp) {
+      this.error('BC-161', `Repository method "${methodName}" uses qualifier "${qualifier}" but aggregate "${repo.aggregate}" has no status enum field and is not softDelete:true.`, `${loc}/name`);
+      return;
+    }
+    const enumDef = asArray(this.doc.enums).find((enumItem) => enumItem && enumItem.name === statusProp.type);
+    if (!enumDef) {
+      this.error('BC-161', `Repository method "${methodName}" uses qualifier "${qualifier}" but field "${statusProp.name}" does not reference a declared enum.`, `${loc}/name`);
+      return;
+    }
+    const values = asArray(enumDef.values).map((valueDef) => (typeof valueDef === 'string' ? valueDef : valueDef && (valueDef.value || valueDef.name))).filter(Boolean);
+    const candidate = qualifier.startsWith('Non')
+      ? qualifier.slice(3).replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
+      : qualifier.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    if (!values.includes(candidate)) this.error('BC-161', `Repository method "${methodName}" uses unsupported status qualifier "${qualifier}". Known ${enumDef.name} values: ${values.join(', ')}.`, `${loc}/name`);
   }
 
   validateRepositoryMethodUseCaseInputs(repo, method, loc) {

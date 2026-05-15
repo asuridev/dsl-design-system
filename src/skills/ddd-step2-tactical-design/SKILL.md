@@ -242,6 +242,8 @@ El generador soporta un vocabulario extendido para cada sección del BC.
 - Returns whitelist: `void, Boolean, Int, Long, T, T?, List[T], Page[T], Slice[T], Stream[T]`.
 - `derivedFrom: <RULE-ID>` (ID literal del domainRule, **sin prefijo `domainRule:`**) o `openapi:{operationId}` o `implicit`. El reader exige que `<RULE-ID>` exista en `aggregates[].domainRules[].id`.
 - Multi-field: `findByXAndY`.
+- `find{Qualifier}By{Field}` soportado cuando `{Qualifier}` resuelve contra el estado del agregado (`status` o `*Status`) o soft delete. Ej: `findActiveByCustomerId(customerId): Cart?` genera `status = ACTIVE AND customerId = :customerId`. `{Field}` debe existir en el agregado raíz. Retornos válidos: `T?`, `List[T]`, `Page[T]`. Si el qualifier no existe en el enum de estado, el validador falla.
+- `count{Qualifier}By{Field}` y `exists{Qualifier}By{Field}` usan la misma resolución de qualifier. Ej: `countActiveByCategoryId`, `existsNonDeletedByCustomerId`.
 - `defaultSort`, `sortable[]`, `transactional: true`.
 - Phase 3 opt-ins: `existsBy*`, `deleteBy*`, `bulkOperations: true`, `findByIdForUpdate`.
 - `autoDerive: false` — opt-out de derivación automática desde domainRules `uniqueness`.
@@ -845,6 +847,7 @@ repositories:
 | Listado con filtros múltiples (cualquiera de ellos puede ser opcional) | `queryMethods` | `list(status?, search?, page)` |
 | Búsqueda por múltiples campos con texto libre | `queryMethods` | `searchProducts(term?, minPrice?, maxPrice?, page)` |
 | Lookup por un único campo único (`findBy{Campo}`) | `methods` | `findBySku(sku): Product?` |
+| Lookup puntual por estado + campo (`find{Qualifier}By{Field}`) | `methods` o `queryMethods` según uso | `findActiveByCustomerId(customerId): Cart?` |
 | Lookup por PK (`findById`) | `methods` | `findById(id): Product?` |
 | Verificación de existencia (`existsBy*`) | `methods` | `existsByEmail(email): Boolean` |
 | Conteo de dependencias (`countBy*`, `countNonDeletedBy*`) | `methods` | `countNonDeletedByCategoryId(categoryId): Int` |

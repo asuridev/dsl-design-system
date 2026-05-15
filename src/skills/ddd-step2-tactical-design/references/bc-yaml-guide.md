@@ -889,7 +889,17 @@ repositories:
             required: true
         returns: "Page[Product]"
         derivedFrom: openapi:searchProducts
+
+      - name: findActiveByCustomerId # lookup puntual por estado + campo
+        params:
+          - name: customerId
+            type: Uuid
+            required: true
+        returns: "Cart?"
+        derivedFrom: openapi:getCart
 ```
+
+`find{Qualifier}By{Field}` es válido cuando `{Qualifier}` resuelve a un literal del enum de estado del agregado (`status` o `*Status`) o a soft delete (`Deleted`, `NonDeleted`, `NotDeleted`). Ejemplo: `findActiveByCustomerId` sobre `CartStatus.ACTIVE` genera `status = 'ACTIVE' AND customerId = :customerId`. `{Field}` debe existir en el agregado raíz. Retornos válidos: `T?`, `List[T]`, `Page[T]`.
 
 ---
 
@@ -922,6 +932,15 @@ explícitos adicionales necesarios.
             type: Uuid
         returns: Int
         derivedFrom: PRD-RULE-005
+
+      # ─ Lookup por estado + campo (Qualifier resuelve contra ProductStatus.ACTIVE)
+      - name: findActiveByCategoryId
+        params:
+          - name: categoryId
+            type: Uuid
+            required: true
+        returns: "List[Product]"
+        derivedFrom: implicit
 
       # ─ Método de existencia (Phase 3 opt-in: para guards de deduplicación)
       - name: existsBySkuAndIdNot

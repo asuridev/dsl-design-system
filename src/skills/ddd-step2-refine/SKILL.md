@@ -450,12 +450,14 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
     - `filterOn` presente pero sin `operator` → 🔴 ERROR: el operador es parte del predicado; sin él el generador no puede construir la cláusula WHERE.
     - Verificar además que el UC asociado tenga `implementation: scaffold` si `filterOn`/`operator` no están declarados.
 
-**B21 — `countBy`/`listBy` con calificador `Active` en agregados `softDelete: true`**
-- Para cada método en `repositories[].methods[]` cuyo nombre contiene el calificador `Active` (ej: `countActiveByX`, `listActiveByY`):
+**B21 — métodos con calificador de estado (`Active`, `NonDeleted`, etc.)**
+- Para cada método en `repositories[].methods[]` o `queryMethods[]` cuyo nombre usa un calificador de estado (ej: `findActiveByCustomerId`, `countActiveByX`, `existsNonDeletedByY`, `searchActive`):
   - ¿El agregado asociado tiene `softDelete: true`?
-  - ¿El agregado tiene una propiedad `status` con un valor `ACTIVE`?
+  - ¿El agregado tiene una propiedad `status`/`*Status` con un valor compatible (`ACTIVE`, `DELETED`, etc.)?
   - Si el agregado tiene `softDelete: true` pero **no** tiene campo `status`: el calificador `Active` es ambiguo → 🔴 ERROR. El generador infiere `status = 'ACTIVE'` pero la columna no existe. Renombrar el método usando `NonDeleted` (ej: `countNonDeletedByCustomerId`) para que el generador derive `deleted_at IS NULL`.
   - Si el agregado tiene `softDelete: true` **y** tiene campo `status`: 🟡 ALERTA. El calificador es ambiguo — clarificar si el predicado filtra por `status = 'ACTIVE'`, por `deleted_at IS NULL`, o por ambos. Elegir un nombre que exprese sin ambigüedad la intención.
+  - Si el qualifier no existe en el enum de estado y tampoco es soft delete válido → 🔴 ERROR: el validador falla antes de generación.
+  - En `find{Qualifier}By{Field}`, verificar además que `{Field}` exista en el agregado raíz y que el retorno sea `T?`, `List[T]` o `Page[T]`.
 
 **B22 — `fkValidations` sobre campos con `source: authContext`**
 - Para cada UC con `fkValidations[]` no vacío:
