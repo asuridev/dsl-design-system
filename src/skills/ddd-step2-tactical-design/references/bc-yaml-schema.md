@@ -600,7 +600,7 @@ useCases:
     # con los params del domainMethod por coincidencia de nombres.
     # Declarar input[] solo cuando necesitas `loadAggregate: true` o cuando quieres
     # incluir campos con tipo que no coincide con el nombre del param del domainMethod.
-    input:
+    input:                           # ⚠ claves permitidas SOLO: name | type | required | source | loadAggregate | headerName | default | max | partName | maxSize | contentTypes | fields — NO description ni otras
       - name: {paramNombreIgualAlPayloadField}
         type: {DSL-type}
         required: true
@@ -626,7 +626,7 @@ useCases:
     # NO incluir "method" en queries — el generador resuelve el queryMethod del repositorio por dos paths:
     #   Path A (loadAggregate: true): invoca repository.findById(param) directamente.
     #   Path B (sin loadAggregate): cruza los nombres de input[] contra repositories[aggregate].queryMethods.
-    input:                           # omitir si no hay parámetros
+    input:                           # omitir si no hay parámetros — ⚠ claves permitidas SOLO: name | type | required | source | loadAggregate | headerName | default | max | partName | maxSize | contentTypes | fields — NO description ni otras
       - name: {param}
         type: {DSL-type}
         required: true | false

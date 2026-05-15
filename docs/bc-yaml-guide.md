@@ -681,6 +681,7 @@ useCases:
 | `input` | no (omitir si vacío) | Parámetros externos que recibe el handler (evento, HTTP, authContext). |
 | `input[].source` | sí | `event.{campo}` \| `path` \| `query` \| `body` \| `authContext`. |
 | `input[].loadAggregate` | no | `true` activa `findById(param)` antes de invocar el método (commands) o como Path A (queries). Un único param por UC puede declararlo; tipo `Uuid`. |
+| `input[]` claves prohibidas | — | Solo se permiten: `name`, `type`, `required`, `source`, `loadAggregate`, `headerName`, `default`, `max`, `partName`, `maxSize`, `contentTypes`, `fields`. Añadir `description`, `example` u otra clave no listada provoca el error **BC-012**. |
 | `returns` | si `type: query` + `kind: http` | Nombre en `projections[]`, nombre de un agregado del BC, o lista inline de propiedades. **Ausente en commands.** |
 | `rules` | sí | Lista de RULE-IDs evaluados dentro del use case. `[]` si no aplica ninguna. |
 | `notFoundError` | no | Lista de códigos lanzados cuando la entidad no existe. Siempre lista: `[ERROR_CODE]`. Omitir cuando no aplica. |

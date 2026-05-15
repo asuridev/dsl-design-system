@@ -769,6 +769,8 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
     presente → 🔵 SUGERENCIA: redundante.
   - `max` solo en tipos numéricos o de tamaño (List, String). En otros → 🔴 ERROR.
 
+- **`input[]` claves prohibidas (BC-012)** — cada entrada de `input[]` solo puede contener las claves: `name`, `type`, `required`, `source`, `loadAggregate`, `headerName`, `default`, `max`, `partName`, `maxSize`, `contentTypes`, `fields`. Para cada UC, verificar que ningún `input[]` declara claves fuera de ese set (ej. `description`, `example`, `serializedName`). Si existe una clave no permitida → 🔴 ERROR BC-012: indicar el UC (id), el nombre del input y la clave culpable. Eliminar la clave no permitida.
+
 - **`input[].source` es obligatorio en toda entrada** — el generador rechaza con error de build cualquier input sin `source`. Ausente → 🔴 ERROR. Guía:
   - Commands HTTP (POST/PUT/PATCH): campos del JSON body → `source: body`.
   - Queries HTTP (GET): filtros en URL `?campo=valor` → `source: query`.

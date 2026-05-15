@@ -2307,6 +2307,7 @@ Por cada operación en `{bc-name}-open-api.yaml` y `{bc-name}-internal-api.yaml`
      - `required`: `true` si obligatorio; `false` si opcional (PATCH fields).
      - `source`: `path` | `query` | `body` | `authContext` | `event.{campo}` (para event-triggered).
      - `loadAggregate: true` (opcional): agregar en el param cuyo UUID identifica el agregado a cargar vía `repository.findById(param)`. Solo un param por UC puede tener este flag; su `type` debe ser `Uuid`.
+     - **Claves permitidas en `input[]`: `name`, `type`, `required`, `source`, `loadAggregate`, `headerName`, `default`, `max`, `partName`, `maxSize`, `contentTypes`, `fields`. No añadir `description` ni ninguna otra clave fuera de esta lista — el validador rechaza con BC-012.**
      - Omitir `input` completamente si la lista está vacía.
    - `fkValidations[]`: si el UC recibe en `input[]` campos que referencian otros agregados por FK:
      - `aggregate`: nombre del agregado referenciado
