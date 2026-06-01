@@ -12,8 +12,10 @@ agnósticos que un generador externo consumirá en la Fase 2.
 
 Provee dos cosas:
 
-1. **Un CLI (`dsl`)** — herramienta de scaffolding para inicializar la estructura de diseño
-   en cualquier proyecto. El comando `dsl init` copia los agentes y skills al workspace del usuario.
+1. **Un CLI (`dsl`)** — herramienta de scaffolding y revisión para inicializar la estructura
+   de diseño y facilitar su inspección. El comando `dsl init` copia los agentes y skills al
+   workspace del usuario; `dsl validate` revisa coherencia de artefactos; `dsl preview`
+   genera una revisión visual bilingüe de decisiones y diagramas para iterar con el agente.
 
 2. **Agentes y skills de diseño** — definiciones que guían a la IA a través del proceso DDD
    en dos pasos: diseño estratégico (Paso 1) y diseño táctico (Paso 2).
@@ -86,7 +88,9 @@ dsl-design-system/
 │   │   ├── design-system.agent.md
 │   │   └── design-bounded-context.agent.md
 │   ├── commands/                 ← implementaciones de comandos CLI
-│   │   └── init.js
+│   │   ├── init.js
+│   │   ├── preview.js
+│   │   └── validate.js
 │   └── skills/                   ← skills de diseño DDD (se copian a .agents/skills/)
 │       ├── ddd-step1-strategic-design/
 │       ├── ddd-step1-refine/
@@ -105,6 +109,7 @@ dsl-design-system/
 - Guiar el proceso de diseño estratégico (Paso 1) y táctico (Paso 2)
 - Producir artefactos YAML agnósticos a la tecnología
 - Validar coherencia interna de los diseños producidos
+- Generar vistas de revisión para decisiones de diseño y propuestas de iteración
 - Proveer el CLI `dsl` para inicializar la estructura de diseño
 
 **Este proyecto NO hace:**

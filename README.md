@@ -13,6 +13,7 @@
   - [1.1 Posicionamiento de las tres fases](#11-posicionamiento-de-las-tres-fases)
   - [1.2 Qué es un artefacto canónico](#12-qué-es-un-artefacto-canónico)
   - [1.3 Diagrama de flujo de información](#13-diagrama-de-flujo-de-información)
+  - [1.4 Revisión visual con `dsl preview`](#14-revisión-visual-con-dsl-preview)
 - [2. Cómo leer este documento](#2-cómo-leer-este-documento)
 - [3. Glosario rápido](#3-glosario-rápido)
 - [4. `system.yaml` — Diseño estratégico](#4-systemyaml--diseño-estratégico)
@@ -87,6 +88,55 @@ flowchart LR
 
 `system.yaml` es la **fuente de verdad estructural** del sistema. Cada `{bc}.yaml`
 profundiza un único BC declarado allí, sin contradecir nunca a `system.yaml`.
+
+### 1.4 Revisión visual con `dsl preview`
+
+`dsl preview` genera una mesa de revisión estática en `arch/review/` para que el
+diseñador humano pueda inspeccionar las decisiones tomadas por los agentes y volver al
+chat con prompts concretos. El comando no modifica los YAML canónicos de `arch/`; solo
+produce HTML, diagnósticos y propuestas estructuradas de revisión.
+
+```bash
+dsl preview --no-open --format all --locale es
+```
+
+Salidas principales:
+
+| Archivo | Propósito |
+|---|---|
+| `arch/review/index.html` | Dashboard con salud de validación, decisiones estratégicas y enlaces por BC. |
+| `arch/review/{bc}-review.html` | Revisión táctica del BC: modelo, use cases, reglas, eventos, integraciones, contratos y prompts. |
+| `arch/review/{bc}-design.html` | Diagramas Mermaid existentes, cuando están presentes. |
+| `arch/review/{bc}-openapi.html` | Visor Swagger UI del contrato REST público. |
+| `arch/review/{bc}-internal-openapi.html` | Visor Swagger UI del contrato REST interno, si existe. |
+| `arch/review/{bc}-asyncapi.html` | Visor de canales y mensajes AsyncAPI. |
+| `arch/review/review-model.json` | Modelo estructurado de revisión, si se usa `--format json` o `--format all`. |
+| `arch/review/patch-proposals.yaml` | Propuestas de revisión para iterar con el agente, sin aplicar cambios automáticamente. |
+
+Flags útiles:
+
+| Flag | Uso |
+|---|---|
+| `--bc <name>` | Genera revisión solo para un Bounded Context. |
+| `--no-open` | Evita abrir el navegador automáticamente. |
+| `--output-dir <path>` | Cambia el directorio de salida. |
+| `--format html\|json\|all` | Controla si se escribe solo HTML o también `review-model.json`. |
+| `--locale es\|en` | Define el idioma inicial de la UI generada. Por defecto: `es`. |
+| `--no-include-patches` | Omite `patch-proposals.yaml`. |
+| `--strict` | Devuelve código de salida 1 si hay errores de validación. |
+
+Todos los HTML generados incluyen un conmutador **ES/EN**. La preferencia se guarda en
+`localStorage`, por lo que el diseñador puede cambiar de idioma sin regenerar el preview.
+
+El visor `{bc}-design.html` añade controles de diagrama para **acercar**, **alejar**,
+**ajustar ancho**, **restablecer** y desplazar arrastrando. Si Mermaid no puede renderizar
+un diagrama, la página muestra el mensaje del parser, el archivo afectado, la fuente con
+números de línea y un prompt para pedir al agente que corrija el `.mmd` correspondiente.
+
+Cada decisión visible en el HTML incluye alternativas de diseño y un bloque **Prompt for
+agent** para copiar al chat. Ese prompt debe usarse como punto de partida para pedir al
+agente que ajuste `system.yaml`, `{bc}.yaml`, contratos o documentación relacionada,
+manteniendo los artefactos agnósticos de tecnología.
 
 ---
 

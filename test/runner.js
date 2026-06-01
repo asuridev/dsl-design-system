@@ -73,6 +73,15 @@ domainEvents:
 `);
 }
 
+async function writeArchWithDiagram(projectDir) {
+  await writeValidArch(projectDir);
+  await fs.ensureDir(path.join(projectDir, 'arch', 'catalog', 'diagrams'));
+  await fs.writeFile(path.join(projectDir, 'arch', 'catalog', 'diagrams', 'catalog-diagram.mmd'), `
+flowchart LR
+  A[Create Product] --> B[Activate Product]
+`.trimStart(), 'utf8');
+}
+
 async function writeAuthContextInvalidArch(projectDir) {
   await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
 system:
@@ -759,6 +768,77 @@ test('copied dsl-validate rejects missing OpenAPI component refs before generati
     const output = `${result.stdout}\n${result.stderr}`;
     assert.notStrictEqual(result.status, 0, output);
     assert.match(output, /HTTP-008/);
+  });
+});
+
+test('dsl preview generates decision review assets without opening browser', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeValidArch(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const reviewDir = path.join(projectDir, 'arch', 'review');
+    const indexHtml = await fs.readFile(path.join(reviewDir, 'index.html'), 'utf8');
+    const bcReviewHtml = await fs.readFile(path.join(reviewDir, 'catalog-review.html'), 'utf8');
+    const reviewModel = JSON.parse(await fs.readFile(path.join(reviewDir, 'review-model.json'), 'utf8'));
+    const patchProposals = await fs.readFile(path.join(reviewDir, 'patch-proposals.yaml'), 'utf8');
+
+    assert.match(indexHtml, /Revisi.n de dise.o/);
+    assert.match(indexHtml, /Propuestas de ajuste/);
+    assert.match(indexHtml, /data-locale="es"/);
+    assert.match(bcReviewHtml, /Prompt para el agente/);
+    assert.match(bcReviewHtml, /Use case topology/);
+    assert.ok(Array.isArray(reviewModel.decisions));
+    assert.ok(reviewModel.decisions.length > 0);
+    assert.match(patchProposals, /proposals:/);
+  });
+});
+
+test('dsl preview diagram page includes locale switcher and zoom controls', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeArchWithDiagram(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--locale', 'es'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const designHtml = await fs.readFile(path.join(projectDir, 'arch', 'review', 'catalog-design.html'), 'utf8');
+    assert.match(designHtml, /Vista general/);
+    assert.match(designHtml, /data-zoom="in"/);
+    assert.match(designHtml, /data-zoom="fit"/);
+    assert.match(designHtml, /dslSetLocale\('en'\)/);
+    assert.match(designHtml, /catalog-diagram\.mmd/);
+    assert.match(designHtml, /diagram\.syntaxError/);
+    assert.match(designHtml, /numberedSource/);
+  });
+});
+
+test('dsl preview can generate English UI text', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeValidArch(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--locale', 'en'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const indexHtml = await fs.readFile(path.join(projectDir, 'arch', 'review', 'index.html'), 'utf8');
+    assert.match(indexHtml, /Design Review/);
+    assert.match(indexHtml, /Patch proposals/);
+    assert.match(indexHtml, /data-locale="en"/);
+  });
+});
+
+test('dsl preview strict exits non-zero when validations fail', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeHttpOperationMissingArch(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--strict'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notStrictEqual(result.status, 0, output);
+    assert.match(output, /Diagn.sticos:/);
+    assert.ok(await fs.pathExists(path.join(projectDir, 'arch', 'review', 'index.html')));
   });
 });
 
