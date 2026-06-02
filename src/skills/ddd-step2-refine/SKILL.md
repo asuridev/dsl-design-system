@@ -630,16 +630,18 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   Si aparecen en el YAML, el generador emite un `GEN-WARN` pero NO genera ningún artefacto a partir de ellos.
   → 🟡 ALERTA al humano: indicar que los elimine del YAML y configure retry/DLQ en `system.yaml` o en los archivos de entorno.
 
-- **`payload[].source`** ∈ `{aggregate, param, timestamp, constant, derived}`.
+- **`payload[].source`** ∈ `{aggregate, param, timestamp, constant}`.
   `auth-context` **NO es un valor válido** en el payload de un evento — el agregado debe ser
-  agnóstico a la seguridad (INT-025).
+  agnóstico a la seguridad (INT-025). `derived` tampoco es válido hoy en payloads de eventos:
+  el validador lo rechaza con BC-121. Si el valor es calculado, materializarlo antes como
+  propiedad del agregado (`source: aggregate`) o pasarlo como parámetro del domain method
+  (`source: param`).
   Campos auxiliares según source:
   | source | Campo auxiliar requerido |
   |---|---|
   | `aggregate` | `field` |
   | `param` | `param` (opcional; si se omite, el generador usa `name` del campo) |
   | `constant` | `value` |
-  | `derived` | `derivedFrom` o `expression` |
   | `timestamp` | (ninguno) |
   | `auth-context` | ❌ **Prohibido — INT-025** (ver abajo) |
   - Combinación inconsistente → 🔴 ERROR.
@@ -741,8 +743,9 @@ Vocabulario válido (whitelist) — claves procesadas por el generador (ver
   y por `trigger.kind` + `trigger.operationId` (HTTP) o `trigger.event` (eventos); la
   documentación del origen va en `description:` o se enlaza vía `rules: [RULE-ID, ...]`.
   `derivedFrom` solo es válido en `aggregates[].domainMethods[]`,
-  `repositories[].queryMethods[]`, `aggregates[].properties[]` (`source: derived`),
-  `projections[].properties[]` y `domainEvents[].payload[]` (`source: derived`).
+  `repositories[].queryMethods[]`, `aggregates[].properties[]` (`source: derived`) y
+  `projections[].properties[]`. No usar `source: derived` en `domainEvents[].payload[]`:
+  el validador actual lo rechaza con BC-121.
 
 - **`validations[]` (array)**: cada item con `id`, `expression`, `errorCode`, `description`.
   - `id` debe ser único dentro del UC — duplicados → 🔴 ERROR.
@@ -1137,6 +1140,42 @@ Si durante la validación se detecta alguna de las siguientes situaciones:
 4. Solo si el diseñador autoriza → propagar el cambio a system.yaml usando el patrón
    de edición mínima de `ddd-step1-refine` (replace_string_in_file quirúrgico)
 5. No continuar con el refinamiento del BC hasta que la discrepancia esté resuelta
+
+---
+
+### Checklist F — Agnosticismo Tecnológico de Artefactos del BC
+
+Validar que los artefactos tácticos declaren intención de dominio, contratos y decisiones
+aprobadas, no detalles de implementación del generador ni de una tecnología destino.
+Aplica a `{bc}.yaml`, `{bc}-spec.md`, `{bc}-flows.md`, OpenAPI/AsyncAPI y diagramas.
+
+**F1 — Frameworks, anotaciones, clases y paquetes**
+- Referencias a frameworks o librerías concretas (`Spring`, `JPA`, `Hibernate`, `Django`,
+  `NestJS`, nombres de anotaciones, imports, paquetes o clases runtime) dentro de artefactos
+  del BC → 🔴 ERROR si condicionan el diseño; mover a Fase 2/Fase 3 o convertir a una
+  primitiva DSL.
+- Excepción: cuando esta skill documenta capacidades del generador puede mencionar esas
+  tecnologías, pero los artefactos generados para un BC no deben copiarlas.
+
+**F2 — SQL físico y estructura de storage**
+- SQL, nombres de tablas/columnas físicas, índices concretos, queries, constraints de una
+  base de datos específica o detalles de ORM en `{bc}.yaml`/spec/flows → 🟡 ALERTA o 🔴
+  ERROR si el generador quedaría atado a una tecnología.
+- Son válidos los DSL primitives `unique`, `indexed`, `constraintName`, `readModel`,
+  `persistent`, `keyBy`, `auditable`, `softDelete`, `relationship` y tipos canónicos,
+  porque declaran intención o contrato de generación.
+
+**F3 — Código o algoritmo imperativo en flows/spec**
+- Pseudocódigo con orden de llamadas, nombres de métodos de framework, condicionales de
+  lenguaje o lógica imperativa detallada en `flows.md` o `spec.md` → 🟡 ALERTA: reescribir
+  como Given/When/Then y reglas observables de negocio.
+- Los nombres de use cases, domain methods y repository methods del DSL sí son válidos si
+  aparecen como identificadores de diseño trazables.
+
+**F4 — Contratos públicos sin tipos de plataforma**
+- OpenAPI/AsyncAPI no deben exponer tipos Java/TypeScript/SQL (`BigDecimal`, `LocalDateTime`,
+  `UUID` de lenguaje, `List<T>`, `Map<String,Object>`). Usar tipos OpenAPI/AsyncAPI o tipos
+  canónicos proyectados por el DSL.
 
 ---
 

@@ -41,6 +41,10 @@ arch/system/
 └── system-diagram.mmd   ← diagrama C4 Contenedores (Mermaid)
 ```
 
+Además produce un `AGENTS.md` en la raíz del proyecto usuario como contexto consolidado
+del sistema diseñado. Dentro de este repositorio, el `AGENTS.md` raíz es documentación del
+framework y no debe sobrescribirse durante pruebas del agente sin confirmación explícita.
+
 ### `design-bounded-context`
 **Cuándo usarlo:** El usuario quiere diseñar o refinar el dominio táctico de un BC ya existente en `arch/system/system.yaml`.
 
@@ -74,6 +78,10 @@ arch/{bc-name}/
 
 Los skills residen en `src/skills/` y se copian a `.agents/skills/` al ejecutar `dsl init`
 en el proyecto del usuario.
+
+Los agentes residen en `src/agents/` y se copian a `.github/agents/` al ejecutar `dsl init`.
+Sus instrucciones referencian las skills en `.agents/skills/`, que es la ruta instalada en
+el workspace usuario.
 
 ---
 

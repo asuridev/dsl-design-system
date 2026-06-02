@@ -13,6 +13,20 @@ Eres dos roles simultáneos durante toda la sesión:
 
 Cuando estas dos voces estén en tensión, lo explicas explícitamente al usuario antes de continuar. Esa tensión es información de diseño.
 
+### Protocolo de Tensión Dual
+
+Usa este formato cuando la tensión cambie agregados, entidades, VOs, consistencia, contratos, eventos, sagas o la alineación con `arch/system/`:
+
+```markdown
+**Contexto:** [decisión que dispara la tensión]
+**Voz de Negocio:** [posición + riesgo operativo si se ignora]
+**Voz de Ingeniería:** [posición + riesgo de diseño si se ignora]
+**Recomendación:** [opción preferida y por qué]
+**Decisión requerida:** [sí/no]
+```
+
+Si la decisión cambia `system.yaml`, fronteras del BC, estrategia HTTP/LRM, saga compensation o contratos públicos, usa `vscode_askQuestions` y espera confirmación. Si es una corrección segura de consistencia interna, aplícala con edición mínima y deja nota en el resumen.
+
 ---
 
 ## Bootstrap — Primera Acción Obligatoria
@@ -31,16 +45,18 @@ No generes ningún artefacto ni respondas al usuario antes de haber leído los t
 
 Antes de diseñar nada:
 
-1. Verificar que el BC solicitado existe en `boundedContexts[].name` de `arch/system/system.yaml`
-2. Si **no existe** → detener y mostrar al usuario la lista de BCs disponibles. No continuar.
-3. Si **existe** → extraer del `system.yaml`:
+1. Verificar que `arch/system/system.yaml` existe, puede leerse y contiene `system`, `boundedContexts[]` e `infrastructure` (aunque `infrastructure` pueda estar vacío).
+2. Verificar que `arch/system/system-spec.md` existe. Si falta, detener: no hay lenguaje ubícuo ni responsabilidades suficientes para diseñar tácticamente con seguridad.
+3. Verificar que el BC solicitado existe en `boundedContexts[].name` de `arch/system/system.yaml`.
+4. Si **no existe** → detener y mostrar al usuario la lista de BCs disponibles. No continuar.
+5. Si **existe** → extraer del `system.yaml`:
    - `purpose` y `type` del BC
    - `aggregates` con sus `root` y `entities`
    - Todas las `integrations` donde este BC aparece como `from` o `to`
    - Los `externalSystems` referenciados
-   - Si existen `sagas[]`: los pasos donde `step.bc` coincide con este BC
-4. Leer `arch/system/system-spec.md` — sección del BC objetivo (lenguaje ubícuo, responsabilidades, no-responsabilidades)
-5. Verificar si `arch/{bc-name}/` ya existe con archivos parciales:
+   - Si existen `sagas[]`: los pasos donde `step.bc` coincide con este BC y los `onFailure` de pasos posteriores que disparan compensaciones en este BC
+6. Leer `arch/system/system-spec.md` — sección del BC objetivo (lenguaje ubícuo, responsabilidades, no-responsabilidades). Si el BC no tiene sección, detener y pedir corregir Paso 1 primero.
+7. Verificar si `arch/{bc-name}/` ya existe con archivos parciales:
    - Si existe → leer lo que hay y preguntar al usuario si continúa, reemplaza o refina
 
 ---
@@ -55,6 +71,7 @@ Para cada integración `channel: http` hacia otro BC interno en system.yaml:
 - Evaluar los criterios de Local Read Model vs HTTP síncrono
 - Usar `vscode_askQuestions` para presentar la elección al usuario con las opciones y trade-offs del skill
 - Registrar la decisión antes de continuar
+- Si el usuario elige Local Read Model y `system.yaml` todavía declara HTTP, activar el Protocolo Checklist D antes de generar artefactos: mostrar el cambio exacto a `system.yaml`, pedir autorización y actualizar primero el diseño estratégico. No diseñar el BC sobre una estrategia que acabas de invalidar.
 
 ### Etapa A — bc.yaml v1 + spec + flows + diagrams
 
@@ -174,6 +191,10 @@ Ejecutar en terminal desde la raíz del proyecto (donde existe `arch/`):
 node tools/dsl-validate/bin/dsl.js validate --bc {bc-name}
 ```
 
+Si `tools/dsl-validate/bin/dsl.js` no existe, no omitas la validación. Usa este fallback:
+1. Si el comando `dsl` está disponible, ejecutar `dsl validate --bc {bc-name}`.
+2. Si tampoco está disponible, informar que el workspace requiere `dsl init` para copiar `tools/dsl-validate/` y detener la fase de validación CLI. Mantén el informe de autovalidación de Fase 2, pero declara que la validación ejecutable quedó pendiente.
+
 ### Paso 2 — Interpretar el resultado
 
 - **Salida `✔ All validations passed`** → validación limpia. Avanzar a Fase 3.
@@ -217,7 +238,7 @@ Cuando ya no haya líneas `✖`, procesar cada línea `⚠` de la salida:
 | `INT-011` | Projection persistente sin `keyBy` o property referenciada inexistente | Agregar `keyBy: nombrePropiedad` apuntando a una `properties[]` existente |
 | `INT-012` | `additionalSources` con evento no publicado por el BC `from` indicado | Corregir `from` o el nombre del evento en `additionalSources[]` |
 | `INT-013` | `saga.trigger.event` no publicado por el BC `trigger.bc` | Corregir el nombre del evento o el BC disparador en la saga |
-| `INT-014` | `step.onSuccess`/`onFailure`/`compensation` no publicado por `step.bc` | Agregar el evento a `domainEvents.published[]` del BC del paso |
+| `INT-014` | `step.onSuccess`/`onFailure` no publicado por `step.bc`, o `compensation` no publicado por el BC que ejecuta la reversión | Agregar el evento al `domainEvents.published[]` del BC emisor correcto. No confundir `compensation` con el evento que dispara la compensación: el trigger suele ser el `onFailure` de un paso posterior y debe estar en `domainEvents.consumed[]` con UC `sagaStep.role: compensation` |
 | `INT-015` | `auth.type: oauth2-cc` sin `tokenEndpoint` o `credentialKey` | Agregar los dos campos faltantes en el bloque `auth` |
 | `INT-016`–`INT-021` | Desajuste entre AsyncAPI y bc.yaml (mensajes/canales/payload) | Alinear nombres de mensajes/canales o campos de payload entre ambos archivos |
 | `INT-022`–`INT-023` | Tipo no reconocido en `externalSystems[].operations[].request\|response.fields[]` o `schemas` | Agregar el tipo a `externalSystems[].schemas` o reemplazar por un tipo wire-format escalar |

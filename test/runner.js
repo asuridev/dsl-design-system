@@ -861,6 +861,30 @@ test('published event payload docs do not whitelist auth-context', async () => {
   }
 });
 
+test('agent instructions protect framework AGENTS.md from overwrite', async () => {
+  const files = [
+    path.join(ROOT, 'src', 'agents', 'design-system.agent.md'),
+    path.join(ROOT, 'src', 'skills', 'ddd-step1-strategic-design', 'SKILL.md'),
+    path.join(ROOT, 'src', 'skills', 'ddd-step1-refine', 'SKILL.md'),
+    path.join(ROOT, 'AGENTS.md'),
+  ];
+
+  for (const file of files) {
+    const text = await fs.readFile(file, 'utf8');
+    assert.match(text, /DSL Design System/, `${file} should identify framework AGENTS.md`);
+    assert.match(text, /confirmaci[oó]n expl[ií]cita|no debe sobrescribirse/, `${file} should require explicit confirmation before overwrite`);
+  }
+});
+
+test('tactical refine docs reject derived event payload source', async () => {
+  const file = path.join(ROOT, 'src', 'skills', 'ddd-step2-refine', 'SKILL.md');
+  const text = await fs.readFile(file, 'utf8');
+
+  assert.match(text, /BC-121/);
+  assert.match(text, /No usar `source: derived` en `domainEvents\[\]\.payload\[\]`/);
+  assert.doesNotMatch(text, /`payload\[\]\.source`\*\* ∈ `\{aggregate, param, timestamp, constant, derived\}`/);
+});
+
 (async () => {
   let passed = 0;
   for (const { name, fn } of tests) {

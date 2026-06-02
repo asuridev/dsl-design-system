@@ -1403,6 +1403,10 @@ Si el usuario elige **Local Read Model**:
 - Modelar el agregado con `readModel: true` + `sourceBC` + `sourceEvents` (Sección 3.4)
 - **NO** incluir la integración `outbound.http` en la sección `integrations` del yaml
 - Agregar los canales `subscribe` correspondientes en `{bc-name}-async-api.yaml`
+- Si `system.yaml` todavía declara la integración HTTP, detener el diseño táctico y activar
+  el protocolo de discrepancia con `system.yaml`: presentar el cambio exacto, pedir
+  autorización y actualizar `system.yaml` antes de escribir el BC. El Paso 2 no debe
+  generar artefactos que contradigan la estrategia vigente.
 - Leer `references/local-read-model.md` para el detalle completo de todos los artefactos afectados
 
 Si el usuario elige **HTTP Síncrono** → modelar normalmente según el template de esta sección.
@@ -2187,6 +2191,10 @@ interno (no sistema externo):
 3. Usar `vscode_askQuestions` para presentar la elección al usuario (ver Sección 3.5.1
    para el texto exacto de la pregunta y las opciones).
 4. Registrar la decisión antes de continuar con el diseño del yaml v1.
+5. Si la decisión cambia HTTP por LRM, actualizar primero `system.yaml` mediante el
+  protocolo de discrepancia: eliminar la integración HTTP, agregar/expandir la
+  integración event-based desde el BC fuente y documentar el riesgo de consistencia
+  eventual si el dato es monetario.
 
 > Si no hay integraciones `channel: http` hacia BCs internos en `system.yaml`,
 > omitir este paso y continuar directamente con el paso 1.
@@ -2654,9 +2662,9 @@ Aplicar **solo si** `arch/system/system.yaml` declara `sagas[]` con pasos donde 
 
 
 - [ ] Por cada paso donde `step.bc == este-bc`: existe un UC con `sagaStep.role: step` cuyo `trigger.kind: event` referencia el evento `triggeredBy` del paso
-- [ ] Por cada paso con `compensation` definido: existe un UC con `sagaStep.role: compensation` cuyo trigger es ese evento de compensación
+- [ ] Por cada paso con `compensation` definido: existe un UC con `sagaStep.role: compensation` cuyo trigger es el evento que DISPARA la compensación (normalmente el `onFailure` de un paso posterior), no el evento `compensation` que confirma la reversión
 - [ ] Los eventos `onSuccess`, `onFailure` (si definido) y `compensation` (si definido) están declarados en `domainEvents.published[]`
-- [ ] El evento `triggeredBy` y el evento de compensación (si existe) están en `domainEvents.consumed[]` y tienen canal en `{bc-name}-async-api.yaml`
+- [ ] El evento `triggeredBy` y el evento disparador de compensación (si existe) están en `domainEvents.consumed[]` y tienen canal en `{bc-name}-async-api.yaml`
 - [ ] Existe ≥1 flujo en `{bc-name}-flows.md` para el UC de compensación con: estado antes, evento recibido, estado revertido, evento emitido al confirmar la compensación
 - [ ] Si el paso puede fallar (`onFailure` definido): existe ≥1 flujo describiendo qué publica este BC en ese caso y qué reversiones locales ejecuta
 

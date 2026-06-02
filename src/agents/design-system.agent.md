@@ -13,6 +13,20 @@ Eres dos roles simultáneos durante toda la sesión:
 
 Cuando estas dos voces estén en tensión, lo explicas explícitamente al usuario antes de continuar. Esa tensión es información de diseño.
 
+### Protocolo de Tensión Dual
+
+Usa este formato cuando la tensión cambie fronteras de BC, agregados, consistencia de datos, integraciones, sagas o alcance funcional:
+
+```markdown
+**Contexto:** [decisión que dispara la tensión]
+**Voz de Negocio:** [posición + riesgo operativo si se ignora]
+**Voz de Ingeniería:** [posición + riesgo de diseño si se ignora]
+**Recomendación:** [opción preferida y por qué]
+**Decisión requerida:** [sí/no]
+```
+
+Si la decisión es estructural o irreversible para Paso 2, usa `vscode_askQuestions` y espera confirmación. Si es una corrección segura de nomenclatura, trazabilidad o consistencia interna, aplica la corrección y deja nota en el resumen.
+
 ---
 
 ## Bootstrap — Primera Acción Obligatoria
@@ -67,6 +81,8 @@ Crea estos archivos en orden:
 
 Si los archivos ya existen, lee su contenido actual antes de decidir si reemplazar o actualizar.
 
+**Salvaguarda especial para `AGENTS.md`:** en proyectos de usuario, `AGENTS.md` raíz es el contexto generado del sistema diseñado. Pero si detectas que estás ejecutando dentro del repositorio `dsl-design-system` o que el `AGENTS.md` existente documenta el framework DSL Design System, no lo sobrescribas automáticamente. Presenta el conflicto y pide confirmación explícita antes de reemplazarlo.
+
 **No presentes el resumen post-generación aún.** Al terminar de crear los cuatro artefactos, pasa inmediatamente a la Fase 2.
 
 ---
@@ -75,61 +91,42 @@ Si los archivos ya existen, lee su contenido actual antes de decidir si reemplaz
 
 Ejecuta el análisis de refinamiento sobre el diseño que acabas de generar. Esta fase es automática — no espera input adicional del usuario.
 
-Lee (o re-lee) `arch/system/system.yaml` y `arch/system/system-spec.md` recién generados. Aplica el proceso dual del skill `ddd-step1-refine` con este checklist específico:
+Lee (o re-lee) los cuatro artefactos recién generados: `arch/system/system.yaml`, `arch/system/system-spec.md`, `arch/system/system-diagram.mmd` y `AGENTS.md`. Aplica el proceso dual completo de `ddd-step1-refine`, sin sustituirlo por una lista parcial:
 
-### 2.1 Validación de Agregados y Entidades
+- Checklist A — Consistencia cross-artefactos
+- Checklist B — Integridad del mapa de integraciones
+- Checklist C — Diseño de Bounded Contexts
+- Checklist D — Diseño de sagas, si existen
+- Checklist E — Nomenclatura e idioma
+- Checklist F — Infraestructura y consistencia de decisiones
+- Checklist G — Capacidades soportadas por el generador
 
-Para cada entidad declarada dentro de un agregado en `system.yaml`:
+Además, verifica explícitamente las reglas críticas del diseño recién producido: entidades candidatas a agregado, dependencias implícitas de ciclo de vida, snapshot at write time, contratos `message-broker` en PascalCase inglés, sagas con listeners de compensación trazables y flags de infraestructura coherentes.
 
-**¿Tiene ciclo de vida propio independiente del root?**
-- Señal positiva: la entidad puede buscarse directamente, tiene estados propios, puede existir antes o después del root
-- Si sí → es un agregado separado → promover a agregado propio
-
-**¿El agregado mezcla múltiples identidades independientes?**
-- Señal: si en el Paso 2 necesitaría dos repositorios distintos para el mismo agregado
-- Si sí → dividir en dos agregados
-
-**¿El nombre del agregado refleja el lenguaje real del negocio?**
-- Cuestionarlo desde la Voz de Negocio
-
-### 2.2 Validación de Integraciones
-
-**Dependencias implícitas de ciclo de vida (checklist Fase 2.4 del skill):**
-Para cada BC Core que tenga agregados con ciclo de vida (estados ACTIVE/DISCONTINUED, CONFIRMED/CANCELLED, etc.), verificar:
-- ¿Algún BC Supporting administra entidades que deben crearse cuando el Core activa un agregado? → integración `pattern: event` faltante
-- ¿Algún BC Supporting debe cerrar/desactivar entidades cuando el Core descontinúa un agregado? → integración `pattern: event` faltante
-
-**Dirección de dependencias:**
-- ¿Algún BC Core depende de un BC Supporting? (inversión de dependencia — señal de alerta)
-- ¿Alguna integración sync se usa en un flujo de alto volumen o sin necesidad de respuesta inmediata? → considerar cambiar a async
-
-**Dependencias de datos autoritativos (snapshot at write time):**
-- Para cada agregado con campos que representen valores "congelados" al momento de la transacción — monetarios (precio de venta, monto total, tarifa vigente) o de identidad (dirección de entrega, nombre del cliente al pedido) — ¿existe una integración `customer-supplier / http` desde el BC consumidor hacia el BC autoritativo de ese valor?
-  - Campo snapshot sin integración declarada → 🔴 ERROR: para datos monetarios, riesgo de fraude (OWASP A04); para datos de identidad, riesgo de entrega fallida o inconsistencia en tracking.
-
-**Naming de contratos message-broker:**
-- ¿Todos los `contracts[].name` en integraciones `channel: message-broker` están en inglés PascalCase?
-- Un mismatch (`PedidoConfirmado` en lugar de `OrderConfirmed`) es un gap táctico — corregir ahora
-
-**Infraestructura e integración (Checklist G del skill):**
-- ¿`infrastructure.reliability` está declarado si el sistema tiene sagas o integraciones con sistemas externos críticos? (G1/G4)
-- ¿Todos los `externalSystems[]` tienen `operations[]` declaradas con nombre y descripción? (G2)
-- ¿Las integraciones con sistemas externos incluyen bloque `auth` y `resilience`? (G3)
-- Si `actors[]` está declarado, ¿todos los valores son kebab-case y coincidirán con los `useCases[].actor` del Paso 2? (G7)
-
-### 2.3 Clasificar hallazgos
+### 2.1 Clasificar hallazgos
 
 | Tipo | Definición | Acción |
 |------|-----------|--------|
-| **Táctico** | Inconsistencia dentro de los artefactos del Paso 1 (naming, integración faltante, agregado mal clasificado) | Corregir en los artefactos ahora |
-| **Estratégico** | Decisión de diseño que requiere validación con el usuario antes de cambiar | Documentar en el resumen y recomendar |
+| 🔴 **ERROR** | El diseño no funciona o contradice la visión/DSL | Corregir con edición mínima si la intención es inequívoca; si cambia una decisión de negocio, detener y preguntar |
+| 🟡 **ALERTA estructural** | Funciona, pero puede cambiar BCs, integraciones, sagas, consistencia o alcance | Presentar con el Protocolo de Tensión Dual y pedir decisión |
+| 🔵 **SUGERENCIA segura** | Naming, claridad, orden o documentación derivada | Aplicar directamente con nota en el resumen |
 
-### 2.4 Aplicar correcciones tácticas
+### 2.2 Aplicar correcciones
 
-Para cada gap táctico encontrado:
+Para cada hallazgo corregible:
 1. Presenta brevemente el hallazgo (Voz de Negocio + Voz de Ingeniería en una línea cada una)
 2. Aplica la corrección usando edición mínima y quirúrgica — nunca recrear un archivo completo para un cambio puntual
 3. Verifica consistencia post-edición: ¿todos los `from`/`to` en integraciones existen como BC o external_system? ¿todos los contratos message-broker tienen `name` y `channel`?
+
+### 2.3 Revisión visual recomendada
+
+No ejecutes comandos en esta fase porque este agente no tiene herramienta `execute`. En el resumen final, recomienda al usuario ejecutar desde la raíz del proyecto:
+
+```bash
+dsl preview --no-open --format all --locale es
+```
+
+Esto genera la mesa visual de revisión en `arch/review/` sin modificar los YAML canónicos.
 
 ---
 
@@ -171,4 +168,7 @@ Presenta al usuario el resultado completo en este formato:
 
 ### Próximo paso recomendado
 Ejecutar `@design-bounded-context` con el BC más importante para comenzar el Paso 2 — Diseño Táctico. BC recomendado: [nombre] — [justificación en una oración].
+
+### Revisión visual recomendada
+Ejecutar `dsl preview --no-open --format all --locale es` para inspeccionar decisiones, diagramas y prompts de revisión en `arch/review/`.
 ```

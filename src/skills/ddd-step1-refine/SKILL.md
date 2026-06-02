@@ -576,6 +576,35 @@ actors:
 
 ---
 
+### Checklist H — Agnosticismo Tecnológico de Artefactos
+
+Validar que los artefactos generados de Paso 1 declaren intención de diseño y no decisiones
+de implementación. Este checklist aplica a `arch/system/system.yaml`, `system-spec.md`,
+`system-diagram.mmd` y el `AGENTS.md` generado del proyecto usuario.
+
+**H1 — Frameworks, lenguajes y librerías en artefactos canónicos**
+- Buscar referencias a frameworks, lenguajes o librerías concretas (`Spring`, `JPA`,
+  `Hibernate`, `Django`, `NestJS`, `React`, `Kafka`, `RabbitMQ`, nombres de clases,
+  anotaciones o paquetes). Si aparecen como decisión del sistema diseñado → 🔴 ERROR:
+  mover la decisión al generador o a la configuración de Fase 2.
+- Excepción: `message-broker`, `http`, `grpc`, `websocket`, `oauth2-cc`, `mTLS` e
+  `internal-jwt` son primitivas del DSL y sí pueden aparecer.
+
+**H2 — SQL físico, storage y código en la narrativa**
+- SQL concreto, nombres de columnas físicas, anotaciones, interfaces, clases, métodos de
+  framework o pseudo-código de implementación en `system-spec.md`/`AGENTS.md` → 🟡 ALERTA
+  o 🔴 ERROR si condiciona al generador.
+- Los campos DSL `indexed`, `unique`, `auditable`, `hidden`, `source: authContext`,
+  `derived_from` y `relationship` son válidos porque declaran intención, no mecanismo.
+
+**H3 — Protección del `AGENTS.md` documental del framework**
+- Si el `AGENTS.md` leído contiene el título `AGENTS.md — DSL Design System`, tratarlo
+  como documentación del framework, no como artefacto generado del diseño del usuario.
+  No corregirlo ni sobrescribirlo durante una validación de un sistema de ejemplo sin
+  confirmación explícita.
+
+---
+
 ### Resultado de la Fase 1B
 
 Al terminar todos los checklists, determinar el estado del diseño:

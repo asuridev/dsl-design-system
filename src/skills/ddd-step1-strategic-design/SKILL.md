@@ -1197,6 +1197,13 @@ Convenciones de color obligatorias — aplícalas sin excepción:
 Genera `AGENTS.md` en la **raíz del proyecto**. Es el punto de entrada de contexto
 para cualquier agente de IA que trabaje en el repositorio en pasos futuros.
 
+**Salvaguarda obligatoria:** este archivo es un artefacto generado para el proyecto de
+usuario que está siendo diseñado. Si el repositorio actual es `dsl-design-system` o el
+`AGENTS.md` existente documenta el framework DSL Design System, no lo sobrescribas sin
+confirmación explícita del usuario. En ese caso, informa que el archivo raíz es
+documentación del framework y ofrece continuar con los otros artefactos o reemplazarlo
+solo si el usuario lo confirma.
+
 Estructura obligatoria:
 
 ```markdown
@@ -1273,7 +1280,9 @@ Crea el directorio `arch/system/` si no existe y genera los cuatro archivos:
 ```
 
 Usa `create_file` para archivos nuevos. Si ya existen, confirma con el usuario antes
-de sobreescribir — puede ser un diseño en progreso.
+de sobreescribir — puede ser un diseño en progreso. Para `AGENTS.md`, aplica además la
+salvaguarda de la sección 3.4: nunca reemplaces el `AGENTS.md` documental de este repo
+como efecto colateral de una prueba del agente diseñador.
 
 Or den de creación recomendado: `system.yaml` → `system-spec.md` → `system-diagram.mmd` → `AGENTS.md`
 (AGENTS.md al final porque consolida información de los tres anteriores).

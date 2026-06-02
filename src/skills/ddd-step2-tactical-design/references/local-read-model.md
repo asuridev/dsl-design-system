@@ -41,6 +41,9 @@ TIEMPO 2 — Operación de escritura (síncrona, sin llamada HTTP):
 
 La tabla de proyección **vive en el schema del BC consumidor**, no en el del fuente.
 Es una copia de confianza, actualizada por eventos, de propiedad exclusiva del consumidor.
+Para datos monetarios, esta confianza elimina el riesgo de aceptar precios desde el cliente,
+pero no elimina la ventana de consistencia eventual: el diseñador debe aceptar y documentar
+ese riesgo antes de reemplazar HTTP por LRM.
 
 ---
 
@@ -53,7 +56,7 @@ Es una copia de confianza, actualizada por eventos, de propiedad exclusiva del c
 | **Acoplamiento en tiempo real** | Alto | Ninguno |
 | **Latencia de la operación** | +N ms por llamada HTTP + timeout | Cero — lectura local |
 | **Complejidad operativa** | Baja | Media — requiere event handler + tabla de proyección |
-| **Riesgo OWASP A04** | Mitigado — precio viene del BC autoritativo | Mitigado — precio viene de proyección de confianza (nunca del cliente) |
+| **Riesgo OWASP A04** | Mitigado — precio viene del BC autoritativo en tiempo real | Mitigado contra manipulación del cliente — precio viene de proyección de confianza, pero existe ventana de consistencia eventual que debe aceptarse y documentarse para datos monetarios |
 | **Reproducibilidad ante fallo** | Retry → nueva llamada HTTP fresca | Retry → misma proyección local (idempotente) |
 
 ---
