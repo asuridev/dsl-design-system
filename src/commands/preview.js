@@ -1079,8 +1079,17 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     ? `
       <section class="mb-5">
         <h5 class="mb-3" data-i18n="ui.systemArchitecture">${i18nText('ui.systemArchitecture', locale)}</h5>
-        <div class="bg-white rounded border p-4 overflow-auto">
-          <div class="mermaid">${escapeHtml(systemDiagram)}</div>
+        <div class="sys-diagram-wrap bg-white rounded border">
+          <div class="sys-toolbar">
+            <button class="sys-btn" data-sys-zoom="in" data-i18n-title="diagram.zoomIn" title="${i18nText('diagram.zoomIn', locale)}">+</button>
+            <button class="sys-btn" data-sys-zoom="out" data-i18n-title="diagram.zoomOut" title="${i18nText('diagram.zoomOut', locale)}">&minus;</button>
+            <button class="sys-btn" data-sys-zoom="fit" data-i18n="diagram.fitWidth">${i18nText('diagram.fitWidth', locale)}</button>
+            <button class="sys-btn" data-sys-zoom="reset" data-i18n="diagram.reset">${i18nText('diagram.reset', locale)}</button>
+          </div>
+          <p class="sys-hint" data-i18n="diagram.dragHint">${i18nText('diagram.dragHint', locale)}</p>
+          <div class="sys-diag-target" id="sys-diag-target" tabindex="0">
+            <div class="mermaid">${escapeHtml(systemDiagram)}</div>
+          </div>
         </div>
       </section>`
     : '';
@@ -1157,7 +1166,107 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     </section>
   </div>
 
-  <script>mermaid.initialize({ startOnLoad: true, theme: 'default' });<\/script>
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    (async function() {
+      var mermaidEl = document.querySelector('#sys-diag-target .mermaid');
+      if (!mermaidEl) return;
+      try { await mermaid.run({ nodes: [mermaidEl], suppressErrors: true }); }
+      catch(e) { console.warn('System diagram render error:', e); }
+      // Set arrow stroke-width to 2px — C4 diagram uses inline stroke-width attributes,
+      // not CSS classes, so we update them directly after render.
+      var svgEl = document.querySelector('#sys-diag-target svg');
+      if (svgEl) {
+        svgEl.querySelectorAll('path[stroke-width="1"], line[stroke-width="1"]').forEach(function(p) {
+          p.setAttribute('stroke-width', '2');
+        });
+      }
+      var target = document.getElementById('sys-diag-target');
+      if (!target) return;
+      var wrap = target.closest('.sys-diagram-wrap');
+      if (!wrap) return;
+      var scale = 1, tx = 0, ty = 0, dragging = false, startX = 0, startY = 0;
+      // Returns the viewBox width (SVG canvas size) used to set CSS width.
+      function getViewW() {
+        var svg = target.querySelector('svg');
+        if (svg && svg.viewBox && svg.viewBox.baseVal.width > 1) return svg.viewBox.baseVal.width;
+        var bcrW = svg ? svg.getBoundingClientRect().width : 0;
+        return bcrW > 1 ? bcrW : 800;
+      }
+      // Returns { x, width } of the actual drawn content inside the SVG (via getBBox).
+      // Falls back to { x:0, width: viewBoxWidth } when getBBox is unavailable.
+      function getContentBounds() {
+        var svg = target.querySelector('svg');
+        if (svg) {
+          try {
+            var bb = svg.getBBox();
+            if (bb.width > 1) return { x: bb.x, width: bb.width };
+          } catch(e) {}
+        }
+        return { x: 0, width: getViewW() };
+      }
+      function apply() {
+        var svg = target.querySelector('svg');
+        if (!svg) return;
+        // Width is based on the full viewBox so the SVG coordinate system scales uniformly.
+        svg.style.width = Math.round(getViewW() * scale) + 'px';
+        svg.style.height = 'auto';
+        svg.style.maxWidth = 'none';
+        target.style.transform = 'translate(' + Math.round(tx) + 'px,' + Math.round(ty) + 'px)';
+      }
+      function zoom(d) { scale = Math.min(4, Math.max(0.25, Math.round((scale + d) * 100) / 100)); apply(); }
+      function reset() {
+        // Scale 1:1, but offset so content left edge aligns with container.
+        var cb = getContentBounds();
+        scale = 1; tx = -Math.round(cb.x); ty = 0; apply();
+      }
+      function fit() {
+        var avail = Math.max(240, wrap.clientWidth - 32);
+        var cb = getContentBounds();
+        // Scale to fit the actual content width (with 16px breathing room), then offset to align content left edge.
+        scale = Math.min(2.5, Math.max(0.05, (avail - 16) / cb.width));
+        tx = -Math.round(cb.x * scale); ty = 0; apply();
+      }
+      // Clamp tx/ty so at least minVis px of the diagram remains visible in the wrap.
+      function clampPan() {
+        var svg = target.querySelector('svg');
+        if (!svg) return;
+        var minVis = 80;
+        var svgW = parseFloat(svg.style.width) || 200;
+        var svgH = target.getBoundingClientRect().height || 200;
+        var wW = wrap.clientWidth, wH = wrap.clientHeight;
+        tx = Math.min(wW - minVis, Math.max(-(svgW - minVis), tx));
+        ty = Math.min(wH - minVis, Math.max(-(svgH - minVis), ty));
+      }
+      wrap.querySelectorAll('[data-sys-zoom]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var a = btn.getAttribute('data-sys-zoom');
+          if (a === 'in') zoom(0.15);
+          else if (a === 'out') zoom(-0.15);
+          else if (a === 'reset') reset();
+          else if (a === 'fit') fit();
+        });
+      });
+      target.addEventListener('pointerdown', function(e) {
+        if (e.button !== 0) return;
+        dragging = true; startX = e.clientX - tx; startY = e.clientY - ty;
+        target.classList.add('sys-dragging'); target.setPointerCapture(e.pointerId);
+      });
+      target.addEventListener('pointermove', function(e) {
+        if (!dragging) return;
+        tx = e.clientX - startX; ty = e.clientY - startY;
+        clampPan(); apply();
+      });
+      target.addEventListener('pointerup', function() { dragging = false; target.classList.remove('sys-dragging'); });
+      target.addEventListener('keydown', function(e) {
+        if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(0.15); }
+        else if (e.key === '-') { e.preventDefault(); zoom(-0.15); }
+        else if (e.key === '0') { e.preventDefault(); reset(); }
+      });
+      wrap.addEventListener('wheel', function(e) { e.preventDefault(); zoom(e.deltaY < 0 ? 0.1 : -0.1); }, { passive: false });
+      requestAnimationFrame(function() { requestAnimationFrame(function() { fit(); }); });
+    })();
+  <\/script>
   ${clientI18nScript(locale)}
 </body>
 </html>`;
