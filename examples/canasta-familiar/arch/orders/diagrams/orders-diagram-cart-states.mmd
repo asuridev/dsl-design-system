@@ -1,0 +1,17 @@
+stateDiagram-v2
+    [*] --> OPEN : Cart.create()\n[UC-ORD-001 CreateCart]
+
+    OPEN --> CHECKED_OUT : Cart.checkout()\n[UC-ORD-005 Checkout]
+
+    CHECKED_OUT --> [*] : Terminal state
+
+    note right of OPEN
+        ORD-RULE-001: at least one item (checkout guard)
+        ORD-RULE-002: must be OPEN to modify items
+        ORD-RULE-004: one OPEN cart per customer (create guard)
+    end note
+
+    note right of CHECKED_OUT
+        ORD-RULE-003: terminal — no modifications allowed
+        Order created → OrderPlaced emitted
+    end note

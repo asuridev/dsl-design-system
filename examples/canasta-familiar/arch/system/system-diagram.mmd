@@ -1,0 +1,65 @@
+C4Container
+    title Canasta Familiar — C4 Contenedores (L2)
+
+    Person(customer, "Customer", "Registered B2C consumer")
+    Person(admin, "Admin", "Back-office operator")
+
+    System_Ext(paymentGateway, "payment-gateway", "Card payment processor\n(MercadoPago / Stripe)")
+
+    Boundary(b0, "Canasta Familiar Platform") {
+        Container(catalog, "catalog", "Core", "Product catalog, categories and pricing.\nAuthoritative source of product prices.")
+        Container(orders, "orders", "Core", "Full order lifecycle: cart, checkout,\nconfirmation, delivery tracking.")
+        Container(payments, "payments", "Supporting", "Payment processing: card via gateway,\ncash-on-delivery recording.")
+        Container(inventory, "inventory", "Supporting", "Real-time stock control.\nReserves and releases stock in saga.")
+        Container(delivery, "delivery", "Supporting", "Home delivery with own courier fleet.\nTracks deliveries end-to-end.")
+        Container(customers, "customers", "Supporting", "Customer accounts and delivery addresses.\nPublishes address events for orders LRM.")
+        Container(notifications, "notifications", "Generic", "Transactional customer notifications.\nDelegates sending to external provider.")
+    }
+
+    System_Ext(notificationProvider, "notification-provider", "Email/SMS/push messaging provider\n(SendGrid, Firebase, Twilio)")
+
+    Rel(customer, catalog, "browse products")
+    Rel(customer, orders, "place orders, track deliveries")
+    Rel(customer, customers, "manage account & addresses")
+    Rel(admin, catalog, "manage products & categories")
+    Rel(admin, inventory, "adjust stock levels")
+    Rel(admin, orders, "manage & monitor orders")
+    Rel(admin, delivery, "manage courier fleet")
+
+    Rel(orders, catalog, "validateProductsAndPrices", "Sync / HTTP")
+
+    Rel(orders, inventory, "OrderPlaced", "Event / Message Broker")
+    Rel(inventory, payments, "StockReserved", "Event / Message Broker")
+    Rel(payments, orders, "PaymentApproved, PaymentFailed, PaymentRefunded", "Event / Message Broker")
+    Rel(orders, delivery, "OrderConfirmed, OrderCancelled", "Event / Message Broker")
+    Rel(inventory, orders, "StockReservationFailed, StockReleased", "Event / Message Broker")
+    Rel(payments, inventory, "PaymentFailed", "Event / Message Broker")
+    Rel(catalog, inventory, "ProductActivated, ProductDiscontinued", "Event / Message Broker")
+    Rel(customers, orders, "CustomerAddressUpdated", "Event / Message Broker")
+    Rel(delivery, orders, "DeliveryOrderCreated, DeliveryCompleted", "Event / Message Broker")
+    Rel(delivery, payments, "CashCollected", "Event / Message Broker")
+
+    Rel(orders, payments, "OrderCancelled", "Event / Message Broker")
+    Rel(orders, notifications, "OrderConfirmed, OrderCancelled", "Event / Message Broker")
+    Rel(delivery, notifications, "DeliveryCompleted", "Event / Message Broker")
+    Rel(notifications, notificationProvider, "sendMessage", "ACL / HTTPS")
+
+    Rel(payments, paymentGateway, "chargePayment, refundPayment", "ACL / HTTPS")
+
+    %% ── Conexiones HTTP → azul ───────────────────────────────────────
+    UpdateRelStyle(orders, catalog, $lineColor="royalblue", $textColor="royalblue")
+
+    %% ── Conexiones por evento → naranja ──────────────────────────────
+    UpdateRelStyle(orders, inventory, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(inventory, payments, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(payments, orders, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(orders, delivery, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(inventory, orders, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(payments, inventory, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(catalog, inventory, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(customers, orders, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(delivery, orders, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(delivery, payments, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(orders, payments, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(orders, notifications, $lineColor="orange", $textColor="darkorange")
+    UpdateRelStyle(delivery, notifications, $lineColor="orange", $textColor="darkorange")

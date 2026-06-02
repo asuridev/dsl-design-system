@@ -1,0 +1,67 @@
+flowchart LR
+    subgraph customer["Actor: customer"]
+        UC001["UC-ORD-001\nCreateCart"]
+        UC002["UC-ORD-002\nAddItemToCart"]
+        UC003["UC-ORD-003\nUpdateCartItem"]
+        UC004["UC-ORD-004\nRemoveCartItem"]
+        UC005["UC-ORD-005\nCheckout"]
+        UC006["UC-ORD-006\nGetCart"]
+        UC010["UC-ORD-010\nGetOrder"]
+        UC011["UC-ORD-011\nListOrders"]
+        UC012["UC-ORD-012\nCancelOrder"]
+    end
+
+    subgraph admin["Actor: admin"]
+        UC010_a["UC-ORD-010\nGetOrder"]
+        UC011_a["UC-ORD-011\nListOrders"]
+        UC012_a["UC-ORD-012\nCancelOrder"]
+    end
+
+    subgraph system["Actor: system (events)"]
+        UC020["UC-ORD-020\nConfirmOrder"]
+        UC021["UC-ORD-021\nCancelOnStockFailed"]
+        UC022["UC-ORD-022\nCancelOnPaymentFailed"]
+        UC023["UC-ORD-023\nSetInDelivery"]
+        UC024["UC-ORD-024\nCompleteDelivery"]
+        UC025["UC-ORD-025\nAckStockReleased"]
+        UC026["UC-ORD-026\nAckPaymentRefunded"]
+        UC030["UC-ORD-030\nSyncCustomerAddress"]
+    end
+
+    subgraph aggregates["Aggregates"]
+        Cart["Cart"]
+        Order["Order"]
+        CustAddr["CustomerAddress\n(readModel)"]
+    end
+
+    UC001 --> Cart
+    UC002 --> Cart
+    UC003 --> Cart
+    UC004 --> Cart
+    UC005 --> Cart
+    UC005 --> Order
+    UC006 --> Cart
+    UC010 --> Order
+    UC011 --> Order
+    UC012 --> Order
+    UC010_a --> Order
+    UC011_a --> Order
+    UC012_a --> Order
+    UC020 --> Order
+    UC021 --> Order
+    UC022 --> Order
+    UC023 --> Order
+    UC024 --> Order
+    UC025 --> Order
+    UC026 --> Order
+    UC030 --> CustAddr
+
+    subgraph external["External Integrations"]
+        Catalog["catalog BC\n(HTTP outbound)"]
+        Events["Event Bus\n(published)"]
+    end
+
+    UC005 -->|validateProductsAndPrices| Catalog
+    Order -->|OrderPlaced| Events
+    Order -->|OrderConfirmed| Events
+    Order -->|OrderCancelled| Events

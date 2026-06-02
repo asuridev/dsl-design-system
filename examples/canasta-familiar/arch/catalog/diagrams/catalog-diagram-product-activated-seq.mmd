@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant Admin
+    participant CatalogAPI as Catalog API
+    participant ProductAggregate as Product Aggregate
+    participant Outbox
+    participant Broker as Message Broker
+    participant Inventory as Inventory BC
+
+    Admin->>CatalogAPI: PATCH /products/{id}/activate
+    CatalogAPI->>ProductAggregate: load Product by id
+    CatalogAPI->>CatalogAPI: load Category by product.categoryId
+    CatalogAPI->>CatalogAPI: validate CAT-RULE-001\n(name not empty, price > 0, category ACTIVE)
+    CatalogAPI->>ProductAggregate: activate()
+    ProductAggregate-->>CatalogAPI: status = ACTIVE, event ProductActivated raised
+    CatalogAPI->>Outbox: persist ProductActivated\n{ productId, sku, name, categoryId }
+    CatalogAPI-->>Admin: 204 No Content
+
+    Outbox->>Broker: publish to catalog.product.activated
+    Broker->>Inventory: deliver ProductActivated
+    Inventory->>Inventory: create StockItem for productId

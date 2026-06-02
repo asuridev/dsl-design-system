@@ -24,6 +24,12 @@ Provee dos cosas:
 
 ## Agentes disponibles
 
+Para elegir agente y secuencia operativa, ver tambien:
+- [docs/agent-decision-guide.md](docs/agent-decision-guide.md) — arbol de decision para
+   `design-system`, `design-bounded-context`, `dsl validate` y `dsl preview`.
+- [docs/workflow-reference.md](docs/workflow-reference.md) — flujos recomendados para
+   proyecto nuevo, primer BC, iteraciones tacticas y handoff a Fase 2.
+
 ### `design-system`
 **Cuándo usarlo:** El usuario quiere diseñar un sistema desde cero o describe un negocio que necesita ser modelado.
 
@@ -85,12 +91,36 @@ el workspace usuario.
 
 ---
 
+## Gobernanza operacional
+
+Usa `design-system` cuando la decision cambie el mapa estrategico: BCs, responsabilidades,
+ownership de datos, integraciones globales, sistemas externos o sagas. Tambien es el agente
+correcto cuando todavia no existe `arch/system/system.yaml`.
+
+Usa `design-bounded-context` cuando el BC ya existe en `system.yaml` y el trabajo sea tactico:
+agregados, value objects, enums, reglas, use cases, eventos, contratos o diagramas de un solo BC.
+Si durante ese trabajo aparece una decision que modifica fronteras, HTTP vs eventos/LRM o sagas,
+primero debe volver al nivel estrategico y quedar reflejada en `system.yaml`.
+
+Ejecuta `dsl validate` despues de cambios en YAML canonico, contratos o integraciones. Prefiere
+validacion completa cuando participen sagas o multiples BCs; usa `dsl validate --bc <name>` solo
+para cambios locales que no dependan del contexto tactico de otros BCs.
+
+Ejecuta `dsl preview --no-open --format all --locale es` para revision humana, comparacion de
+decisiones y generacion de prompts de iteracion. `dsl preview` no modifica artefactos canonicos;
+solo escribe la mesa de revision en `arch/review/`.
+
+---
+
 ## Estructura del repositorio
 
 ```
 dsl-design-system/
 ├── bin/
 │   └── dsl.js                    ← entry point del CLI
+├── docs/                         ← guías de artefactos, agentes y workflows
+├── examples/
+│   └── canasta-familiar/          ← ejemplo curado de sistema + BCs tácticos
 ├── src/
 │   ├── agents/                   ← definiciones de agentes (se copian a .github/agents/)
 │   │   ├── design-system.agent.md

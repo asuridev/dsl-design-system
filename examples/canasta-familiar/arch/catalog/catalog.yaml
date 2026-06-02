@@ -1,0 +1,1263 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BOUNDED CONTEXT: catalog
+# Canasta Familiar — Paso 2: Diseño Táctico
+# Versión: 1.0.0 | Fecha: 2026-05-15
+# ─────────────────────────────────────────────────────────────────────────────
+
+bc: catalog
+type: core
+description: >
+  Manages the product catalog lifecycle: categories, products, images, and pricing.
+  Single authoritative source for all product data and prices in the platform.
+
+
+# ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enums:
+
+  - name: ProductStatus
+    description: Lifecycle states of a Product aggregate.
+    values:
+      - value: DRAFT
+        description: Product is being prepared and is not yet visible to customers.
+        transitions:
+          - to: ACTIVE
+            triggeredBy: UC-CAT-009 ActivateProduct
+            condition: CAT-RULE-001
+            rules: [CAT-RULE-001, CAT-RULE-002, CAT-RULE-008]
+            emits: ProductActivated
+          - to: DISCONTINUED
+            triggeredBy: UC-CAT-010 DiscontinueProduct
+            condition: none
+            rules: []
+            emits: ProductDiscontinued
+
+      - value: ACTIVE
+        description: Product is live and available for purchase by customers.
+        transitions:
+          - to: DISCONTINUED
+            triggeredBy: UC-CAT-010 DiscontinueProduct
+            condition: none
+            rules: []
+            emits: ProductDiscontinued
+
+      - value: DISCONTINUED
+        description: >
+          Product has been permanently retired. Terminal state — no further
+          transitions or modifications are allowed.
+        transitions: []
+
+  - name: CategoryStatus
+    description: Lifecycle states of a Category aggregate.
+    values:
+      - value: ACTIVE
+        description: Category is available for product assignment and visible to customers.
+        transitions:
+          - to: INACTIVE
+            triggeredBy: UC-CAT-003 DeactivateCategory
+            condition: CAT-RULE-006
+            rules: [CAT-RULE-006]
+            emits: null
+
+      - value: INACTIVE
+        description: >
+          Category is hidden from customers and cannot accept new active products.
+        transitions:
+          - to: ACTIVE
+            triggeredBy: UC-CAT-004 ReactivateCategory
+            condition: none
+            rules: []
+            emits: null
+
+  - name: ImageType
+    description: Classification of a product image by its display role.
+    values:
+      - value: MAIN
+        description: Primary product image shown in listings and the product card.
+      - value: GALLERY
+        description: Additional image displayed in the product detail gallery.
+      - value: THUMBNAIL
+        description: Small-format image for compact views.
+
+
+# ─── VALUE OBJECTS ───────────────────────────────────────────────────────────
+
+valueObjects:
+
+  - name: Money
+    description: >
+      Represents an exact monetary amount paired with its currency. Modeled as
+      a VO to ensure amount and currency always travel together and that precision
+      is never lost through floating-point representation.
+    properties:
+      - name: amount
+        type: Decimal
+        precision: 19
+        scale: 4
+        required: true
+        description: Exact monetary amount. Must be positive (greater than zero).
+        validations:
+          - positive: true
+      - name: currency
+        type: String(3)
+        required: true
+        description: ISO 4217 currency code (e.g. COP, USD, EUR).
+        validations:
+          - pattern: "^[A-Z]{3}$"
+
+
+# ─── PROJECTIONS ─────────────────────────────────────────────────────────────
+
+projections:
+
+  - name: CategorySummary
+    description: >
+      Lightweight category view for listing endpoints. Used in paginated responses
+      where the full aggregate detail is not required.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: description
+        type: String(500)
+        required: false
+      - name: parentCategoryId
+        type: Uuid
+        required: false
+        description: ID of the parent category for hierarchical display, null for root categories.
+      - name: status
+        type: CategoryStatus
+        required: true
+
+  - name: ProductSummary
+    description: >
+      Lightweight product view for listing endpoints. Excludes full description
+      and images to keep list payloads small.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: sku
+        type: String(100)
+        required: true
+      - name: price
+        type: Money
+        required: true
+      - name: status
+        type: ProductStatus
+        required: true
+      - name: categoryId
+        type: Uuid
+        required: true
+
+  - name: ProductImageSummary
+    description: Summary view of a single product image within the product detail.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: url
+        type: Url
+        required: true
+      - name: altText
+        type: String(200)
+        required: false
+      - name: imageType
+        type: ImageType
+        required: true
+      - name: displayOrder
+        type: Integer
+        required: true
+
+  - name: ProductDetail
+    description: >
+      Full product view for the product detail endpoint. Includes the complete
+      description and all associated images.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+      - name: sku
+        type: String(100)
+        required: true
+      - name: description
+        type: Text
+        required: false
+      - name: price
+        type: Money
+        required: true
+      - name: status
+        type: ProductStatus
+        required: true
+      - name: categoryId
+        type: Uuid
+        required: true
+      - name: images
+        type: List[ProductImageSummary]
+        required: true
+        description: All images associated with this product, ordered by displayOrder.
+
+  - name: ProductPriceSnapshot
+    description: >
+      Authoritative price snapshot returned at checkout time. Used by the orders BC
+      to create immutable OrderLine.unitPrice values and prevent OWASP A04 monetary
+      fraud through stale or manipulated prices.
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+      - name: name
+        type: String(200)
+        required: true
+        description: Product name captured at snapshot time.
+      - name: price
+        type: Money
+        required: true
+        description: Current authoritative selling price of the product.
+      - name: status
+        type: ProductStatus
+        required: true
+        description: Product lifecycle status. Orders BC must reject non-ACTIVE products.
+
+
+# ─── AGGREGATES ──────────────────────────────────────────────────────────────
+
+aggregates:
+
+  - name: Category
+    root: Category
+    auditable: true
+    concurrencyControl: optimistic
+    description: >
+      Groups products under a commercial category (e.g. Dairy, Cleaning supplies).
+      Independent aggregate with its own lifecycle. Can exist before any products
+      are assigned to it. Invariant: category name must be unique across all categories.
+
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+        readOnly: true
+        defaultValue: generated
+        description: Unique identifier of the category.
+
+      - name: name
+        type: String(200)
+        required: true
+        unique: true
+        indexed: true
+        description: Display name of the category. Must be unique across all categories.
+        validations:
+          - minLength: 2
+
+      - name: description
+        type: String(500)
+        required: false
+        description: Optional descriptive text for the category.
+
+      - name: parentCategoryId
+        type: Uuid
+        required: false
+        references: Category
+        relationship: association
+        cardinality: manyToOne
+        description: >
+          ID of the parent category for hierarchical organization.
+          Null for root-level categories.
+
+      - name: status
+        type: CategoryStatus
+        required: true
+        readOnly: true
+        defaultValue: ACTIVE
+        description: Current lifecycle status. Defaults to ACTIVE on creation.
+
+    domainRules:
+      - id: CAT-RULE-005
+        description: Category name must be unique across all categories.
+        type: uniqueness
+        field: name
+        constraintName: uc_category_name
+        errorCode: CATEGORY_NAME_ALREADY_EXISTS
+
+      - id: CAT-RULE-006
+        description: >
+          A category cannot be deactivated if it has ACTIVE products assigned to it.
+          All active products must be reassigned or discontinued before deactivation.
+        type: statePrecondition
+        errorCode: CATEGORY_HAS_ACTIVE_PRODUCTS
+
+    domainMethods:
+      - name: create
+        signature: "create(name: String(200), description?: String(500), parentCategoryId?: Uuid): Category"
+        description: >
+          Factory method for a new category. Status defaults to ACTIVE.
+          Name uniqueness is enforced via CAT-RULE-005.
+        returns: Category
+        emits: null
+
+      - name: update
+        signature: "update(name?: String(200), description?: String(500), parentCategoryId?: Uuid): void"
+        description: >
+          Updates mutable fields of a category. Any combination of fields can be provided.
+          Name uniqueness re-validation applies only when name is provided.
+        returns: void
+        emits: null
+
+      - name: deactivate
+        signature: "deactivate(): void"
+        description: >
+          Transitions the category to INACTIVE status. Blocked by CAT-RULE-006 if the
+          category has active products assigned to it.
+        returns: void
+        emits: null
+
+      - name: reactivate
+        signature: "reactivate(): void"
+        description: Restores the category to ACTIVE status with no preconditions.
+        returns: void
+        emits: null
+
+
+  - name: Product
+    root: Product
+    auditable: true
+    concurrencyControl: optimistic
+    description: >
+      Represents a sellable item with its commercial information, pricing and lifecycle.
+      Starts as DRAFT and must be explicitly activated to become available for purchase.
+      DISCONTINUED is a terminal state — no modifications are allowed after discontinuation.
+
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+        readOnly: true
+        defaultValue: generated
+        description: Unique identifier of the product.
+
+      - name: name
+        type: String(200)
+        required: true
+        indexed: true
+        description: Commercial name of the product.
+        validations:
+          - minLength: 2
+
+      - name: sku
+        type: String(100)
+        required: true
+        unique: true
+        indexed: true
+        description: Stock-keeping unit code. Must be unique across the entire catalog.
+        validations:
+          - minLength: 1
+
+      - name: description
+        type: Text
+        required: false
+        description: Full product description shown on the product detail page.
+
+      - name: price
+        type: Money
+        required: true
+        description: Current authoritative selling price of the product.
+
+      - name: categoryId
+        type: Uuid
+        required: true
+        references: Category
+        relationship: association
+        cardinality: manyToOne
+        indexed: true
+        description: Reference to the category this product belongs to.
+
+      - name: status
+        type: ProductStatus
+        required: true
+        readOnly: true
+        defaultValue: DRAFT
+        description: Current lifecycle status. Defaults to DRAFT on creation.
+
+    entities:
+      - name: ProductImage
+        relationship: composition
+        cardinality: oneToMany
+        description: >
+          An image associated with a product. Only lives within the Product aggregate
+          boundary. Images do not have independent existence outside a product.
+        properties:
+          - name: id
+            type: Uuid
+            required: true
+            readOnly: true
+            defaultValue: generated
+            description: Unique identifier of the image.
+          - name: url
+            type: Url
+            required: true
+            description: URL of the image hosted in the media storage service.
+          - name: altText
+            type: String(200)
+            required: false
+            description: Accessible description of the image for screen readers.
+          - name: imageType
+            type: ImageType
+            required: true
+            description: Display role of the image within the product gallery.
+          - name: displayOrder
+            type: Integer
+            required: true
+            description: Ascending sort order in which the image appears in the gallery.
+            validations:
+              - positiveOrZero: true
+
+    domainRules:
+      - id: CAT-RULE-001
+        description: >
+          A product must have a non-empty name, a positive price, and be assigned to
+          a category with ACTIVE status before it can be activated. If the category
+          is INACTIVE, activation is blocked even if the product data is otherwise complete.
+        type: statePrecondition
+        errorCode: PRODUCT_NOT_READY_FOR_ACTIVATION
+
+      - id: CAT-RULE-002
+        description: SKU must be unique across all products in the catalog.
+        type: uniqueness
+        field: sku
+        constraintName: uc_product_sku
+        errorCode: PRODUCT_SKU_ALREADY_EXISTS
+
+      - id: CAT-RULE-003
+        description: >
+          A DISCONTINUED product is in a terminal state and cannot be modified.
+          Any attempt to update, add images, or change the status of a discontinued
+          product must be rejected.
+        type: terminalState
+        errorCode: PRODUCT_ALREADY_DISCONTINUED
+
+      - id: CAT-RULE-008
+        description: >
+          A product can only be assigned to a category in ACTIVE status.
+          Assigning a product to an INACTIVE category is not permitted.
+        type: crossAggregateConstraint
+        targetAggregate: Category
+        field: categoryId
+        expectedStatus: ACTIVE
+        errorCode: CATEGORY_NOT_ACTIVE
+
+    domainMethods:
+      - name: create
+        signature: "create(name: String(200), sku: String(100), description?: Text, price: Money, categoryId: Uuid): Product"
+        description: >
+          Factory method for a new product. Status defaults to DRAFT.
+          SKU uniqueness is enforced via CAT-RULE-002.
+          Category must be ACTIVE (CAT-RULE-008).
+        returns: Product
+        emits: null
+
+      - name: update
+        signature: "update(name?: String(200), description?: Text, price?: Money, categoryId?: Uuid): void"
+        description: >
+          Updates mutable fields of a product in DRAFT or ACTIVE status.
+          Blocked if the product is DISCONTINUED (CAT-RULE-003).
+          SKU uniqueness re-validation applies only when name is not the field being changed;
+          price and category updates have no uniqueness constraint.
+          CAT-RULE-008 applies only when categoryId is provided.
+        returns: void
+        emits: null
+
+      - name: activate
+        signature: "activate(): void"
+        description: >
+          Transitions the product from DRAFT to ACTIVE status, making it available for
+          purchase. Enforces CAT-RULE-001 (product readiness) including that the assigned
+          category must be ACTIVE.
+        returns: void
+        emits: ProductActivated
+
+      - name: discontinue
+        signature: "discontinue(): void"
+        description: >
+          Permanently retires the product. This action is irreversible (terminal state).
+          Triggers the ProductDiscontinued event so inventory closes the StockItem.
+        returns: void
+        emits: ProductDiscontinued
+
+      - name: addImage
+        signature: "addImage(url: Url, altText?: String(200), imageType: ImageType, displayOrder: Integer): void"
+        description: >
+          Adds a new image to the product gallery. Blocked if the product is DISCONTINUED
+          (CAT-RULE-003).
+        returns: void
+        emits: null
+
+      - name: removeImage
+        signature: "removeImage(imageId: Uuid): void"
+        description: >
+          Removes an image from the product gallery by its ID. Blocked if the product
+          is DISCONTINUED (CAT-RULE-003). The image must exist in the product's gallery.
+        returns: void
+        emits: null
+
+
+# ─── USE CASES ───────────────────────────────────────────────────────────────
+
+useCases:
+
+  # ── Category Management ────────────────────────────────────────────────────
+
+  - id: UC-CAT-001
+    name: CreateCategory
+    type: command
+    actor: admin
+    description: >
+      Creates a new product category. Status defaults to ACTIVE.
+      Name must be unique across all categories.
+    trigger:
+      kind: http
+      operationId: createCategory
+    aggregate: Category
+    method: create
+    input:
+      - name: name
+        type: String(200)
+        required: true
+        source: body
+      - name: description
+        type: String(500)
+        required: false
+        source: body
+      - name: parentCategoryId
+        type: Uuid
+        required: false
+        source: body
+    fkValidations:
+      - param: parentCategoryId
+        aggregate: Category
+        error: CATEGORY_NOT_FOUND
+        conditional: true
+    rules: [CAT-RULE-005]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: full
+    idempotency:
+      header: Idempotency-Key
+      ttl: PT24H
+      storage: cache
+
+  - id: UC-CAT-002
+    name: UpdateCategory
+    type: command
+    actor: admin
+    description: >
+      Updates mutable fields of an existing category. All fields are optional — only
+      provided fields are updated. Name uniqueness is re-validated when name is changed.
+    trigger:
+      kind: http
+      operationId: updateCategory
+    aggregate: Category
+    method: update
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: name
+        type: String(200)
+        required: false
+        source: body
+      - name: description
+        type: String(500)
+        required: false
+        source: body
+      - name: parentCategoryId
+        type: Uuid
+        required: false
+        source: body
+    notFoundError: CATEGORY_NOT_FOUND
+    fkValidations:
+      - param: parentCategoryId
+        aggregate: Category
+        error: CATEGORY_NOT_FOUND
+        conditional: true
+    rules: [CAT-RULE-005]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: scaffold
+    notes: >
+      CAT-RULE-005 (name uniqueness) check applies only when name is provided.
+      Handler must skip uniqueness check if name is not in the request body.
+
+  - id: UC-CAT-003
+    name: DeactivateCategory
+    type: command
+    actor: admin
+    description: >
+      Deactivates a category. Blocked if the category has any ACTIVE products assigned
+      to it. The admin must reassign or discontinue those products first.
+    trigger:
+      kind: http
+      operationId: deactivateCategory
+    aggregate: Category
+    method: deactivate
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: CATEGORY_NOT_FOUND
+    rules: [CAT-RULE-006]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: scaffold
+    notes: >
+      Handler must call productRepository.countActiveByCategoryId(id) before invoking
+      deactivate(). If count > 0, throw CATEGORY_HAS_ACTIVE_PRODUCTS (422).
+
+  - id: UC-CAT-004
+    name: ReactivateCategory
+    type: command
+    actor: admin
+    description: Restores a category to ACTIVE status with no preconditions.
+    trigger:
+      kind: http
+      operationId: reactivateCategory
+    aggregate: Category
+    method: reactivate
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: CATEGORY_NOT_FOUND
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: full
+
+  - id: UC-CAT-005
+    name: GetCategory
+    type: query
+    actor: customer
+    description: Retrieves full details of a single category by its ID.
+    trigger:
+      kind: http
+      operationId: getCategory
+    aggregate: Category
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: CATEGORY_NOT_FOUND
+    returns: CategoryResponse
+    public: true
+    implementation: full
+
+  - id: UC-CAT-006
+    name: ListCategories
+    type: query
+    actor: customer
+    description: >
+      Returns a paginated list of categories, optionally filtered by status or
+      parent category.
+    trigger:
+      kind: http
+      operationId: listCategories
+    aggregate: Category
+    input:
+      - name: status
+        type: CategoryStatus
+        required: false
+        source: query
+      - name: parentCategoryId
+        type: Uuid
+        required: false
+        source: query
+      - name: page
+        type: Integer
+        required: false
+        default: 1
+        source: query
+      - name: size
+        type: Integer
+        required: false
+        default: 20
+        max: 100
+        source: query
+    returns: Page[CategorySummary]
+    public: true
+    implementation: full
+    pagination:
+      defaultSize: 20
+      maxSize: 100
+      sortable: [name, createdAt]
+      defaultSort:
+        field: name
+        direction: ASC
+
+  # ── Product Management ─────────────────────────────────────────────────────
+
+  - id: UC-CAT-007
+    name: CreateProduct
+    type: command
+    actor: admin
+    description: >
+      Creates a new product in DRAFT status. SKU must be unique across the catalog.
+      The referenced category must exist and be in ACTIVE status.
+    trigger:
+      kind: http
+      operationId: createProduct
+    aggregate: Product
+    method: create
+    input:
+      - name: name
+        type: String(200)
+        required: true
+        source: body
+      - name: sku
+        type: String(100)
+        required: true
+        source: body
+      - name: description
+        type: Text
+        required: false
+        source: body
+      - name: price
+        type: Money
+        required: true
+        source: body
+      - name: categoryId
+        type: Uuid
+        required: true
+        source: body
+    fkValidations:
+      - param: categoryId
+        aggregate: Category
+        error: CATEGORY_NOT_FOUND
+    rules: [CAT-RULE-002, CAT-RULE-008]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: scaffold
+    idempotency:
+      header: Idempotency-Key
+      ttl: PT24H
+      storage: cache
+    notes: >
+      Handler must verify CAT-RULE-008 by loading the Category and checking status == ACTIVE
+      before calling Product.create(). The fkValidations check ensures the category exists.
+
+  - id: UC-CAT-008
+    name: UpdateProduct
+    type: command
+    actor: admin
+    description: >
+      Updates mutable fields of a product. Allowed in DRAFT and ACTIVE status only.
+      Blocked entirely if the product is DISCONTINUED (CAT-RULE-003).
+      All fields are optional — only provided fields are updated.
+    trigger:
+      kind: http
+      operationId: updateProduct
+    aggregate: Product
+    method: update
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: name
+        type: String(200)
+        required: false
+        source: body
+      - name: description
+        type: Text
+        required: false
+        source: body
+      - name: price
+        type: Money
+        required: false
+        source: body
+      - name: categoryId
+        type: Uuid
+        required: false
+        source: body
+    notFoundError: PRODUCT_NOT_FOUND
+    fkValidations:
+      - param: categoryId
+        aggregate: Category
+        error: CATEGORY_NOT_FOUND
+        conditional: true
+    rules: [CAT-RULE-002, CAT-RULE-003, CAT-RULE-008]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: scaffold
+    notes: >
+      Evaluation order: (1) load product — 404 if not found; (2) CAT-RULE-003 terminal state
+      check; (3) if categoryId provided: verify category exists (fkValidation) and is ACTIVE
+      (CAT-RULE-008); (4) call product.update() with provided fields only.
+
+  - id: UC-CAT-009
+    name: ActivateProduct
+    type: command
+    actor: admin
+    description: >
+      Transitions a product from DRAFT to ACTIVE status, making it available for purchase.
+      Enforces CAT-RULE-001: product must have a name, positive price, and be assigned to
+      an ACTIVE category. Emits ProductActivated so inventory creates a StockItem.
+    trigger:
+      kind: http
+      operationId: activateProduct
+    aggregate: Product
+    method: activate
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: PRODUCT_NOT_FOUND
+    rules: [CAT-RULE-001, CAT-RULE-002]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: scaffold
+    notes: >
+      Handler must load the Category referenced by product.categoryId and verify
+      its status == ACTIVE before calling activate(). If category is INACTIVE,
+      throw PRODUCT_NOT_READY_FOR_ACTIVATION.
+
+  - id: UC-CAT-010
+    name: DiscontinueProduct
+    type: command
+    actor: admin
+    description: >
+      Permanently retires a product. Irreversible action.
+      Emits ProductDiscontinued so inventory closes the associated StockItem.
+    trigger:
+      kind: http
+      operationId: discontinueProduct
+    aggregate: Product
+    method: discontinue
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: PRODUCT_NOT_FOUND
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: full
+
+  - id: UC-CAT-011
+    name: AddProductImage
+    type: command
+    actor: admin
+    description: >
+      Adds a new image to a product's gallery. Blocked if the product is DISCONTINUED.
+    trigger:
+      kind: http
+      operationId: addProductImage
+    aggregate: Product
+    method: addImage
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: url
+        type: Url
+        required: true
+        source: body
+      - name: altText
+        type: String(200)
+        required: false
+        source: body
+      - name: imageType
+        type: ImageType
+        required: true
+        source: body
+      - name: displayOrder
+        type: Integer
+        required: true
+        source: body
+    notFoundError: PRODUCT_NOT_FOUND
+    rules: [CAT-RULE-003]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: full
+
+  - id: UC-CAT-012
+    name: RemoveProductImage
+    type: command
+    actor: admin
+    description: >
+      Removes an image from a product's gallery. Blocked if the product is DISCONTINUED.
+      The image must exist in the product's gallery.
+    trigger:
+      kind: http
+      operationId: removeProductImage
+    aggregate: Product
+    method: removeImage
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: imageId
+        type: Uuid
+        required: true
+        source: path
+    notFoundError: PRODUCT_NOT_FOUND
+    rules: [CAT-RULE-003]
+    authorization:
+      rolesAnyOf: [ROLE_ADMIN]
+    implementation: full
+
+  - id: UC-CAT-013
+    name: GetProduct
+    type: query
+    actor: customer
+    description: >
+      Retrieves full details of a product by its ID, including all associated images.
+      Publicly accessible — no authentication required.
+    trigger:
+      kind: http
+      operationId: getProduct
+    aggregate: Product
+    input:
+      - name: id
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: PRODUCT_NOT_FOUND
+    returns: ProductDetail
+    public: true
+    implementation: full
+
+  - id: UC-CAT-014
+    name: ListProducts
+    type: query
+    actor: customer
+    description: >
+      Returns a paginated list of products. Supports filtering by category, lifecycle
+      status, and free-text search across name and SKU.
+    trigger:
+      kind: http
+      operationId: listProducts
+    aggregate: Product
+    input:
+      - name: categoryId
+        type: Uuid
+        required: false
+        source: query
+      - name: status
+        type: ProductStatus
+        required: false
+        source: query
+      - name: search
+        type: String(200)
+        required: false
+        source: query
+      - name: page
+        type: Integer
+        required: false
+        default: 1
+        source: query
+      - name: size
+        type: Integer
+        required: false
+        default: 20
+        max: 100
+        source: query
+    returns: Page[ProductSummary]
+    public: true
+    implementation: full
+    pagination:
+      defaultSize: 20
+      maxSize: 100
+      sortable: [name, createdAt]
+      defaultSort:
+        field: createdAt
+        direction: DESC
+
+  - id: UC-CAT-015
+    name: ValidateProductsAndPrices
+    type: query
+    actor: system
+    description: >
+      Returns the current authoritative price for each product in the provided list.
+      Validates that every requested product exists and is ACTIVE. Used by the orders BC
+      at checkout to construct the monetary snapshot (prevents OWASP A04 price manipulation).
+      The orders BC must reject any snapshot that contains a non-ACTIVE product.
+    trigger:
+      kind: http
+      operationId: validateProductsAndPrices
+    aggregate: Product
+    input:
+      - name: productIds
+        type: List[Uuid]
+        required: true
+        source: body
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER, ROLE_ADMIN]
+    returns: List[ProductPriceSnapshot]
+    implementation: scaffold
+    notes: >
+      Handler loads all products by productIds in a single batch query (findAllByIdIn).
+      Returns a snapshot for every requested ID — including non-ACTIVE ones so the
+      caller can detect and reject them. Orders BC is responsible for verifying all
+      returned statuses are ACTIVE before committing the checkout.
+
+
+# ─── REPOSITORIES ────────────────────────────────────────────────────────────
+
+repositories:
+
+  - aggregate: Category
+    methods:
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: Category?
+        derivedFrom: implicit
+
+      - name: findByName
+        params:
+          - name: name
+            type: String(200)
+        returns: Category?
+        derivedFrom: CAT-RULE-005
+
+      - name: save
+        params:
+          - name: category
+            type: Category
+        returns: void
+        derivedFrom: implicit
+    queryMethods:
+      - name: list
+        params:
+          - name: status
+            type: CategoryStatus
+            required: false
+          - name: parentCategoryId
+            type: Uuid
+            required: false
+          - name: page
+            type: PageRequest
+            required: true
+        returns: Page[Category]
+        derivedFrom: openapi:listCategories
+        defaultSort:
+          field: name
+          direction: ASC
+        sortable:
+          - name
+          - createdAt
+
+  - aggregate: Product
+    methods:
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: Product?
+        derivedFrom: implicit
+
+      - name: findBySku
+        params:
+          - name: sku
+            type: String(100)
+        returns: Product?
+        derivedFrom: CAT-RULE-002
+
+      - name: findAllByIdIn
+        params:
+          - name: ids
+            type: List[Uuid]
+        returns: List[Product]
+        derivedFrom: implicit
+        description: >
+          Batch load of multiple products by their IDs. Used by ValidateProductsAndPrices
+          to retrieve all cart products in a single query.
+
+      - name: countActiveByCategoryId
+        params:
+          - name: categoryId
+            type: Uuid
+        returns: Long
+        derivedFrom: CAT-RULE-006
+        description: >
+          Counts ACTIVE products assigned to the given category. Used before deactivating
+          a category to enforce CAT-RULE-006.
+
+      - name: save
+        params:
+          - name: product
+            type: Product
+        returns: void
+        derivedFrom: implicit
+
+    queryMethods:
+      - name: list
+        params:
+          - name: categoryId
+            type: Uuid
+            required: false
+          - name: status
+            type: ProductStatus
+            required: false
+          - name: search
+            type: String(200)
+            required: false
+            filterOn: [name, sku]
+            operator: LIKE_CONTAINS
+          - name: page
+            type: PageRequest
+            required: true
+        returns: Page[Product]
+        derivedFrom: openapi:listProducts
+        defaultSort:
+          field: createdAt
+          direction: DESC
+        sortable:
+          - name
+          - createdAt
+
+
+# ─── ERRORS ──────────────────────────────────────────────────────────────────
+
+errors:
+
+  - code: CATEGORY_NOT_FOUND
+    httpStatus: 404
+    description: The requested category does not exist.
+
+  - code: CATEGORY_NAME_ALREADY_EXISTS
+    httpStatus: 409
+    description: A category with the provided name already exists.
+    messageTemplate: "A category with name '{name}' already exists."
+    args:
+      - name: name
+        type: String
+
+  - code: CATEGORY_HAS_ACTIVE_PRODUCTS
+    httpStatus: 422
+    description: >
+      The category cannot be deactivated because it has active products assigned to it.
+      Reassign or discontinue those products before deactivating the category.
+
+  - code: PRODUCT_NOT_FOUND
+    httpStatus: 404
+    description: The requested product does not exist.
+
+  - code: PRODUCT_SKU_ALREADY_EXISTS
+    httpStatus: 409
+    description: A product with the provided SKU already exists in the catalog.
+    messageTemplate: "A product with SKU '{sku}' already exists."
+    args:
+      - name: sku
+        type: String
+
+  - code: PRODUCT_NOT_READY_FOR_ACTIVATION
+    httpStatus: 422
+    description: >
+      The product cannot be activated. Ensure it has a name, a positive price,
+      and is assigned to a category with ACTIVE status.
+
+  - code: PRODUCT_ALREADY_DISCONTINUED
+    httpStatus: 409
+    description: >
+      The product has been permanently discontinued and cannot be modified or
+      re-activated. This is a terminal state.
+
+  - code: CATEGORY_NOT_ACTIVE
+    httpStatus: 422
+    description: >
+      The specified category is in INACTIVE status. Products can only be assigned
+      to or activated under a category with ACTIVE status.
+
+  - code: IMAGE_NOT_FOUND
+    httpStatus: 404
+    description: >
+      The requested product image does not exist within this product's gallery.
+    usedFor: manual
+
+
+# ─── INTEGRATIONS ────────────────────────────────────────────────────────────
+
+integrations:
+  inbound:
+    - name: orders
+      type: internalBc
+      pattern: customerSupplier
+      protocol: http
+      description: >
+        Orders BC queries catalog at checkout to obtain the authoritative price
+        snapshot for each product in the cart. Mandatory HTTP synchronous call
+        for monetary integrity — prevents OWASP A04 fraud via stale or manipulated prices.
+      operations:
+        - name: validateProductsAndPrices
+          definedIn: catalog-internal-api.yaml
+          endpoint: POST /products/price-snapshot
+
+
+# ─── DOMAIN EVENTS ───────────────────────────────────────────────────────────
+
+domainEvents:
+
+  published:
+
+    - name: ProductActivated
+      description: >
+        Emitted when a product transitions to ACTIVE status. Consumed by the inventory BC
+        to create a StockItem for this product so it can be tracked in stock operations.
+      version: 1
+      scope: integration
+      payload:
+        - name: productId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: sku
+          type: String(100)
+          source: aggregate
+        - name: name
+          type: String(200)
+          source: aggregate
+        - name: categoryId
+          type: Uuid
+          source: aggregate
+
+    - name: ProductDiscontinued
+      description: >
+        Emitted when a product is permanently discontinued. Consumed by the inventory BC
+        to permanently close the product's StockItem, preventing future reservations.
+      version: 1
+      scope: integration
+      payload:
+        - name: productId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: sku
+          type: String(100)
+          source: aggregate

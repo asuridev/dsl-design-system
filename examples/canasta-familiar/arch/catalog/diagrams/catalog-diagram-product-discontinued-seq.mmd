@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant Admin
+    participant CatalogAPI as Catalog API
+    participant ProductAggregate as Product Aggregate
+    participant Outbox
+    participant Broker as Message Broker
+    participant Inventory as Inventory BC
+
+    Admin->>CatalogAPI: PATCH /products/{id}/discontinue
+    CatalogAPI->>ProductAggregate: load Product by id
+    CatalogAPI->>ProductAggregate: discontinue()
+    ProductAggregate-->>CatalogAPI: status = DISCONTINUED, event ProductDiscontinued raised
+    CatalogAPI->>Outbox: persist ProductDiscontinued\n{ productId, sku }
+    CatalogAPI-->>Admin: 204 No Content
+
+    Outbox->>Broker: publish to catalog.product.discontinued
+    Broker->>Inventory: deliver ProductDiscontinued
+    Inventory->>Inventory: permanently close StockItem for productId

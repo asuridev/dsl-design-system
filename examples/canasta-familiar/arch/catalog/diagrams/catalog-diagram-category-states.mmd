@@ -1,0 +1,6 @@
+stateDiagram-v2
+    [*] --> ACTIVE : UC-CAT-001 CreateCategory\n(defaults to ACTIVE)
+
+    ACTIVE --> INACTIVE : UC-CAT-003 DeactivateCategory\n[CAT-RULE-006: no active products assigned]
+
+    INACTIVE --> ACTIVE : UC-CAT-004 ReactivateCategory

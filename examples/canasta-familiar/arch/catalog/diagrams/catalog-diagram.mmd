@@ -1,0 +1,45 @@
+flowchart TD
+    subgraph ADMIN["👤 Admin"]
+        A1["CreateCategory\nUC-CAT-001"]
+        A2["UpdateCategory\nUC-CAT-002"]
+        A3["DeactivateCategory\nUC-CAT-003"]
+        A4["ReactivateCategory\nUC-CAT-004"]
+        A7["CreateProduct\nUC-CAT-007"]
+        A8["UpdateProduct\nUC-CAT-008"]
+        A9["ActivateProduct\nUC-CAT-009"]
+        A10["DiscontinueProduct\nUC-CAT-010"]
+        A11["AddProductImage\nUC-CAT-011"]
+        A12["RemoveProductImage\nUC-CAT-012"]
+    end
+
+    subgraph CUSTOMER["🛍️ Customer (Public)"]
+        C5["GetCategory\nUC-CAT-005"]
+        C6["ListCategories\nUC-CAT-006"]
+        C13["GetProduct\nUC-CAT-013"]
+        C14["ListProducts\nUC-CAT-014"]
+    end
+
+    subgraph SYSTEM["⚙️ System (orders BC)"]
+        S15["ValidateProductsAndPrices\nUC-CAT-015"]
+    end
+
+    subgraph CATALOG["📦 Catalog BC"]
+        CAT["Category Aggregate"]
+        PRD["Product Aggregate"]
+        IMG["ProductImage Entity"]
+    end
+
+    subgraph EVENTS["📨 Domain Events"]
+        E1["ProductActivated\n→ inventory"]
+        E2["ProductDiscontinued\n→ inventory"]
+    end
+
+    ADMIN --> CAT
+    ADMIN --> PRD
+    ADMIN --> IMG
+    CUSTOMER --> CAT
+    CUSTOMER --> PRD
+    SYSTEM --> PRD
+
+    A9 --> E1
+    A10 --> E2

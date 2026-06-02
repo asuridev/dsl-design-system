@@ -1,0 +1,176 @@
+asyncapi: 2.6.0
+info:
+  title: Catalog BC — Async API
+  version: 1.0.0
+  description: >
+    Contratos de mensajería asíncrona del BC catalog.
+    El BC catalog publica dos eventos de dominio hacia el message broker.
+    No consume ningún evento de otros BCs.
+
+servers:
+  message-broker:
+    url: "{brokerUrl}"
+    protocol: amqp
+    description: Message broker compartido del sistema (activeMQ / RabbitMQ)
+    variables:
+      brokerUrl:
+        description: URL del broker, configurada por entorno
+
+defaultContentType: application/json
+
+channels:
+  catalog.product.activated:
+    description: >
+      Publicado cuando un producto transiciona de DRAFT a ACTIVE.
+      Consumido por inventory para crear un StockItem para el producto activado.
+    publish:
+      operationId: onProductActivated
+      summary: Producto activado — disponible para venta
+      tags:
+        - name: catalog
+        - name: product-lifecycle
+      message:
+        $ref: '#/components/messages/ProductActivatedMessage'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: catalog.events
+          type: topic
+          durable: true
+          autoDelete: false
+
+  catalog.product.discontinued:
+    description: >
+      Publicado cuando un producto es retirado permanentemente.
+      Consumido por inventory para cerrar permanentemente el StockItem del producto.
+    publish:
+      operationId: onProductDiscontinued
+      summary: Producto discontinuado — retirado permanentemente del catálogo
+      tags:
+        - name: catalog
+        - name: product-lifecycle
+      message:
+        $ref: '#/components/messages/ProductDiscontinuedMessage'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: catalog.events
+          type: topic
+          durable: true
+          autoDelete: false
+
+components:
+  messages:
+    ProductActivatedMessage:
+      name: ProductActivated
+      title: Producto Activado
+      summary: Evento emitido cuando un producto pasa a estado ACTIVE
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          eventId:
+            type: string
+            format: uuid
+            description: Identificador único del evento (para idempotencia del consumidor)
+          eventType:
+            type: string
+            const: ProductActivated
+          occurredAt:
+            type: string
+            format: date-time
+          version:
+            type: integer
+            const: 1
+          sourceBC:
+            type: string
+            const: catalog
+      payload:
+        $ref: '#/components/schemas/ProductActivatedPayload'
+      examples:
+        - name: Leche activada
+          payload:
+            productId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+            sku: "LAC-001"
+            name: "Leche Entera 1L"
+            categoryId: "a1b2c3d4-1234-5678-abcd-ef0123456789"
+          headers:
+            eventId: "evt-uuid-001"
+            eventType: ProductActivated
+            occurredAt: "2026-05-15T10:30:00Z"
+            version: 1
+            sourceBC: catalog
+
+    ProductDiscontinuedMessage:
+      name: ProductDiscontinued
+      title: Producto Discontinuado
+      summary: Evento emitido cuando un producto es retirado permanentemente
+      contentType: application/json
+      headers:
+        type: object
+        properties:
+          eventId:
+            type: string
+            format: uuid
+          eventType:
+            type: string
+            const: ProductDiscontinued
+          occurredAt:
+            type: string
+            format: date-time
+          version:
+            type: integer
+            const: 1
+          sourceBC:
+            type: string
+            const: catalog
+      payload:
+        $ref: '#/components/schemas/ProductDiscontinuedPayload'
+      examples:
+        - name: Leche discontinuada
+          payload:
+            productId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+            sku: "LAC-001"
+          headers:
+            eventId: "evt-uuid-002"
+            eventType: ProductDiscontinued
+            occurredAt: "2026-05-15T14:00:00Z"
+            version: 1
+            sourceBC: catalog
+
+  schemas:
+    ProductActivatedPayload:
+      type: object
+      required: [productId, sku, name, categoryId]
+      properties:
+        productId:
+          type: string
+          format: uuid
+          description: ID del producto activado (mapeado desde Product.id)
+        sku:
+          type: string
+          description: SKU del producto
+          example: "LAC-001"
+        name:
+          type: string
+          description: Nombre comercial del producto
+          example: "Leche Entera 1L"
+        categoryId:
+          type: string
+          format: uuid
+          description: ID de la categoría a la que pertenece el producto
+
+    ProductDiscontinuedPayload:
+      type: object
+      required: [productId, sku]
+      properties:
+        productId:
+          type: string
+          format: uuid
+          description: ID del producto discontinuado (mapeado desde Product.id)
+        sku:
+          type: string
+          description: SKU del producto
+          example: "LAC-001"

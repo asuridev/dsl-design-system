@@ -1,0 +1,857 @@
+openapi: 3.1.0
+info:
+  title: Catalog BC — Public API
+  version: 1.0.0
+  description: >
+    API pública del BC catalog de Canasta Familiar.
+    Expone operaciones de consulta para clientes (sin autenticación)
+    y operaciones de gestión para administradores (ROLE_ADMIN).
+servers:
+  - url: /api/catalog/v1
+
+tags:
+  - name: categories
+    description: Gestión del ciclo de vida de categorías
+  - name: products
+    description: Gestión del ciclo de vida de productos y sus imágenes
+
+paths:
+  # ─── CATEGORIES ───────────────────────────────────────────────────────────
+
+  /categories:
+    post:
+      operationId: createCategory
+      summary: Crear categoría
+      description: Crea una nueva categoría con status ACTIVE. El nombre debe ser único.
+      tags: [categories]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Categoría creada exitosamente
+          headers:
+            Location:
+              description: URL de la nueva categoría
+              schema:
+                type: string
+                example: /api/catalog/v1/categories/3fa85f64-5717-4562-b3fc-2c963f66afa6
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+    get:
+      operationId: listCategories
+      summary: Listar categorías
+      description: Retorna una lista paginada de categorías. Endpoint público.
+      tags: [categories]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/CategoryStatus'
+        - name: parentCategoryId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, createdAt, name_desc, createdAt_desc]
+            default: name
+      responses:
+        '200':
+          description: Lista paginada de categorías
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /categories/{id}:
+    get:
+      operationId: getCategory
+      summary: Obtener categoría por ID
+      description: Retorna el detalle completo de una categoría. Endpoint público.
+      tags: [categories]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Detalle de la categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateCategory
+      summary: Actualizar categoría
+      description: Actualiza uno o más campos de una categoría existente.
+      tags: [categories]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '204':
+          description: Categoría actualizada
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /categories/{id}/deactivate:
+    patch:
+      operationId: deactivateCategory
+      summary: Desactivar categoría
+      description: Transiciona la categoría a estado INACTIVE. Requiere que no tenga productos ACTIVE.
+      tags: [categories]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Categoría desactivada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /categories/{id}/reactivate:
+    patch:
+      operationId: reactivateCategory
+      summary: Reactivar categoría
+      description: Restaura la categoría al estado ACTIVE.
+      tags: [categories]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Categoría reactivada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ─── PRODUCTS ─────────────────────────────────────────────────────────────
+
+  /products:
+    post:
+      operationId: createProduct
+      summary: Crear producto
+      description: >
+        Crea un nuevo producto en estado DRAFT. El SKU debe ser único.
+        La categoría asignada debe existir y estar en estado ACTIVE.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Producto creado exitosamente
+          headers:
+            Location:
+              description: URL del nuevo producto
+              schema:
+                type: string
+                example: /api/catalog/v1/products/3fa85f64-5717-4562-b3fc-2c963f66afa6
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+    get:
+      operationId: listProducts
+      summary: Listar productos
+      description: Retorna una lista paginada de productos con filtros opcionales. Endpoint público.
+      tags: [products]
+      parameters:
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProductStatus'
+        - name: search
+          in: query
+          required: false
+          description: Búsqueda por texto en nombre y SKU (LIKE_CONTAINS, case-insensitive)
+          schema:
+            type: string
+            maxLength: 200
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, name_desc, createdAt, createdAt_desc, price, price_desc]
+            default: createdAt_desc
+      responses:
+        '200':
+          description: Lista paginada de productos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      summary: Obtener producto por ID
+      description: Retorna el detalle completo de un producto incluyendo todas sus imágenes. Endpoint público.
+      tags: [products]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Detalle del producto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateProduct
+      summary: Actualizar producto
+      description: >
+        Actualiza uno o más campos de un producto. No aplicable a productos DISCONTINUED.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '204':
+          description: Producto actualizado
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /products/{id}/activate:
+    patch:
+      operationId: activateProduct
+      summary: Activar producto
+      description: >
+        Transiciona el producto de DRAFT a ACTIVE.
+        Requiere que el producto tenga nombre, precio positivo y categoría ACTIVE.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Producto activado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /products/{id}/discontinue:
+    patch:
+      operationId: discontinueProduct
+      summary: Discontinuar producto
+      description: Retira permanentemente el producto. Acción irreversible. Emite ProductDiscontinued.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Producto discontinuado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products/{id}/images:
+    post:
+      operationId: addProductImage
+      summary: Agregar imagen al producto
+      description: Agrega una nueva imagen al gallery de un producto. No aplicable a productos DISCONTINUED.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddProductImageRequest'
+      responses:
+        '201':
+          description: Imagen agregada exitosamente
+          headers:
+            Location:
+              description: URL de la nueva imagen
+              schema:
+                type: string
+                example: /api/catalog/v1/products/3fa85f64/images/img-id
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /products/{id}/images/{imageId}:
+    delete:
+      operationId: removeProductImage
+      summary: Eliminar imagen del producto
+      description: Elimina una imagen del gallery de un producto. No aplicable a productos DISCONTINUED.
+      tags: [products]
+      security:
+        - bearerAuth: [ROLE_ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Imagen eliminada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+      description: Clave idempotente para prevenir duplicados en creación de recursos.
+
+  responses:
+    BadRequest:
+      description: La solicitud contiene parámetros inválidos o mal formados
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Token de autenticación ausente o inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: El usuario autenticado no tiene permisos para esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: El recurso solicitado no existe
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            category_not_found:
+              value:
+                code: CATEGORY_NOT_FOUND
+                message: The requested category does not exist.
+            product_not_found:
+              value:
+                code: PRODUCT_NOT_FOUND
+                message: The requested product does not exist.
+            image_not_found:
+              value:
+                code: IMAGE_NOT_FOUND
+                message: The requested product image does not exist.
+
+    Conflict:
+      description: El recurso ya existe o el estado actual impide la operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            sku_exists:
+              value:
+                code: PRODUCT_SKU_ALREADY_EXISTS
+                message: A product with SKU 'LAC-001' already exists.
+            name_exists:
+              value:
+                code: CATEGORY_NAME_ALREADY_EXISTS
+                message: A category with name 'Lácteos' already exists.
+            product_discontinued:
+              value:
+                code: PRODUCT_ALREADY_DISCONTINUED
+                message: The product has been permanently discontinued and cannot be modified.
+
+    UnprocessableEntity:
+      description: La solicitud es semánticamente inválida según las reglas de negocio
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            category_not_active:
+              value:
+                code: CATEGORY_NOT_ACTIVE
+                message: The specified category is not ACTIVE.
+            product_not_ready:
+              value:
+                code: PRODUCT_NOT_READY_FOR_ACTIVATION
+                message: The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category.
+            category_has_products:
+              value:
+                code: CATEGORY_HAS_ACTIVE_PRODUCTS
+                message: The category cannot be deactivated because it has active products assigned to it.
+
+  schemas:
+    # ─── ENUMS ──────────────────────────────────────────────────────────────
+
+    CategoryStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+      description: Estado del ciclo de vida de una categoría
+
+    ProductStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, DISCONTINUED]
+      description: Estado del ciclo de vida de un producto
+
+    ImageType:
+      type: string
+      enum: [MAIN, GALLERY, THUMBNAIL]
+      description: Rol de visualización de una imagen de producto
+
+    # ─── VALUE OBJECTS ──────────────────────────────────────────────────────
+
+    Money:
+      type: object
+      description: Monto monetario exacto con su código de moneda ISO 4217
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          description: Monto exacto en formato decimal con 4 decimales. Siempre positivo.
+          example: "3500.0000"
+          pattern: '^[0-9]+\.[0-9]{1,4}$'
+        currency:
+          type: string
+          description: Código de moneda ISO 4217
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          example: "COP"
+
+    # ─── REQUEST BODIES ─────────────────────────────────────────────────────
+
+    CreateCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nombre único de la categoría
+          example: "Lácteos"
+        description:
+          type: string
+          maxLength: 500
+          description: Descripción opcional de la categoría
+        parentCategoryId:
+          type: string
+          format: uuid
+          description: ID de la categoría padre para jerarquía. Null para categorías raíz.
+
+    UpdateCategoryRequest:
+      type: object
+      description: Todos los campos son opcionales. Solo se actualizan los campos provistos.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 500
+        parentCategoryId:
+          type: string
+          format: uuid
+          nullable: true
+
+    CreateProductRequest:
+      type: object
+      required: [name, sku, price, categoryId]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Leche Entera 1L"
+        sku:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "LAC-001"
+        description:
+          type: string
+          description: Descripción completa del producto
+        price:
+          $ref: '#/components/schemas/Money'
+        categoryId:
+          type: string
+          format: uuid
+
+    UpdateProductRequest:
+      type: object
+      description: Todos los campos son opcionales. Solo se actualizan los campos provistos.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        categoryId:
+          type: string
+          format: uuid
+
+    AddProductImageRequest:
+      type: object
+      required: [url, imageType, displayOrder]
+      properties:
+        url:
+          type: string
+          format: uri
+          example: "https://cdn.canastafamiliar.co/images/leche-1l.jpg"
+        altText:
+          type: string
+          maxLength: 200
+        imageType:
+          $ref: '#/components/schemas/ImageType'
+        displayOrder:
+          type: integer
+          minimum: 0
+          description: Orden de visualización en el gallery (0 = primero)
+
+    # ─── RESPONSE BODIES ────────────────────────────────────────────────────
+
+    CategoryResponse:
+      type: object
+      required: [id, name, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 500
+        parentCategoryId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/CategoryStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CategorySummary:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        parentCategoryId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/CategoryStatus'
+
+    CategoryPage:
+      type: object
+      required: [data, total, page, size, pages]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategorySummary'
+        total:
+          type: integer
+          description: Total de registros que coinciden con los filtros
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+
+    ProductImageSummary:
+      type: object
+      required: [id, url, imageType, displayOrder]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        altText:
+          type: string
+          nullable: true
+        imageType:
+          $ref: '#/components/schemas/ImageType'
+        displayOrder:
+          type: integer
+
+    ProductSummary:
+      type: object
+      required: [id, name, sku, price, status, categoryId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        categoryId:
+          type: string
+          format: uuid
+
+    ProductDetail:
+      type: object
+      required: [id, name, sku, price, status, categoryId, images, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sku:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        categoryId:
+          type: string
+          format: uuid
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImageSummary'
+          description: Imágenes ordenadas por displayOrder ASC
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProductSummaryPage:
+      type: object
+      required: [data, total, page, size, pages]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductSummary'
+        total:
+          type: integer
+        page:
+          type: integer
+        size:
+          type: integer
+        pages:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Código de error de negocio
+          example: PRODUCT_NOT_FOUND
+        message:
+          type: string
+          description: Descripción legible del error
+        details:
+          type: object
+          description: Contexto adicional del error (campo y valor que fallaron)

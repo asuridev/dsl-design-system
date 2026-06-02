@@ -1,0 +1,40 @@
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant OrdersHandler as orders\nCheckoutHandler
+    participant CartRepo as CartRepository
+    participant AddrRepo as CustomerAddressRepository
+    participant CatalogACL as CatalogACL\n(anti-corruption layer)
+    participant CatalogAPI as catalog BC\n(internal API)
+    participant OrderRepo as OrderRepository
+    participant Outbox as Outbox\n(orders)
+
+    Customer->>OrdersHandler: POST /carts/{cartId}/checkout\n{ deliveryAddressId }
+
+    OrdersHandler->>CartRepo: findById(cartId)
+    CartRepo-->>OrdersHandler: Cart (OPEN, items=[p1×2, p2×1])
+
+    Note over OrdersHandler: ownership check: cart.customerId == JWT.sub
+
+    OrdersHandler->>AddrRepo: findByAddressId(deliveryAddressId)
+    AddrRepo-->>OrdersHandler: CustomerAddress (deleted=false)
+
+    Note over OrdersHandler: enforce ORD-RULE-002 (cart OPEN)\nenforce ORD-RULE-001 (not empty)
+
+    OrdersHandler->>CatalogACL: validateProductsAndPrices([p1, p2])
+    CatalogACL->>CatalogAPI: POST /internal/products/price-snapshot\n{ productIds: [p1, p2] }
+    CatalogAPI-->>CatalogACL: [{ productId:p1, name:.., price:15000 COP, status:ACTIVE },\n { productId:p2, name:.., price:8500 COP, status:ACTIVE }]
+    CatalogACL-->>OrdersHandler: List[PriceSnapshot]
+
+    Note over OrdersHandler: All products ACTIVE ✓\nBuild OrderLineSnapshots\nCompute total = 38500 COP
+
+    OrdersHandler->>OrdersHandler: cart.checkout() → status=CHECKED_OUT
+    OrdersHandler->>OrdersHandler: Order.create(paymentMethod, addressId,\naddressSnapshot, total, lines)\n→ emits OrderPlaced (in-memory)
+
+    OrdersHandler->>CartRepo: save(cart CHECKED_OUT)
+    OrdersHandler->>OrderRepo: save(order PENDING_PAYMENT)
+    OrderRepo->>Outbox: INSERT OrderPlaced event
+
+    OrdersHandler-->>Customer: 201 Created\nLocation: /orders/{orderId}
+
+    Note over Outbox: Outbox relay delivers OrderPlaced\nto message broker → inventory consumes

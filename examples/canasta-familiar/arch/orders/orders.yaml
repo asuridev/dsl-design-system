@@ -1,0 +1,1661 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BOUNDED CONTEXT: orders
+# Canasta Familiar — Paso 2: Diseño Táctico
+# Versión: 2.0.0 | Fecha: 2026-05-15
+# ─────────────────────────────────────────────────────────────────────────────
+
+bc: orders
+type: core
+description: >
+  Manages the full order lifecycle from cart creation through checkout, payment
+  confirmation, delivery tracking and order completion. Validates prices against
+  catalog via HTTP at checkout (monetary snapshot — OWASP A04). Maintains a local
+  read model of customer delivery addresses fed by CustomerAddressUpdated events
+  from the customers BC. Coordinator of the CheckoutSaga.
+
+
+# ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enums:
+
+  - name: OrderStatus
+    description: Lifecycle states of an Order aggregate.
+    values:
+      - value: PENDING_PAYMENT
+        description: >
+          Order has been placed and is awaiting payment authorization.
+          The CheckoutSaga is in progress (stock reserved, payment being processed).
+        transitions:
+          - to: CONFIRMED
+            triggeredBy: UC-ORD-020 ConfirmOrder
+            condition: ORD-RULE-008
+            rules: [ORD-RULE-008]
+            emits: OrderConfirmed
+          - to: CANCELLED
+            triggeredBy: UC-ORD-012 CancelOrder
+            condition: ORD-RULE-005
+            rules: [ORD-RULE-005]
+            emits: OrderCancelled
+          - to: CANCELLED
+            triggeredBy: UC-ORD-021 CancelOrderOnStockFailed
+            condition: none
+            rules: []
+            emits: OrderCancelled
+          - to: CANCELLED
+            triggeredBy: UC-ORD-022 CancelOrderOnPaymentFailed
+            condition: none
+            rules: []
+            emits: OrderCancelled
+
+      - value: CONFIRMED
+        description: >
+          Order has been confirmed after successful payment. Delivery order is
+          being arranged by the delivery BC.
+        transitions:
+          - to: IN_DELIVERY
+            triggeredBy: UC-ORD-023 SetOrderInDelivery
+            condition: ORD-RULE-009
+            rules: [ORD-RULE-009]
+            emits: null
+          - to: CANCELLED
+            triggeredBy: UC-ORD-012 CancelOrder
+            condition: ORD-RULE-005
+            rules: [ORD-RULE-005]
+            emits: OrderCancelled
+
+      - value: IN_DELIVERY
+        description: The order has been picked up by a courier and is on its way to the customer.
+        transitions:
+          - to: DELIVERED
+            triggeredBy: UC-ORD-024 CompleteDelivery
+            condition: ORD-RULE-010
+            rules: [ORD-RULE-010]
+            emits: null
+
+      - value: DELIVERED
+        description: The order has been successfully delivered to the customer. Terminal state.
+        transitions: []
+
+      - value: CANCELLED
+        description: The order has been cancelled. Terminal state.
+        transitions: []
+
+  - name: CartStatus
+    description: Lifecycle states of a Cart aggregate.
+    values:
+      - value: OPEN
+        description: Cart is active and can be modified by the customer.
+        transitions:
+          - to: CHECKED_OUT
+            triggeredBy: UC-ORD-005 Checkout
+            condition: ORD-RULE-001
+            rules: [ORD-RULE-001, ORD-RULE-002]
+            emits: null
+
+      - value: CHECKED_OUT
+        description: >
+          Cart has been submitted for checkout and an Order has been created.
+          Terminal state — no further modifications are allowed.
+        transitions: []
+
+  - name: PaymentMethod
+    description: Payment method selected by the customer at cart creation time.
+    values:
+      - value: CARD
+        description: Payment by credit or debit card processed via the external payment gateway.
+      - value: CASH_ON_DELIVERY
+        description: Payment in cash collected by the courier at the customer's door.
+
+
+# ─── VALUE OBJECTS ───────────────────────────────────────────────────────────
+
+valueObjects:
+
+  - name: Money
+    description: >
+      Represents an exact monetary amount paired with its ISO 4217 currency code.
+      Modeled as a VO to ensure amount and currency always travel together and that
+      monetary precision is never lost through floating-point representation.
+    properties:
+      - name: amount
+        type: Decimal
+        precision: 19
+        scale: 4
+        required: true
+        description: Exact monetary amount. Must be greater than zero.
+        validations:
+          - positive: true
+      - name: currency
+        type: String(3)
+        required: true
+        description: ISO 4217 currency code (e.g. COP, USD).
+        validations:
+          - pattern: "^[A-Z]{3}$"
+
+  - name: DeliveryAddressSnapshot
+    description: >
+      Immutable snapshot of the delivery address captured at checkout time.
+      Stored in Order to preserve the address exactly as it was when the order
+      was placed, regardless of future changes to the customer's address book.
+    immutable: true
+    properties:
+      - name: street
+        type: String(300)
+        required: true
+        description: Street name and number of the delivery address.
+      - name: city
+        type: String(100)
+        required: true
+        description: City of the delivery address.
+      - name: postalCode
+        type: String(20)
+        required: true
+        description: Postal or ZIP code.
+      - name: reference
+        type: String(500)
+        required: false
+        description: Optional delivery reference (e.g. apartment number, landmark).
+
+  - name: OrderLineSnapshot
+    description: >
+      Immutable snapshot of an order line captured at checkout time. Contains the
+      product details and the authoritative unit price from the catalog at the moment
+      of purchase. Prevents retroactive price modifications on confirmed orders.
+    immutable: true
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+        description: Identifier of the product at checkout time.
+      - name: productName
+        type: String(200)
+        required: true
+        description: Product name captured at checkout time.
+      - name: unitPrice
+        type: Money
+        required: true
+        description: Authoritative price per unit from the catalog at checkout time.
+      - name: quantity
+        type: Integer
+        required: true
+        description: Number of units ordered.
+        validations:
+          - positive: true
+      - name: subtotal
+        type: Money
+        required: true
+        description: Computed subtotal (unitPrice × quantity).
+
+
+# ─── EVENT DTOS ──────────────────────────────────────────────────────────────
+
+eventDtos:
+
+  - name: CustomerAddressUpdatedDto
+    sourceBc: customers
+    properties:
+      - name: addressId
+        type: Uuid
+        required: true
+      - name: customerId
+        type: Uuid
+        required: true
+      - name: street
+        type: String(300)
+        required: true
+      - name: city
+        type: String(100)
+        required: true
+      - name: postalCode
+        type: String(20)
+        required: true
+      - name: reference
+        type: String(500)
+        required: false
+      - name: deleted
+        type: Boolean
+        required: true
+
+
+# ─── PROJECTIONS ─────────────────────────────────────────────────────────────
+
+projections:
+
+  - name: OrderLineSummary
+    description: >
+      Summary of a single order line within an order detail response.
+      Includes the product name and price snapshot captured at checkout time.
+    properties:
+      - name: productId
+        type: Uuid
+        required: true
+      - name: productName
+        type: String(200)
+        required: true
+      - name: unitPrice
+        type: Money
+        required: true
+      - name: quantity
+        type: Integer
+        required: true
+      - name: subtotal
+        type: Money
+        required: true
+
+  - name: OrderSummary
+    description: >
+      Lightweight order view for listing endpoints. Omits order lines and delivery
+      address to keep list payloads compact.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: status
+        type: OrderStatus
+        required: true
+      - name: paymentMethod
+        type: PaymentMethod
+        required: true
+      - name: total
+        type: Money
+        required: true
+      - name: createdAt
+        type: DateTime
+        required: true
+
+  - name: OrderDetail
+    description: >
+      Full order view including all order lines and the delivery address snapshot.
+      Used by the GetOrder endpoint for both customers and admins.
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+      - name: customerId
+        type: Uuid
+        required: true
+      - name: status
+        type: OrderStatus
+        required: true
+      - name: paymentMethod
+        type: PaymentMethod
+        required: true
+      - name: total
+        type: Money
+        required: true
+      - name: deliveryAddress
+        type: DeliveryAddressSnapshot
+        required: true
+      - name: lines
+        type: List[OrderLineSummary]
+        required: true
+      - name: createdAt
+        type: DateTime
+        required: true
+      - name: updatedAt
+        type: DateTime
+        required: true
+
+
+# ─── AGGREGATES ──────────────────────────────────────────────────────────────
+
+aggregates:
+
+  - name: Cart
+    root: Cart
+    auditable: true
+    concurrencyControl: optimistic
+    description: >
+      Represents an active shopping cart for a customer. Holds selected products
+      and the chosen payment method before checkout. Invariant: a customer can only
+      have one OPEN cart at a time. Once checked out, the cart transitions to
+      CHECKED_OUT (terminal) and a new Order aggregate is created.
+
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+        readOnly: true
+        defaultValue: generated
+        description: Unique identifier of the cart.
+
+      - name: customerId
+        type: Uuid
+        required: true
+        readOnly: true
+        source: authContext
+        indexed: true
+        description: ID of the customer who owns this cart. Injected from the JWT context.
+
+      - name: status
+        type: CartStatus
+        required: true
+        readOnly: true
+        defaultValue: OPEN
+        description: Current lifecycle status of the cart. Defaults to OPEN.
+
+      - name: paymentMethod
+        type: PaymentMethod
+        required: true
+        description: Payment method selected by the customer at cart creation time.
+
+    entities:
+      - name: CartItem
+        relationship: composition
+        cardinality: oneToMany
+        description: >
+          A product line in the cart with its selected quantity.
+          CartItems only exist within the Cart aggregate boundary.
+        properties:
+          - name: id
+            type: Uuid
+            required: true
+            readOnly: true
+            defaultValue: generated
+            description: Unique identifier of the cart item.
+          - name: productId
+            type: Uuid
+            required: true
+            indexed: true
+            description: Identifier of the product being added to the cart.
+          - name: quantity
+            type: Integer
+            required: true
+            description: Number of units selected by the customer.
+            validations:
+              - positive: true
+
+    domainRules:
+      - id: ORD-RULE-001
+        type: statePrecondition
+        errorCode: CART_IS_EMPTY
+        description: >
+          The cart must have at least one CartItem before it can be checked out.
+          An empty cart cannot proceed to checkout.
+
+      - id: ORD-RULE-002
+        type: statePrecondition
+        errorCode: CART_NOT_OPEN
+        description: >
+          A cart can only be modified (add, update, remove items) or checked out
+          when its status is OPEN. CHECKED_OUT carts are immutable.
+
+      - id: ORD-RULE-003
+        type: terminalState
+        errorCode: CART_ALREADY_CHECKED_OUT
+        description: >
+          A CHECKED_OUT cart is in a terminal state and cannot be modified.
+          No items can be added, updated, or removed from a checked-out cart.
+
+      - id: ORD-RULE-004
+        type: statePrecondition
+        errorCode: CUSTOMER_ALREADY_HAS_OPEN_CART
+        description: >
+          A customer can only have one OPEN cart at a time. Before creating a new cart,
+          the handler must verify that no OPEN cart already exists for this customer
+          using cartRepository.findOpenByCustomerId(customerId).
+
+    domainMethods:
+      - name: create
+        signature: "create(paymentMethod: PaymentMethod): Cart"
+        description: >
+          Factory method that creates a new OPEN cart for the authenticated customer.
+          ORD-RULE-004 must be checked before invoking this method.
+        returns: Cart
+        emits: null
+
+      - name: addItem
+        signature: "addItem(productId: Uuid, quantity: Integer): void"
+        description: >
+          Adds a product line to the cart. Blocked if the cart is not OPEN (ORD-RULE-002).
+          If the productId already exists in the cart, the handler should update the
+          existing item's quantity instead of creating a duplicate (scaffold logic).
+        returns: void
+        emits: null
+
+      - name: updateItem
+        signature: "updateItem(cartItemId: Uuid, quantity: Integer): void"
+        description: >
+          Updates the quantity of an existing cart item. Blocked if cart is not OPEN
+          (ORD-RULE-002). The cart item must exist within this cart.
+        returns: void
+        emits: null
+
+      - name: removeItem
+        signature: "removeItem(cartItemId: Uuid): void"
+        description: >
+          Removes an item from the cart. Blocked if cart is not OPEN (ORD-RULE-002).
+          The cart item must exist within this cart.
+        returns: void
+        emits: null
+
+      - name: checkout
+        signature: "checkout(): void"
+        description: >
+          Transitions the cart from OPEN to CHECKED_OUT. Enforces ORD-RULE-001
+          (at least one item) and ORD-RULE-002 (cart must be OPEN).
+          Called as part of UC-ORD-005 Checkout which also creates the Order.
+        returns: void
+        emits: null
+
+
+  - name: Order
+    root: Order
+    auditable: true
+    concurrencyControl: optimistic
+    description: >
+      Represents a confirmed purchase order with frozen price snapshots and a delivery
+      address snapshot. Created from a Cart at checkout time after prices are validated
+      against the catalog. Drives the CheckoutSaga lifecycle through domain events.
+
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+        readOnly: true
+        defaultValue: generated
+        description: Unique identifier of the order.
+
+      - name: customerId
+        type: Uuid
+        required: true
+        readOnly: true
+        source: authContext
+        indexed: true
+        description: ID of the customer who placed the order. Injected from the JWT context.
+
+      - name: status
+        type: OrderStatus
+        required: true
+        readOnly: true
+        defaultValue: PENDING_PAYMENT
+        description: Current lifecycle status of the order. Defaults to PENDING_PAYMENT.
+
+      - name: paymentMethod
+        type: PaymentMethod
+        required: true
+        readOnly: true
+        description: Payment method selected at cart creation time, propagated to the order.
+
+      - name: deliveryAddressId
+        type: Uuid
+        required: true
+        readOnly: true
+        indexed: true
+        description: ID of the selected delivery address from the CustomerAddress local read model.
+
+      - name: deliveryAddress
+        type: DeliveryAddressSnapshot
+        required: true
+        readOnly: true
+        description: >
+          Immutable snapshot of the delivery address taken at checkout time.
+          Preserved independently of future changes to the customer's address book.
+
+      - name: total
+        type: Money
+        required: true
+        readOnly: true
+        description: Total order amount (sum of all OrderLine subtotals) at checkout time.
+
+    entities:
+      - name: OrderLine
+        relationship: composition
+        cardinality: oneToMany
+        description: >
+          An immutable price snapshot of a single product line at checkout time.
+          Preserves the authoritative unit price from the catalog and the quantity
+          ordered. OrderLines cannot be modified after the order is created.
+        immutable: true
+        properties:
+          - name: id
+            type: Uuid
+            required: true
+            readOnly: true
+            defaultValue: generated
+            description: Unique identifier of the order line.
+          - name: productId
+            type: Uuid
+            required: true
+            description: Identifier of the ordered product.
+          - name: productName
+            type: String(200)
+            required: true
+            description: Product name captured at checkout time.
+          - name: unitPrice
+            type: Money
+            required: true
+            description: Authoritative price per unit captured from the catalog at checkout.
+          - name: quantity
+            type: Integer
+            required: true
+            description: Number of units ordered.
+            validations:
+              - positive: true
+          - name: subtotal
+            type: Money
+            required: true
+            description: Computed line total (unitPrice × quantity).
+
+    domainRules:
+      - id: ORD-RULE-005
+        type: statePrecondition
+        errorCode: ORDER_CANNOT_BE_CANCELLED
+        description: >
+          An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED.
+          IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.
+
+      - id: ORD-RULE-006
+        type: terminalState
+        errorCode: ORDER_ALREADY_DELIVERED
+        description: >
+          A DELIVERED order is in a terminal state and cannot be transitioned
+          or modified in any way.
+
+      - id: ORD-RULE-007
+        type: terminalState
+        errorCode: ORDER_ALREADY_CANCELLED
+        description: >
+          A CANCELLED order is in a terminal state and cannot be transitioned
+          or modified in any way.
+
+      - id: ORD-RULE-008
+        type: statePrecondition
+        errorCode: ORDER_NOT_PENDING_PAYMENT
+        description: >
+          An order can only be confirmed when its status is PENDING_PAYMENT.
+          This guard ensures PaymentApproved events are idempotently processed.
+
+      - id: ORD-RULE-009
+        type: statePrecondition
+        errorCode: ORDER_NOT_CONFIRMED
+        description: >
+          An order can only be set to IN_DELIVERY when its status is CONFIRMED.
+          This guard ensures DeliveryOrderCreated events are idempotently processed.
+
+      - id: ORD-RULE-010
+        type: statePrecondition
+        errorCode: ORDER_NOT_IN_DELIVERY
+        description: >
+          An order can only be completed (DELIVERED) when its status is IN_DELIVERY.
+          This guard ensures DeliveryCompleted events are idempotently processed.
+
+    domainMethods:
+      - name: create
+        signature: "create(paymentMethod: PaymentMethod, deliveryAddressId: Uuid, deliveryAddress: DeliveryAddressSnapshot, total: Money, lines: List[OrderLineSnapshot]): Order"
+        description: >
+          Factory method that creates a new PENDING_PAYMENT order from a checked-out cart.
+          Receives the price snapshot lines from the catalog validation call (UC-ORD-005 scaffold).
+          Emits OrderPlaced to trigger the CheckoutSaga.
+        returns: Order
+        emits: OrderPlaced
+
+      - name: confirm
+        signature: "confirm(): void"
+        description: >
+          Transitions the order from PENDING_PAYMENT to CONFIRMED after successful
+          payment authorization (triggered by PaymentApproved event).
+          Emits OrderConfirmed to trigger delivery order creation.
+        returns: void
+        emits: OrderConfirmed
+
+      - name: cancel
+        signature: "cancel(): void"
+        description: >
+          Transitions the order to CANCELLED status. Valid from PENDING_PAYMENT or
+          CONFIRMED (ORD-RULE-005). Emits OrderCancelled consumed by delivery and
+          payments for downstream compensation.
+        returns: void
+        emits: OrderCancelled
+
+      - name: setInDelivery
+        signature: "setInDelivery(): void"
+        description: >
+          Transitions the order from CONFIRMED to IN_DELIVERY after a DeliveryOrderCreated
+          event confirms the courier has been assigned.
+        returns: void
+        emits: null
+
+      - name: complete
+        signature: "complete(): void"
+        description: >
+          Transitions the order from IN_DELIVERY to DELIVERED after a DeliveryCompleted
+          event confirms the package was handed to the customer.
+        returns: void
+        emits: null
+
+
+  - name: CustomerAddress
+    root: CustomerAddress
+    readModel: true
+    auditable: true
+    sourceBC: customers
+    sourceEvents:
+      - CustomerAddressUpdated
+    description: >
+      Local read model of customer delivery addresses, maintained by consuming
+      CustomerAddressUpdated events from the customers BC. Used at checkout time
+      to resolve and snapshot the selected delivery address. Supports soft deletion
+      via the 'deleted' flag (addresses marked deleted are invisible at checkout).
+
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+        readOnly: true
+        defaultValue: generated
+        description: Internal primary key of the local address projection.
+
+      - name: addressId
+        type: Uuid
+        required: true
+        unique: true
+        indexed: true
+        description: >
+          External address identifier from the customers BC.
+          Used as the upsert key — every CustomerAddressUpdated event carries this ID.
+
+      - name: customerId
+        type: Uuid
+        required: true
+        indexed: true
+        description: ID of the customer who owns this address.
+
+      - name: street
+        type: String(300)
+        required: true
+        description: Street name and number.
+
+      - name: city
+        type: String(100)
+        required: true
+        description: City name.
+
+      - name: postalCode
+        type: String(20)
+        required: true
+        description: Postal or ZIP code.
+
+      - name: reference
+        type: String(500)
+        required: false
+        description: Optional delivery reference.
+
+      - name: deleted
+        type: Boolean
+        required: true
+        readOnly: true
+        defaultValue: false
+        description: >
+          Soft-delete flag. Set to true when CustomerAddressUpdated arrives with deleted: true.
+          Deleted addresses must not be offered as delivery options at checkout.
+
+
+# ─── INTEGRATIONS ────────────────────────────────────────────────────────────
+
+integrations:
+  outbound:
+    - name: catalog
+      type: internalBc
+      pattern: customerSupplier
+      protocol: http
+      description: >
+        Mandatory synchronous HTTP call to catalog at checkout time to obtain the
+        authoritative price for each product in the cart. Mandatory HTTP for monetary
+        integrity — prevents OWASP A04 fraud via stale or client-manipulated prices.
+        The customer never sends prices; prices are always fetched from the catalog.
+      auth:
+        type: internal-jwt
+      operations:
+        - name: validateProductsAndPrices
+          description: >
+            Fetches current authoritative prices for all products in the cart.
+            Returns product details and current price. Orders BC must reject any
+            product whose returned status is not ACTIVE.
+          definedIn: catalog-internal-api.yaml
+          endpoint: POST /internal/products/price-snapshot
+          triggersOn: UC-ORD-005 Checkout
+
+
+# ─── DOMAIN EVENTS ───────────────────────────────────────────────────────────
+
+domainEvents:
+
+  published:
+
+    - name: OrderPlaced
+      description: >
+        Emitted when a new order is created at checkout. Triggers step 1 of the
+        CheckoutSaga: inventory reserves stock. Contains all order lines for
+        inventory to determine which products and quantities to reserve.
+      version: 1
+      scope: integration
+      channel: orders.order.placed
+      payload:
+        - name: orderId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: customerId
+          type: Uuid
+          source: aggregate
+        - name: paymentMethod
+          type: String(20)
+          source: aggregate
+        - name: total
+          type: Money
+          source: aggregate
+        - name: deliveryAddressId
+          type: Uuid
+          source: aggregate
+        - name: lines
+          type: List[OrderLineSnapshot]
+          source: param
+
+    - name: OrderConfirmed
+      description: >
+        Emitted when the order transitions to CONFIRMED after PaymentApproved.
+        Consumed by delivery (step 4 of CheckoutSaga), notifications, and any
+        other interested BCs.
+      version: 1
+      scope: integration
+      channel: orders.order.confirmed
+      payload:
+        - name: orderId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: customerId
+          type: Uuid
+          source: aggregate
+        - name: paymentMethod
+          type: String(20)
+          source: aggregate
+        - name: total
+          type: Money
+          source: aggregate
+        - name: deliveryAddressId
+          type: Uuid
+          source: aggregate
+        - name: deliveryAddress
+          type: DeliveryAddressSnapshot
+          source: aggregate
+
+    - name: OrderCancelled
+      description: >
+        Emitted when the order is cancelled for any reason (customer request,
+        stock reservation failure, payment failure). Consumed by delivery (cancels
+        delivery if created), payments (refund if card payment captured), and
+        notifications.
+      version: 1
+      scope: integration
+      channel: orders.order.cancelled
+      payload:
+        - name: orderId
+          type: Uuid
+          source: aggregate
+          field: id
+        - name: customerId
+          type: Uuid
+          source: aggregate
+        - name: paymentMethod
+          type: String(20)
+          source: aggregate
+
+  consumed:
+
+    - name: PaymentApproved
+      from: payments
+      channel: payments.payment.approved
+      description: >
+        Triggers UC-ORD-020 ConfirmOrder (step 3 of CheckoutSaga).
+        Confirms that the payment was successfully processed, enabling
+        order confirmation.
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: paymentId
+          type: Uuid
+
+    - name: PaymentFailed
+      from: payments
+      channel: payments.payment.failed
+      description: >
+        Triggers UC-ORD-022 CancelOrderOnPaymentFailed.
+        The payment processor rejected the charge; the order must be cancelled
+        and inventory stock released (handled by inventory's own listener).
+      payload:
+        - name: orderId
+          type: Uuid
+
+    - name: PaymentRefunded
+      from: payments
+      channel: payments.payment.refunded
+      description: >
+        Triggers UC-ORD-026 AcknowledgePaymentRefunded.
+        Confirms a card refund was processed for a cancelled confirmed order.
+        Orders BC acknowledges receipt for saga audit tracking.
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: refundId
+          type: Uuid
+
+    - name: StockReservationFailed
+      from: inventory
+      channel: inventory.stock.reservation.failed
+      description: >
+        Triggers UC-ORD-021 CancelOrderOnStockFailed.
+        Inventory could not reserve sufficient stock for the order; the order
+        must be cancelled (CheckoutSaga compensation path).
+      payload:
+        - name: orderId
+          type: Uuid
+
+    - name: StockReleased
+      from: inventory
+      channel: inventory.stock.released
+      description: >
+        Triggers UC-ORD-025 AcknowledgeStockReleased.
+        Inventory has released the reserved stock as compensation after a payment
+        failure. Orders BC acknowledges receipt for saga audit tracking.
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: reservationId
+          type: Uuid
+
+    - name: DeliveryOrderCreated
+      from: delivery
+      channel: delivery.delivery.order.created
+      description: >
+        Triggers UC-ORD-023 SetOrderInDelivery.
+        Delivery BC has assigned a courier and created a delivery order.
+        The order transitions to IN_DELIVERY.
+      payload:
+        - name: orderId
+          type: Uuid
+        - name: deliveryOrderId
+          type: Uuid
+
+    - name: DeliveryCompleted
+      from: delivery
+      channel: delivery.delivery.completed
+      description: >
+        Triggers UC-ORD-024 CompleteDelivery.
+        The courier has delivered the package to the customer.
+        The order transitions to DELIVERED.
+      payload:
+        - name: orderId
+          type: Uuid
+
+    - name: CustomerAddressUpdated
+      from: customers
+      channel: customers.customer.address.updated
+      description: >
+        Triggers UC-ORD-030 SyncCustomerAddress.
+        A customer has added, updated, or deleted a delivery address.
+        The CustomerAddress local read model is upserted accordingly.
+      payload:
+        - name: addressId
+          type: Uuid
+        - name: customerId
+          type: Uuid
+        - name: street
+          type: String(300)
+        - name: city
+          type: String(100)
+        - name: postalCode
+          type: String(20)
+        - name: reference
+          type: String(500)
+        - name: deleted
+          type: Boolean
+
+
+# ─── USE CASES ───────────────────────────────────────────────────────────────
+
+useCases:
+
+  # ── Cart Management ───────────────────────────────────────────────────────
+
+  - id: UC-ORD-001
+    name: CreateCart
+    type: command
+    actor: customer
+    description: >
+      Creates a new OPEN cart for the authenticated customer with the selected payment
+      method. Enforces that the customer has no other OPEN cart (ORD-RULE-004).
+    trigger:
+      kind: http
+      operationId: createCart
+    aggregate: Cart
+    method: create
+    input:
+      - name: paymentMethod
+        type: PaymentMethod
+        required: true
+        source: body
+    rules: [ORD-RULE-004]
+    fkValidations: []
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+    implementation: full
+    idempotency:
+      header: Idempotency-Key
+      ttl: PT24H
+      storage: cache
+
+  - id: UC-ORD-002
+    name: AddItemToCart
+    type: command
+    actor: customer
+    description: >
+      Adds a product to the customer's OPEN cart. Blocked if the cart is not OPEN
+      (ORD-RULE-002). If the product is already in the cart, the scaffold
+      implementation should increment the existing item's quantity.
+    trigger:
+      kind: http
+      operationId: addItemToCart
+    aggregate: Cart
+    method: addItem
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: productId
+        type: Uuid
+        required: true
+        source: body
+      - name: quantity
+        type: Integer
+        required: true
+        source: body
+    notFoundError: CART_NOT_FOUND
+    rules: [ORD-RULE-002]
+    fkValidations: []
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+      ownership:
+        field: customerId
+        claim: sub
+    implementation: scaffold
+    notes: >
+      Handler must check if a CartItem with productId already exists in the cart.
+      If it does, increment quantity rather than create a duplicate line.
+
+  - id: UC-ORD-003
+    name: UpdateCartItem
+    type: command
+    actor: customer
+    description: >
+      Updates the quantity of an existing cart item. Blocked if the cart is not OPEN
+      (ORD-RULE-002). The cart item must belong to this cart.
+    trigger:
+      kind: http
+      operationId: updateCartItem
+    aggregate: Cart
+    method: updateItem
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: itemId
+        type: Uuid
+        required: true
+        source: path
+      - name: quantity
+        type: Integer
+        required: true
+        source: body
+    notFoundError: CART_NOT_FOUND
+    rules: [ORD-RULE-002]
+    fkValidations: []
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+      ownership:
+        field: customerId
+        claim: sub
+    implementation: full
+    notes: >
+      The CartItem must exist within this cart. If the itemId is not found inside
+      the cart's items collection, throw CART_ITEM_NOT_FOUND (404).
+
+  - id: UC-ORD-004
+    name: RemoveCartItem
+    type: command
+    actor: customer
+    description: >
+      Removes a product line from the customer's OPEN cart. Blocked if the cart
+      is not OPEN (ORD-RULE-002).
+    trigger:
+      kind: http
+      operationId: removeCartItem
+    aggregate: Cart
+    method: removeItem
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: itemId
+        type: Uuid
+        required: true
+        source: path
+    notFoundError: CART_NOT_FOUND
+    rules: [ORD-RULE-002]
+    fkValidations: []
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+      ownership:
+        field: customerId
+        claim: sub
+    implementation: full
+
+  - id: UC-ORD-005
+    name: Checkout
+    type: command
+    actor: customer
+    description: >
+      Performs checkout of the customer's cart. Validates prices against the catalog
+      (HTTP call — OWASP A04 monetary snapshot), transitions the cart to CHECKED_OUT,
+      and creates a new PENDING_PAYMENT Order with frozen price snapshots.
+      Emits OrderPlaced to trigger the CheckoutSaga (stock reservation → payment).
+      The selected delivery address must exist in the CustomerAddress local read model
+      and must not be marked as deleted.
+    trigger:
+      kind: http
+      operationId: checkout
+    aggregate: Cart
+    method: checkout
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+      - name: deliveryAddressId
+        type: Uuid
+        required: true
+        source: body
+    notFoundError: CART_NOT_FOUND
+    rules: [ORD-RULE-001, ORD-RULE-002]
+    fkValidations:
+      - aggregate: CustomerAddress
+        param: deliveryAddressId
+        error: DELIVERY_ADDRESS_NOT_FOUND
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+      ownership:
+        field: customerId
+        claim: sub
+    implementation: scaffold
+    notes: >
+      SCAFFOLD STEPS (implementation order):
+      1. Load cart by cartId — 404 if not found; ownership check (cart.customerId == JWT.sub).
+      2. Enforce ORD-RULE-002 (cart must be OPEN) and ORD-RULE-001 (at least one item).
+      3. Load CustomerAddress by deliveryAddressId — 404 if not found or deleted.
+      4. Call catalog.validateProductsAndPrices(productIds from cart items) → price snapshots.
+         If catalog is unavailable → throw CATALOG_SERVICE_UNAVAILABLE (503).
+         If any returned product is not ACTIVE → throw PRODUCT_PRICE_UNAVAILABLE (422).
+      5. Build List[OrderLineSnapshot] from cart items + price snapshots; compute total.
+      6. Call cart.checkout() → transitions cart to CHECKED_OUT.
+      7. Call Order.create(paymentMethod, deliveryAddressId, deliveryAddressSnapshot, total, lines).
+         customerId is injected from authContext — NOT passed as a param.
+      8. Save cart (CHECKED_OUT) and save order (PENDING_PAYMENT — emits OrderPlaced outbox).
+
+  - id: UC-ORD-006
+    name: GetCart
+    type: query
+    actor: customer
+    description: Retrieves the current cart with all its items for the authenticated customer.
+    trigger:
+      kind: http
+      operationId: getCart
+    aggregate: Cart
+    input:
+      - name: cartId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: CART_NOT_FOUND
+    returns: CartResponse
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER]
+      ownership:
+        field: customerId
+        claim: sub
+    implementation: full
+
+  # ── Order Queries ─────────────────────────────────────────────────────────
+
+  - id: UC-ORD-010
+    name: GetOrder
+    type: query
+    actor: customer
+    description: >
+      Retrieves full order details including all order lines and the delivery address
+      snapshot. Customers can only access their own orders; admins can access any order.
+    trigger:
+      kind: http
+      operationId: getOrder
+    aggregate: Order
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    returns: OrderDetail
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER, ROLE_ADMIN]
+      ownership:
+        field: customerId
+        claim: sub
+        allowRoleBypass: [ROLE_ADMIN]
+    implementation: full
+
+  - id: UC-ORD-011
+    name: ListOrders
+    type: query
+    actor: customer
+    description: >
+      Returns a paginated list of orders. Customers see only their own orders
+      (customerId injected from JWT). Admins can optionally filter by customerId
+      or status to see any order in the system.
+    trigger:
+      kind: http
+      operationId: listOrders
+    aggregate: Order
+    input:
+      - name: customerId
+        type: Uuid
+        required: false
+        source: query
+      - name: status
+        type: OrderStatus
+        required: false
+        source: query
+      - name: page
+        type: Integer
+        required: false
+        default: 1
+        source: query
+      - name: size
+        type: Integer
+        required: false
+        default: 20
+        max: 100
+        source: query
+    returns: Page[OrderSummary]
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER, ROLE_ADMIN]
+    implementation: scaffold
+    pagination:
+      defaultSize: 20
+      maxSize: 100
+      sortable: [createdAt]
+      defaultSort:
+        field: createdAt
+        direction: DESC
+    notes: >
+      SCAFFOLD: For ROLE_CUSTOMER, the handler must enforce customerId == JWT.sub
+      (ignore any customerId query param and always use the authenticated user's ID).
+      For ROLE_ADMIN, customerId is an optional filter; if omitted, all orders are returned.
+
+  # ── Order Commands ────────────────────────────────────────────────────────
+
+  - id: UC-ORD-012
+    name: CancelOrder
+    type: command
+    actor: customer
+    description: >
+      Cancels an order that is in PENDING_PAYMENT or CONFIRMED status (ORD-RULE-005).
+      Customers can only cancel their own orders; admins can cancel any order.
+      Emits OrderCancelled consumed by delivery and payments for downstream compensation.
+    trigger:
+      kind: http
+      operationId: cancelOrder
+    aggregate: Order
+    method: cancel
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: path
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-005, ORD-RULE-006, ORD-RULE-007]
+    fkValidations: []
+    authorization:
+      rolesAnyOf: [ROLE_CUSTOMER, ROLE_ADMIN]
+      ownership:
+        field: customerId
+        claim: sub
+        allowRoleBypass: [ROLE_ADMIN]
+    implementation: scaffold
+    notes: >
+      SCAFFOLD: Evaluation order:
+      1. Load order — 404 if not found; ownership check (bypass for ROLE_ADMIN).
+      2. ORD-RULE-006 / ORD-RULE-007: terminal state guards (DELIVERED or already CANCELLED).
+      3. ORD-RULE-005: must be PENDING_PAYMENT or CONFIRMED.
+      4. Call order.cancel() — transitions to CANCELLED, emits OrderCancelled.
+
+  # ── Saga / Event-driven Commands ─────────────────────────────────────────
+
+  - id: UC-ORD-020
+    name: ConfirmOrder
+    type: command
+    actor: system
+    description: >
+      Confirms the order after receiving PaymentApproved (step 3 of CheckoutSaga).
+      Transitions order from PENDING_PAYMENT to CONFIRMED. Emits OrderConfirmed
+      to trigger DeliveryOrder creation (step 4). Idempotent via consumerIdempotency.
+    trigger:
+      kind: event
+      consumes: PaymentApproved
+      channel: payments.payment.approved
+      fromBc: payments
+    aggregate: Order
+    method: confirm
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-008]
+    fkValidations: []
+    implementation: scaffold
+    sagaStep:
+      saga: CheckoutSaga
+      order: 3
+      role: step
+
+  - id: UC-ORD-021
+    name: CancelOrderOnStockFailed
+    type: command
+    actor: system
+    description: >
+      Cancels the order when stock reservation fails (StockReservationFailed event
+      from inventory — CheckoutSaga compensation path). Transitions order from
+      PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.
+    trigger:
+      kind: event
+      consumes: StockReservationFailed
+      channel: inventory.stock.reservation.failed
+      fromBc: inventory
+    aggregate: Order
+    method: cancel
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-005]
+    fkValidations: []
+    implementation: scaffold
+
+  - id: UC-ORD-022
+    name: CancelOrderOnPaymentFailed
+    type: command
+    actor: system
+    description: >
+      Cancels the order when payment processing fails (PaymentFailed event from
+      payments — CheckoutSaga compensation path). Transitions order from
+      PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.
+    trigger:
+      kind: event
+      consumes: PaymentFailed
+      channel: payments.payment.failed
+      fromBc: payments
+    aggregate: Order
+    method: cancel
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-005]
+    fkValidations: []
+    implementation: scaffold
+
+  - id: UC-ORD-023
+    name: SetOrderInDelivery
+    type: command
+    actor: system
+    description: >
+      Transitions the order to IN_DELIVERY after DeliveryOrderCreated confirms
+      a courier has been assigned (step 4 completion). Enforces ORD-RULE-009
+      (order must be CONFIRMED).
+    trigger:
+      kind: event
+      consumes: DeliveryOrderCreated
+      channel: delivery.delivery.order.created
+      fromBc: delivery
+    aggregate: Order
+    method: setInDelivery
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-009]
+    fkValidations: []
+    implementation: scaffold
+
+  - id: UC-ORD-024
+    name: CompleteDelivery
+    type: command
+    actor: system
+    description: >
+      Transitions the order to DELIVERED after the courier confirms package delivery
+      (DeliveryCompleted event from delivery BC). Enforces ORD-RULE-010.
+    trigger:
+      kind: event
+      consumes: DeliveryCompleted
+      channel: delivery.delivery.completed
+      fromBc: delivery
+    aggregate: Order
+    method: complete
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+        loadAggregate: true
+    notFoundError: ORDER_NOT_FOUND
+    rules: [ORD-RULE-010]
+    fkValidations: []
+    implementation: scaffold
+
+  - id: UC-ORD-025
+    name: AcknowledgeStockReleased
+    type: command
+    actor: system
+    description: >
+      Idempotent acknowledgment when inventory confirms stock has been released
+      (StockReleased compensation event). No state change in Order — the order
+      is already CANCELLED at this point. Handler marks the event as processed
+      for saga audit tracking via consumerIdempotency.
+    trigger:
+      kind: event
+      consumes: StockReleased
+      channel: inventory.stock.released
+      fromBc: inventory
+    aggregate: Order
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+    fkValidations: []
+    implementation: scaffold
+    notes: >
+      No domain method invoked. Handler loads the order by orderId (for audit log
+      context only), verifies it is CANCELLED, and marks the event as processed.
+      If orderId not found, log a warning and mark event processed (do not throw).
+
+  - id: UC-ORD-026
+    name: AcknowledgePaymentRefunded
+    type: command
+    actor: system
+    description: >
+      Idempotent acknowledgment when payments confirms a card refund was processed
+      (PaymentRefunded event). No state change in Order — the order is already
+      CANCELLED. Handler marks the event as processed for saga audit tracking.
+    trigger:
+      kind: event
+      consumes: PaymentRefunded
+      channel: payments.payment.refunded
+      fromBc: payments
+    aggregate: Order
+    input:
+      - name: orderId
+        type: Uuid
+        required: true
+        source: body
+    fkValidations: []
+    implementation: scaffold
+    notes: >
+      No domain method invoked. Handler marks the event as processed. If the order
+      is not found, log a warning and mark the event processed (do not throw).
+
+  # ── CustomerAddress Sync ──────────────────────────────────────────────────
+
+  - id: UC-ORD-030
+    name: SyncCustomerAddress
+    type: command
+    actor: system
+    description: >
+      Upserts the CustomerAddress local read model when a CustomerAddressUpdated
+      event arrives from the customers BC. If the address is new, a new
+      CustomerAddress record is inserted. If it already exists (by addressId),
+      it is updated. The 'deleted' flag is preserved to support soft-deletion.
+    trigger:
+      kind: event
+      consumes: CustomerAddressUpdated
+      channel: customers.customer.address.updated
+      fromBc: customers
+    aggregate: CustomerAddress
+    method: upsert
+    fkValidations: []
+    implementation: full
+
+
+# ─── REPOSITORIES ────────────────────────────────────────────────────────────
+
+repositories:
+
+  - aggregate: Cart
+    methods:
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: Cart?
+        derivedFrom: implicit
+
+      - name: findOpenByCustomerId
+        params:
+          - name: customerId
+            type: Uuid
+        returns: Cart?
+        derivedFrom: ORD-RULE-004
+        description: >
+          Looks up an OPEN cart for the given customer. Used by CreateCart to enforce
+          the one-active-cart-per-customer invariant (ORD-RULE-004).
+
+      - name: save
+        params:
+          - name: entity
+            type: Cart
+        returns: void
+        derivedFrom: implicit
+
+  - aggregate: Order
+    methods:
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: Order?
+        derivedFrom: implicit
+
+      - name: save
+        params:
+          - name: entity
+            type: Order
+        returns: void
+        derivedFrom: implicit
+
+    queryMethods:
+      - name: list
+        params:
+          - name: customerId
+            type: Uuid
+            required: false
+          - name: status
+            type: OrderStatus
+            required: false
+          - name: page
+            type: PageRequest
+            required: true
+        returns: Page[Order]
+        derivedFrom: openapi:listOrders
+        defaultSort:
+          field: createdAt
+          direction: DESC
+        sortable:
+          - createdAt
+
+  - aggregate: CustomerAddress
+    methods:
+      - name: findById
+        params:
+          - name: id
+            type: Uuid
+        returns: CustomerAddress?
+        derivedFrom: implicit
+
+      - name: findByAddressId
+        params:
+          - name: addressId
+            type: Uuid
+        returns: CustomerAddress?
+        derivedFrom: implicit
+        description: >
+          Lookup by the external addressId from the customers BC (unique field).
+          Used at checkout to resolve and validate the selected delivery address.
+
+      - name: upsert
+        params:
+          - name: entity
+            type: CustomerAddress
+        returns: void
+        derivedFrom: implicit
+        description: >
+          Insert-or-update based on addressId uniqueness. Called by UC-ORD-030
+          SyncCustomerAddress when a CustomerAddressUpdated event arrives.
+
+
+# ─── ERRORS ──────────────────────────────────────────────────────────────────
+
+errors:
+
+  - code: CART_NOT_FOUND
+    httpStatus: 404
+    description: The requested cart does not exist.
+
+  - code: CART_IS_EMPTY
+    httpStatus: 422
+    description: The cart must have at least one item before it can be checked out.
+
+  - code: CART_NOT_OPEN
+    httpStatus: 422
+    description: >
+      The cart cannot be modified because it is not in OPEN status.
+      A checked-out cart is immutable.
+
+  - code: CART_ALREADY_CHECKED_OUT
+    httpStatus: 409
+    description: >
+      The cart has already been checked out and is in a terminal state.
+      No modifications are allowed.
+
+  - code: CART_ITEM_NOT_FOUND
+    httpStatus: 404
+    usedFor: manual
+    description: The specified cart item does not exist within this cart.
+
+  - code: CUSTOMER_ALREADY_HAS_OPEN_CART
+    httpStatus: 409
+    description: >
+      The customer already has an OPEN cart. Only one active cart per customer
+      is allowed at a time. Complete or abandon the existing cart before creating a new one.
+
+  - code: ORDER_NOT_FOUND
+    httpStatus: 404
+    description: The requested order does not exist.
+
+  - code: ORDER_CANNOT_BE_CANCELLED
+    httpStatus: 422
+    description: >
+      The order cannot be cancelled in its current status. Only PENDING_PAYMENT
+      and CONFIRMED orders can be cancelled.
+
+  - code: ORDER_ALREADY_DELIVERED
+    httpStatus: 409
+    description: >
+      The order has already been delivered and is in a terminal state.
+      No further transitions are allowed.
+
+  - code: ORDER_ALREADY_CANCELLED
+    httpStatus: 409
+    description: >
+      The order has already been cancelled and is in a terminal state.
+      No further transitions are allowed.
+
+  - code: ORDER_NOT_PENDING_PAYMENT
+    httpStatus: 422
+    description: >
+      The order cannot be confirmed because it is not in PENDING_PAYMENT status.
+      This guard ensures PaymentApproved events are handled idempotently.
+
+  - code: ORDER_NOT_CONFIRMED
+    httpStatus: 422
+    description: >
+      The order cannot be set to IN_DELIVERY because it is not in CONFIRMED status.
+      This guard ensures DeliveryOrderCreated events are handled idempotently.
+
+  - code: ORDER_NOT_IN_DELIVERY
+    httpStatus: 422
+    description: >
+      The order cannot be completed because it is not in IN_DELIVERY status.
+      This guard ensures DeliveryCompleted events are handled idempotently.
+
+  - code: DELIVERY_ADDRESS_NOT_FOUND
+    httpStatus: 404
+    description: >
+      The selected delivery address was not found in the local address read model,
+      or the address has been marked as deleted.
+
+  - code: PRODUCT_PRICE_UNAVAILABLE
+    httpStatus: 422
+    usedFor: manual
+    description: >
+      One or more products in the cart are not available for purchase.
+      The catalog returned a non-ACTIVE status for at least one product.
+      Remove unavailable products from the cart before retrying checkout.
+
+  - code: CATALOG_SERVICE_UNAVAILABLE
+    httpStatus: 503
+    usedFor: manual
+    description: >
+      The catalog service is temporarily unavailable. The price snapshot required
+      for checkout could not be obtained. Retry the checkout after a short delay.
+
+  - code: CONCURRENT_MODIFICATION
+    httpStatus: 409
+    kind: infrastructure
+    chainable: true
+    usedFor: manual
+    triggeredBy: DataIntegrityViolationException
+    description: >
+      A concurrent modification was detected. The resource was modified by another
+      request between the time it was loaded and the time the change was applied.
+      Retry the operation.

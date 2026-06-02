@@ -1,0 +1,116 @@
+classDiagram
+    class Cart {
+        +Uuid id
+        +Uuid customerId
+        +CartStatus status
+        +PaymentMethod paymentMethod
+        +DateTime createdAt
+        +DateTime updatedAt
+        +Long version
+        +create(paymentMethod) Cart
+        +addItem(productId, quantity) void
+        +updateItem(cartItemId, quantity) void
+        +removeItem(cartItemId) void
+        +checkout() void
+    }
+
+    class CartItem {
+        +Uuid id
+        +Uuid productId
+        +Integer quantity
+    }
+
+    class Order {
+        +Uuid id
+        +Uuid customerId
+        +OrderStatus status
+        +PaymentMethod paymentMethod
+        +Uuid deliveryAddressId
+        +DeliveryAddressSnapshot deliveryAddress
+        +Money total
+        +DateTime createdAt
+        +DateTime updatedAt
+        +Long version
+        +create(paymentMethod, deliveryAddressId, deliveryAddress, total, lines) Order
+        +confirm() void
+        +cancel() void
+        +setInDelivery() void
+        +complete() void
+    }
+
+    class OrderLine {
+        +Uuid id
+        +Uuid productId
+        +String productName
+        +Money unitPrice
+        +Integer quantity
+        +Money subtotal
+    }
+
+    class CustomerAddress {
+        +Uuid id
+        +Uuid addressId
+        +Uuid customerId
+        +String street
+        +String city
+        +String postalCode
+        +String reference
+        +Boolean deleted
+        +DateTime createdAt
+        +DateTime updatedAt
+    }
+
+    class Money {
+        <<ValueObject>>
+        +Decimal amount
+        +String currency
+    }
+
+    class DeliveryAddressSnapshot {
+        <<ValueObject, immutable>>
+        +String street
+        +String city
+        +String postalCode
+        +String reference
+    }
+
+    class OrderLineSnapshot {
+        <<ValueObject, immutable>>
+        +Uuid productId
+        +String productName
+        +Money unitPrice
+        +Integer quantity
+        +Money subtotal
+    }
+
+    class CartStatus {
+        <<Enum>>
+        OPEN
+        CHECKED_OUT
+    }
+
+    class OrderStatus {
+        <<Enum>>
+        PENDING_PAYMENT
+        CONFIRMED
+        IN_DELIVERY
+        DELIVERED
+        CANCELLED
+    }
+
+    class PaymentMethod {
+        <<Enum>>
+        CARD
+        CASH_ON_DELIVERY
+    }
+
+    Cart "1" *-- "0..*" CartItem : contains
+    Order "1" *-- "1..*" OrderLine : contains
+    Order --> DeliveryAddressSnapshot : snapshot
+    Order --> Money : total
+    OrderLine --> Money : unitPrice
+    OrderLine --> Money : subtotal
+    Cart --> CartStatus : status
+    Cart --> PaymentMethod : paymentMethod
+    Order --> OrderStatus : status
+    Order --> PaymentMethod : paymentMethod

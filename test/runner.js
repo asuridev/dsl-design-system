@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const CLI = path.join(ROOT, 'bin', 'dsl.js');
+const CANASTA_EXAMPLE = path.join(ROOT, 'examples', 'canasta-familiar');
 
 const tests = [];
 function test(name, fn) {
@@ -37,6 +38,10 @@ async function withTempProject(fn) {
   } finally {
     await fs.remove(dir);
   }
+}
+
+async function copyCanastaExample(projectDir) {
+  await fs.copy(CANASTA_EXAMPLE, projectDir, { overwrite: true });
 }
 
 async function writeYaml(filePath, content) {
@@ -839,6 +844,85 @@ test('dsl preview strict exits non-zero when validations fail', async () => {
     assert.notStrictEqual(result.status, 0, output);
     assert.match(output, /Diagn.sticos:/);
     assert.ok(await fs.pathExists(path.join(projectDir, 'arch', 'review', 'index.html')));
+  });
+});
+
+test('governance docs describe agent selection and validation workflow', async () => {
+  const files = [
+    path.join(ROOT, 'docs', 'agent-decision-guide.md'),
+    path.join(ROOT, 'docs', 'workflow-reference.md'),
+    path.join(ROOT, 'examples', 'README.md'),
+    path.join(ROOT, 'AGENTS.md'),
+    path.join(ROOT, 'README.md'),
+  ];
+
+  for (const file of files) {
+    assert.ok(await fs.pathExists(file), `Expected ${file} to exist`);
+  }
+
+  const decisionGuide = await fs.readFile(path.join(ROOT, 'docs', 'agent-decision-guide.md'), 'utf8');
+  assert.match(decisionGuide, /design-system/);
+  assert.match(decisionGuide, /design-bounded-context/);
+  assert.match(decisionGuide, /dsl validate/);
+  assert.match(decisionGuide, /dsl preview/);
+  assert.match(decisionGuide, /system\.yaml/);
+
+  const workflowReference = await fs.readFile(path.join(ROOT, 'docs', 'workflow-reference.md'), 'utf8');
+  assert.match(workflowReference, /Proyecto nuevo/);
+  assert.match(workflowReference, /Handoff a Fase 2/);
+  assert.match(workflowReference, /dsl preview --no-open --format all --locale es/);
+
+  const agentsDoc = await fs.readFile(path.join(ROOT, 'AGENTS.md'), 'utf8');
+  assert.match(agentsDoc, /Gobernanza operacional/);
+  assert.match(agentsDoc, /docs\/agent-decision-guide\.md/);
+  assert.match(agentsDoc, /docs\/workflow-reference\.md/);
+});
+
+test('canasta familiar example includes strategic and tactical artifacts', async () => {
+  const expectedPaths = [
+    path.join('arch', 'system', 'system.yaml'),
+    path.join('arch', 'system', 'system-spec.md'),
+    path.join('arch', 'system', 'system-diagram.mmd'),
+    path.join('arch', 'catalog', 'catalog.yaml'),
+    path.join('arch', 'catalog', 'catalog-open-api.yaml'),
+    path.join('arch', 'catalog', 'catalog-async-api.yaml'),
+    path.join('arch', 'catalog', 'diagrams', 'catalog-diagram.mmd'),
+    path.join('arch', 'orders', 'orders.yaml'),
+    path.join('arch', 'orders', 'orders-open-api.yaml'),
+    path.join('arch', 'orders', 'orders-async-api.yaml'),
+    path.join('arch', 'orders', 'diagrams', 'orders-diagram.mmd'),
+  ];
+
+  for (const rel of expectedPaths) {
+    assert.ok(await fs.pathExists(path.join(CANASTA_EXAMPLE, rel)), `Expected example file ${rel}`);
+  }
+
+  const exampleReadme = await fs.readFile(path.join(ROOT, 'examples', 'README.md'), 'utf8');
+  assert.match(exampleReadme, /canasta-familiar/);
+  assert.match(exampleReadme, /catalog/);
+  assert.match(exampleReadme, /orders/);
+  assert.match(exampleReadme, /INT-007/);
+});
+
+test('canasta familiar example validates and previews as an incremental design', async () => {
+  await withTempProject(async (projectDir) => {
+    await copyCanastaExample(projectDir);
+
+    const validateResult = runNode([CLI, 'validate'], { cwd: projectDir });
+    const validateOutput = `${validateResult.stdout}\n${validateResult.stderr}`;
+    assert.strictEqual(validateResult.status, 0, validateOutput);
+    assert.match(validateOutput, /warning\(s\) found, no errors/);
+    assert.match(validateOutput, /INT-007|INT-012|INT-014/);
+
+    const previewResult = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    const previewOutput = `${previewResult.stdout}\n${previewResult.stderr}`;
+    assert.strictEqual(previewResult.status, 0, previewOutput);
+
+    const reviewDir = path.join(projectDir, 'arch', 'review');
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'index.html')));
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'catalog-review.html')));
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'orders-review.html')));
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'review-model.json')));
   });
 });
 

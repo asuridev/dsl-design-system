@@ -1,0 +1,29 @@
+stateDiagram-v2
+    [*] --> PENDING_PAYMENT : Order.create()\n[UC-ORD-005 Checkout]\nemits OrderPlaced
+
+    PENDING_PAYMENT --> CONFIRMED : Order.confirm()\n[UC-ORD-020 ConfirmOrder]\nPaymentApproved event\nemits OrderConfirmed
+
+    PENDING_PAYMENT --> CANCELLED : Order.cancel()\n[UC-ORD-012 CancelOrder]\n[UC-ORD-021 CancelOnStockFailed]\n[UC-ORD-022 CancelOnPaymentFailed]\nemits OrderCancelled
+
+    CONFIRMED --> IN_DELIVERY : Order.setInDelivery()\n[UC-ORD-023 SetOrderInDelivery]\nDeliveryOrderCreated event
+
+    CONFIRMED --> CANCELLED : Order.cancel()\n[UC-ORD-012 CancelOrder]\nemits OrderCancelled
+
+    IN_DELIVERY --> DELIVERED : Order.complete()\n[UC-ORD-024 CompleteDelivery]\nDeliveryCompleted event
+
+    DELIVERED --> [*] : Terminal state
+    CANCELLED --> [*] : Terminal state
+
+    note right of PENDING_PAYMENT
+        ORD-RULE-008: guard for confirm()
+        ORD-RULE-005: guard for cancel()
+    end note
+
+    note right of CONFIRMED
+        ORD-RULE-009: guard for setInDelivery()
+        ORD-RULE-005: guard for cancel()
+    end note
+
+    note right of IN_DELIVERY
+        ORD-RULE-010: guard for complete()
+    end note

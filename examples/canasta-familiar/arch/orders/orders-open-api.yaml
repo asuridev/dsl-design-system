@@ -1,0 +1,741 @@
+openapi: "3.1.0"
+
+info:
+  title: Orders API
+  description: |
+    Public REST API for the `orders` Bounded Context of Canasta Familiar.
+    Manages shopping carts and order lifecycle.
+    
+    **Authentication:** Bearer JWT (OAuth2 / Auth Server). All endpoints require
+    authentication. Customers can access their own resources only; admins have
+    unrestricted read/write access.
+    
+    **Idempotency:** POST /carts supports the `Idempotency-Key` header (UUID v4).
+  version: "1.0.0"
+  contact:
+    name: Platform Team — Canasta Familiar
+
+servers:
+  - url: /api/orders/v1
+    description: Orders BC base path
+
+tags:
+  - name: carts
+    description: Shopping cart management
+  - name: orders
+    description: Order lifecycle and queries
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─── Carts ────────────────────────────────────────────────────────────────
+
+  /carts:
+    post:
+      operationId: createCart
+      tags: [carts]
+      summary: Create a new shopping cart
+      description: |
+        Creates a new OPEN cart for the authenticated customer with the selected
+        payment method.
+        
+        **Business rules:**
+        - A customer can only have one OPEN cart at a time (ORD-RULE-004).
+        - The `paymentMethod` is fixed at cart creation and cannot be changed.
+        
+        **Idempotency:** Provide an `Idempotency-Key` header (UUID v4) to ensure
+        at-most-once creation. The same key within 24 hours returns the original
+        201 response.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCartRequest'
+      responses:
+        '201':
+          description: Cart created successfully.
+          headers:
+            Location:
+              description: URI of the newly created cart.
+              schema:
+                type: string
+                example: /api/orders/v1/carts/550e8400-e29b-41d4-a716-446655440001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /carts/{cartId}:
+    get:
+      operationId: getCart
+      tags: [carts]
+      summary: Get cart details
+      description: |
+        Returns the current state of the cart including all items.
+        Only the owning customer can access their cart.
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      responses:
+        '200':
+          description: Cart details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /carts/{cartId}/items:
+    post:
+      operationId: addItemToCart
+      tags: [carts]
+      summary: Add a product to the cart
+      description: |
+        Adds a product to the customer's OPEN cart. If the product already exists
+        in the cart, the quantity is incremented (not duplicated).
+        
+        The cart must be in OPEN status (ORD-RULE-002).
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+      responses:
+        '201':
+          description: Item added successfully.
+          headers:
+            Location:
+              description: URI of the cart item.
+              schema:
+                type: string
+                example: /api/orders/v1/carts/550e8400-e29b-41d4-a716-446655440001/items/661f9511-f30c-52e5-b827-557766551112
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /carts/{cartId}/items/{itemId}:
+    patch:
+      operationId: updateCartItem
+      tags: [carts]
+      summary: Update cart item quantity
+      description: |
+        Updates the quantity of an existing item in the cart.
+        The cart must be OPEN and the item must belong to this cart.
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCartItemRequest'
+      responses:
+        '204':
+          description: Item updated successfully.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+    delete:
+      operationId: removeCartItem
+      tags: [carts]
+      summary: Remove an item from the cart
+      description: |
+        Removes a product line from the customer's OPEN cart.
+        The cart must be OPEN (ORD-RULE-002).
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '204':
+          description: Item removed successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /carts/{cartId}/checkout:
+    post:
+      operationId: checkout
+      tags: [carts]
+      summary: Checkout cart
+      description: |
+        Performs checkout of the customer's cart:
+        1. Validates all prices against the catalog (authoritative price snapshot).
+        2. Transitions the cart to CHECKED_OUT (terminal state).
+        3. Creates a new Order in PENDING_PAYMENT status.
+        4. Emits `OrderPlaced` to trigger the CheckoutSaga.
+        
+        **Business rules:**
+        - Cart must have at least one item (ORD-RULE-001).
+        - Cart must be OPEN (ORD-RULE-002).
+        - `deliveryAddressId` must exist in the customer's address book and not be deleted.
+        - Prices are always fetched from the catalog — never from client input (OWASP A04).
+      parameters:
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Checkout successful. Order created.
+          headers:
+            Location:
+              description: URI of the newly created order.
+              schema:
+                type: string
+                example: /api/orders/v1/orders/772a0622-g41d-63f6-c938-668877662223
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  # ─── Orders ───────────────────────────────────────────────────────────────
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders
+      description: |
+        Returns a paginated list of orders sorted by creation date (newest first).
+        
+        **Authorization:**
+        - `ROLE_CUSTOMER`: Returns only the authenticated customer's orders.
+          The `customerId` query parameter is ignored and always overridden with JWT sub.
+        - `ROLE_ADMIN`: Can optionally filter by `customerId`. If omitted, returns all orders.
+      parameters:
+        - name: customerId
+          in: query
+          required: false
+          description: Filter by customer ID (ROLE_ADMIN only; ignored for ROLE_CUSTOMER).
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Filter by order status.
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummaryPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order details
+      description: |
+        Returns full order details including all order lines and the delivery address.
+        
+        **Authorization:**
+        - `ROLE_CUSTOMER`: Can only access their own orders.
+        - `ROLE_ADMIN`: Can access any order.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /orders/{orderId}/cancel:
+    patch:
+      operationId: cancelOrder
+      tags: [orders]
+      summary: Cancel an order
+      description: |
+        Cancels an order in PENDING_PAYMENT or CONFIRMED status.
+        
+        **Business rules:**
+        - Orders in DELIVERED or CANCELLED status cannot be cancelled (terminal states).
+        - Orders in IN_DELIVERY status cannot be cancelled (ORD-RULE-005).
+        - `ROLE_CUSTOMER` can only cancel their own orders.
+        - `ROLE_ADMIN` can cancel any order.
+        
+        Emits `OrderCancelled` consumed by `delivery` and `payments` for compensation.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '204':
+          description: Order cancelled successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+
+# ─── COMPONENTS ───────────────────────────────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+
+    CartId:
+      name: cartId
+      in: path
+      required: true
+      description: Unique identifier of the cart.
+      schema:
+        type: string
+        format: uuid
+
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      description: Unique identifier of the order.
+      schema:
+        type: string
+        format: uuid
+
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      description: Unique identifier of the cart item.
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-generated UUID v4 for idempotent POST operations (TTL 24h).
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    # ── Enums ────────────────────────────────────────────────────────────────
+
+    PaymentMethod:
+      type: string
+      enum: [CARD, CASH_ON_DELIVERY]
+      description: Payment method for the order.
+
+    OrderStatus:
+      type: string
+      enum: [PENDING_PAYMENT, CONFIRMED, IN_DELIVERY, DELIVERED, CANCELLED]
+      description: Current lifecycle status of the order.
+
+    # ── Value Objects ─────────────────────────────────────────────────────────
+
+    Money:
+      type: object
+      description: Monetary amount with ISO 4217 currency code.
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          description: "Exact monetary amount as a decimal string (e.g. '15000.0000'). Never use floating-point."
+          example: "15000.0000"
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 currency code.
+          example: "COP"
+
+    DeliveryAddressSnapshot:
+      type: object
+      description: Immutable snapshot of a delivery address captured at checkout time.
+      required: [street, city, postalCode]
+      properties:
+        street:
+          type: string
+          maxLength: 300
+          example: "Calle 123 #45-67"
+        city:
+          type: string
+          maxLength: 100
+          example: "Bogotá"
+        postalCode:
+          type: string
+          maxLength: 20
+          example: "110111"
+        reference:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: "Apto 301, timbre 4"
+
+    # ── Requests ──────────────────────────────────────────────────────────────
+
+    CreateCartRequest:
+      type: object
+      required: [paymentMethod]
+      properties:
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+
+    AddItemRequest:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId:
+          type: string
+          format: uuid
+          description: Identifier of the product to add.
+        quantity:
+          type: integer
+          minimum: 1
+          description: Number of units to add.
+
+    UpdateCartItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          description: New quantity for the cart item.
+
+    CheckoutRequest:
+      type: object
+      required: [deliveryAddressId]
+      properties:
+        deliveryAddressId:
+          type: string
+          format: uuid
+          description: ID of the delivery address from the customer's address book.
+
+    # ── Response Bodies ───────────────────────────────────────────────────────
+
+    CartItemResponse:
+      type: object
+      required: [id, productId, quantity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+
+    CartResponse:
+      type: object
+      required: [id, customerId, status, paymentMethod, items, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [OPEN, CHECKED_OUT]
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItemResponse'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderLineSummary:
+      type: object
+      required: [productId, productName, unitPrice, quantity, subtotal]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+          maxLength: 200
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        quantity:
+          type: integer
+          minimum: 1
+        subtotal:
+          $ref: '#/components/schemas/Money'
+
+    OrderSummary:
+      type: object
+      required: [id, status, paymentMethod, total, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        total:
+          $ref: '#/components/schemas/Money'
+        createdAt:
+          type: string
+          format: date-time
+
+    OrderDetail:
+      type: object
+      required: [id, customerId, status, paymentMethod, total, deliveryAddress, lines, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        total:
+          $ref: '#/components/schemas/Money'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddressSnapshot'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLineSummary'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderSummaryPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+
+    # ── Error ─────────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code.
+          example: CART_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable error description.
+          example: The requested cart does not exist.
+
+  responses:
+
+    BadRequest:
+      description: Invalid request payload or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Missing or invalid authentication token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: The authenticated user does not have permission to access this resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            cartNotFound:
+              value:
+                code: CART_NOT_FOUND
+                message: The requested cart does not exist.
+            orderNotFound:
+              value:
+                code: ORDER_NOT_FOUND
+                message: The requested order does not exist.
+            cartItemNotFound:
+              value:
+                code: CART_ITEM_NOT_FOUND
+                message: The specified cart item does not exist within this cart.
+            deliveryAddressNotFound:
+              value:
+                code: DELIVERY_ADDRESS_NOT_FOUND
+                message: The selected delivery address was not found or has been deleted.
+
+    Conflict:
+      description: The request conflicts with the current state of the resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            customerAlreadyHasOpenCart:
+              value:
+                code: CUSTOMER_ALREADY_HAS_OPEN_CART
+                message: The customer already has an active open cart.
+            cartAlreadyCheckedOut:
+              value:
+                code: CART_ALREADY_CHECKED_OUT
+                message: The cart has already been checked out.
+            orderAlreadyDelivered:
+              value:
+                code: ORDER_ALREADY_DELIVERED
+                message: The order has already been delivered.
+            orderAlreadyCancelled:
+              value:
+                code: ORDER_ALREADY_CANCELLED
+                message: The order has already been cancelled.
+            concurrentModification:
+              value:
+                code: CONCURRENT_MODIFICATION
+                message: A concurrent modification was detected. Retry the operation.
+
+    UnprocessableEntity:
+      description: The request is well-formed but violates a business rule.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            cartIsEmpty:
+              value:
+                code: CART_IS_EMPTY
+                message: The cart must have at least one item before checkout.
+            cartNotOpen:
+              value:
+                code: CART_NOT_OPEN
+                message: The cart cannot be modified because it is not in OPEN status.
+            orderCannotBeCancelled:
+              value:
+                code: ORDER_CANNOT_BE_CANCELLED
+                message: The order cannot be cancelled in its current status.
+            productPriceUnavailable:
+              value:
+                code: PRODUCT_PRICE_UNAVAILABLE
+                message: One or more products in the cart are not available for purchase.
+
+    ServiceUnavailable:
+      description: An upstream dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            catalogUnavailable:
+              value:
+                code: CATALOG_SERVICE_UNAVAILABLE
+                message: The catalog service is temporarily unavailable. Please retry.

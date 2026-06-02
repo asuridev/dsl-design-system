@@ -1,0 +1,174 @@
+openapi: 3.1.0
+x-internal: true
+info:
+  title: Catalog BC — Internal API
+  version: 1.0.0
+  description: >
+    API interna del BC catalog, exclusiva para comunicación BC-a-BC.
+    No expuesta al exterior. Usada por el BC orders durante el checkout para
+    obtener un snapshot autoritativo de precios y disponibilidad de productos.
+    Requiere JWT válido propagado por el BC caller (internal-jwt).
+servers:
+  - url: /api/catalog/v1
+
+tags:
+  - name: internal-products
+    description: Operaciones internas sobre productos para consumo de otros BCs
+
+paths:
+  /internal/products/price-snapshot:
+    post:
+      operationId: validateProductsAndPrices
+      summary: Obtener snapshot de precios y disponibilidad
+      description: >
+        Retorna el precio actual y el estado de cada producto en la lista proporcionada.
+        Usado por el BC orders para crear la snapshot monetaria (OrderLine.unitPrice)
+        durante el checkout, previniendo manipulación de precios (OWASP A04).
+        
+        La respuesta puede contener menos elementos que la lista de entrada si
+        algún productId no existe. El BC orders es responsable de detectar
+        IDs faltantes y rechazar el checkout.
+      tags: [internal-products]
+      security:
+        - bearerAuth: [ROLE_CUSTOMER, ROLE_ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceSnapshotRequest'
+            example:
+              productIds:
+                - "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                - "4cb96a75-6828-5673-c4gd-3d074g77bgb7"
+      responses:
+        '200':
+          description: Lista de snapshots de precios por producto encontrado
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductPriceSnapshot'
+              example:
+                - productId: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                  name: "Leche Entera 1L"
+                  price:
+                    amount: "3500.0000"
+                    currency: "COP"
+                  status: "ACTIVE"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT propagado por el BC caller con los claims del usuario que inició
+        la operación (e.g. el cliente que está haciendo checkout).
+
+  responses:
+    BadRequest:
+      description: La solicitud contiene parámetros inválidos o mal formados
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Token de autenticación ausente o inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: El caller no tiene permiso para invocar este endpoint interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    UnprocessableEntity:
+      description: La lista de productIds es inválida (vacía o supera el máximo)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: VALIDATION_ERROR
+            message: productIds must have between 1 and 100 elements
+
+  schemas:
+    PriceSnapshotRequest:
+      type: object
+      required: [productIds]
+      properties:
+        productIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 100
+          description: Lista de IDs de productos para los cuales se requiere snapshot de precio
+
+    ProductPriceSnapshot:
+      type: object
+      required: [productId, name, price, status]
+      description: >
+        Snapshot autoritativo del precio y estado de un producto al momento del checkout.
+        Usado por orders para congelar el precio en OrderLine.unitPrice.
+      properties:
+        productId:
+          type: string
+          format: uuid
+          description: ID del producto
+        name:
+          type: string
+          description: Nombre comercial del producto al momento del snapshot
+        price:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+          description: >
+            Estado actual del producto. orders debe rechazar el checkout
+            si status != ACTIVE.
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          description: Monto exacto como string decimal con 4 decimales. Nunca número flotante.
+          example: "3500.0000"
+          pattern: '^[0-9]+\.[0-9]{1,4}$'
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          pattern: '^[A-Z]{3}$'
+          example: "COP"
+
+    ProductStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, DISCONTINUED]
+
+    ErrorResponse:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

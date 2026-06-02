@@ -1,0 +1,90 @@
+classDiagram
+    class Category {
+        +Uuid id
+        +String(200) name
+        +String(500) description
+        +Uuid parentCategoryId
+        +CategoryStatus status
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(name, description, parentCategoryId) Category
+        +update(name, description, parentCategoryId) void
+        +deactivate() void
+        +reactivate() void
+    }
+
+    class CategoryStatus {
+        <<enumeration>>
+        ACTIVE
+        INACTIVE
+    }
+
+    class Product {
+        +Uuid id
+        +String(200) name
+        +String(100) sku
+        +Text description
+        +Money price
+        +Uuid categoryId
+        +ProductStatus status
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(name, sku, description, price, categoryId) Product
+        +update(name, description, price, categoryId) void
+        +activate() void
+        +discontinue() void
+        +addImage(url, altText, imageType, displayOrder) void
+        +removeImage(imageId) void
+    }
+
+    class ProductStatus {
+        <<enumeration>>
+        DRAFT
+        ACTIVE
+        DISCONTINUED
+    }
+
+    class ProductImage {
+        +Uuid id
+        +Url url
+        +String(200) altText
+        +ImageType imageType
+        +Integer displayOrder
+    }
+
+    class ImageType {
+        <<enumeration>>
+        MAIN
+        GALLERY
+        THUMBNAIL
+    }
+
+    class Money {
+        <<valueObject>>
+        +Decimal amount
+        +String(3) currency
+    }
+
+    class ProductActivated {
+        <<domainEvent>>
+        +Uuid productId
+        +String(100) sku
+        +String(200) name
+        +Uuid categoryId
+    }
+
+    class ProductDiscontinued {
+        <<domainEvent>>
+        +Uuid productId
+        +String(100) sku
+    }
+
+    Category "1" --> "0..*" Category : parentCategoryId
+    Category --> CategoryStatus
+    Product --> ProductStatus
+    Product --> Money : price
+    Product "1" *-- "0..*" ProductImage : images
+    ProductImage --> ImageType
+    Product --> Category : categoryId
+    Product ..> ProductActivated : emits on activate
+    Product ..> ProductDiscontinued : emits on discontinue

@@ -1,0 +1,495 @@
+# ============================================================
+# Canasta Familiar — system.yaml
+# Paso 1: Diseño Estratégico DDD
+# Generado: 2026-05-15
+# ============================================================
+
+system:
+  name: canasta-familiar
+  description: >
+    B2C digital platform for selling grocery and household staple products.
+    Customers browse a catalog, place orders online, and receive home delivery
+    using the company's own courier fleet. Supports card payments via an external
+    payment gateway and cash-on-delivery.
+
+actors:
+  - name: customer
+    description: Registered B2C consumer who browses the catalog, places orders and tracks deliveries.
+  - name: admin
+    description: Back-office operator who manages the catalog, inventory, orders and the delivery fleet.
+  - name: system
+    description: Internal automated process (saga triggers, scheduled jobs, event-driven handlers).
+
+boundedContexts:
+
+  - name: catalog
+    type: core
+    purpose: >
+      Manages the product catalog: categories, product details, images and pricing.
+      It is the single authoritative source for all product data and prices in the platform.
+    aggregates:
+      - name: Product
+        root: Product
+        entities:
+          - ProductImage
+      - name: Category
+        root: Category
+        entities: []
+
+  - name: orders
+    type: core
+    purpose: >
+      Manages the full order lifecycle from cart creation and checkout through
+      payment confirmation, delivery tracking and order completion. Validates prices
+      against catalog via HTTP at checkout (monetary snapshot). Maintains a local read
+      model of customer addresses fed by CustomerAddressUpdated events from the
+      customers BC (designer chose LRM for delivery address — non-monetary identity data).
+    aggregates:
+      - name: Order
+        root: Order
+        entities:
+          - OrderLine
+      - name: Cart
+        root: Cart
+        entities:
+          - CartItem
+
+  - name: payments
+    type: supporting
+    purpose: >
+      Processes and records payments for orders. Supports card payments via an external
+      payment gateway and cash-on-delivery payments recorded when the courier collects
+      the cash. Handles refunds for cancelled confirmed orders charged by card.
+    aggregates:
+      - name: Payment
+        root: Payment
+        entities: []
+
+  - name: inventory
+    type: supporting
+    purpose: >
+      Tracks real-time stock levels for each active product. Creates a StockItem when a
+      product is activated and permanently closes it when the product is discontinued.
+      Reserves stock during the CheckoutSaga and releases it as compensation if payment fails.
+    aggregates:
+      - name: StockItem
+        root: StockItem
+        entities:
+          - StockMovement
+
+  - name: delivery
+    type: supporting
+    purpose: >
+      Manages home delivery orders using the company's own courier fleet. Handles
+      the full delivery lifecycle from assignment to completion. Records cash-on-delivery
+      events for the payments BC.
+    aggregates:
+      - name: DeliveryOrder
+        root: DeliveryOrder
+        entities: []
+      - name: Courier
+        root: Courier
+        entities: []
+
+  - name: customers
+    type: supporting
+    purpose: >
+      Manages customer accounts and their delivery addresses. Publishes
+      CustomerAddressUpdated events consumed by orders to maintain a local read
+      model of delivery addresses for order snapshots.
+    aggregates:
+      - name: Customer
+        root: Customer
+        entities:
+          - Address
+
+  - name: notifications
+    type: generic
+    purpose: >
+      Delivers transactional notifications to customers (email, SMS, push) for key order
+      lifecycle events: order confirmed, order cancelled, delivery completed. Fully
+      delegates sending to an external notification provider. Generic domain — no
+      competitive advantage; no business logic beyond template selection and dispatch.
+    aggregates:
+      - name: Notification
+        root: Notification
+        entities: []
+
+externalSystems:
+  - name: payment-gateway
+    type: external
+    description: Third-party payment processor for card charges and refunds (e.g. MercadoPago, Stripe).
+    baseUrlProperty: integration.payment-gateway.base-url
+    auth:
+      type: api-key
+      valueProperty: integration.payment-gateway.api-key
+      header: X-Api-Key
+    resilience:
+      timeoutMs: 15000
+      connectTimeoutMs: 5000
+      retries:
+        maxAttempts: 3
+        waitDuration: 1s
+      circuitBreaker:
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+    operations:
+      - name: chargePayment
+        method: POST
+        path: /v1/charges
+        request:
+          fields:
+            - name: cardToken
+              type: String
+            - name: amount
+              type: Decimal
+            - name: currency
+              type: String
+        response:
+          fields:
+            - name: chargeId
+              type: String
+            - name: status
+              type: String
+        domain:
+          returnType: ChargeResult
+          fields:
+            - name: id
+              type: UUID
+              source: chargeId
+            - name: status
+              type: String
+              source: status
+      - name: refundPayment
+        method: POST
+        path: /v1/charges/{chargeId}/refund
+        request:
+          fields:
+            - name: reason
+              type: String
+        response:
+          fields:
+            - name: refundId
+              type: String
+            - name: status
+              type: String
+        domain:
+          returnType: RefundResult
+          fields:
+            - name: id
+              type: UUID
+              source: refundId
+            - name: status
+              type: String
+              source: status
+
+  - name: notification-provider
+    type: external
+    description: Third-party messaging service for email, SMS and push notifications (e.g. SendGrid, Firebase, Twilio).
+    baseUrlProperty: integration.notification-provider.base-url
+    auth:
+      type: api-key
+      valueProperty: integration.notification-provider.api-key
+      header: X-Api-Key
+    resilience:
+      timeoutMs: 5000
+      connectTimeoutMs: 2000
+      retries:
+        maxAttempts: 2
+        waitDuration: 500ms
+      circuitBreaker:
+        failureRateThreshold: 60
+        waitDurationInOpenState: 30s
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+    operations:
+      - name: sendMessage
+        method: POST
+        path: /v1/messages
+        request:
+          fields:
+            - name: recipientId
+              type: String
+            - name: channel
+              type: String
+            - name: templateId
+              type: String
+            - name: variables
+              type: String
+        response:
+          fields:
+            - name: messageId
+              type: String
+            - name: status
+              type: String
+        domain:
+          returnType: MessageResult
+          fields:
+            - name: id
+              type: UUID
+              source: messageId
+            - name: status
+              type: String
+              source: status
+
+integrations:
+
+  # ── CheckoutSaga — happy path ─────────────────────────────────────────
+  - from: orders
+    to: inventory
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: OrderPlaced
+        channel: orders.order.placed
+    notes: >
+      Triggers stock reservation. Saga trigger event (step 1).
+
+  - from: inventory
+    to: payments
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: StockReserved
+        channel: inventory.stock.reserved
+    notes: >
+      Triggers payment processing after successful stock reservation (step 2).
+
+  - from: payments
+    to: orders
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: PaymentApproved
+        channel: payments.payment.approved
+      - name: PaymentFailed
+        channel: payments.payment.failed
+      - name: PaymentRefunded
+        channel: payments.payment.refunded
+    notes: >
+      PaymentApproved triggers order confirmation (step 3).
+      PaymentFailed triggers order cancellation (compensation path).
+      PaymentRefunded confirms the refund saga step for card payments.
+
+  - from: orders
+    to: delivery
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: OrderConfirmed
+        channel: orders.order.confirmed
+      - name: OrderCancelled
+        channel: orders.order.cancelled
+    notes: >
+      OrderConfirmed triggers DeliveryOrder creation (step 4).
+      OrderCancelled triggers delivery cancellation if the delivery was already created.
+
+  # ── CheckoutSaga — compensation ───────────────────────────────────────
+  - from: inventory
+    to: orders
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: StockReservationFailed
+        channel: inventory.stock.reservation.failed
+      - name: StockReleased
+        channel: inventory.stock.released
+    notes: >
+      StockReservationFailed triggers order cancellation (OrderCancelled) in orders.
+      StockReleased is the compensation confirmation emitted by inventory after releasing
+      reserved stock; orders receives it for saga state tracking.
+
+  - from: payments
+    to: inventory
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: PaymentFailed
+        channel: payments.payment.failed
+    notes: >
+      Triggers stock release compensation in inventory (StockReleased).
+      PaymentFailed fans out to both orders and inventory.
+
+  # ── Lifecycle dependencies: catalog → inventory ───────────────────────
+  - from: catalog
+    to: inventory
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: ProductActivated
+        channel: catalog.product.activated
+      - name: ProductDiscontinued
+        channel: catalog.product.discontinued
+    notes: >
+      Inventory creates a StockItem when a product is activated and permanently
+      closes it when the product is discontinued. These are implicit lifecycle
+      dependencies not visible in the checkout flow.
+
+  # ── Delivery lifecycle ────────────────────────────────────────────────
+  - from: delivery
+    to: orders
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: DeliveryOrderCreated
+        channel: delivery.delivery.order.created
+      - name: DeliveryCompleted
+        channel: delivery.delivery.completed
+    notes: >
+      DeliveryOrderCreated confirms to orders that the delivery is being arranged.
+      DeliveryCompleted transitions the order to DELIVERED status.
+
+  - from: delivery
+    to: payments
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: CashCollected
+        channel: delivery.cash.collected
+    notes: >
+      Payments BC records the cash amount collected by the courier at the door
+      for cash-on-delivery orders.
+
+  # ── Snapshot at write time: prices (monetary) ─────────────────────────
+  - from: orders
+    to: catalog
+    pattern: customer-supplier
+    channel: http
+    contracts:
+      - validateProductsAndPrices
+    notes: >
+      Mandatory HTTP for monetary snapshot (OrderLine.unitPrice reads Product.price).
+      Designer evaluated LRM trade-offs including OWASP A04 fraud risk and chose HTTP.
+      Price is always read from catalog in real time at checkout — no inconsistency window.
+      The customer sends only productId + quantity; the backend reads the authoritative price.
+
+  # ── Local Read Model: delivery address (identity) ─────────────────────
+  - from: customers
+    to: orders
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: CustomerAddressUpdated
+        channel: customers.customer.address.updated
+    notes: >
+      Orders maintains a local read model of customer addresses fed by this event.
+      Designer chose LRM for delivery address (non-monetary identity data).
+      Eventual consistency accepted (typical lag < 1-2s).
+      Step 2 must define the initial snapshot strategy (e.g., one-time HTTP call
+      at first order placement before the LRM is warmed up).
+
+  # ── External ACL: card payments ──────────────────────────────────────
+  - from: payments
+    to: payment-gateway
+    pattern: acl
+    channel: http
+    contracts:
+      - chargePayment
+      - refundPayment
+    notes: >
+      ACL adapter isolates the payments BC from the external gateway model.
+      Auth and resilience configured in externalSystems[payment-gateway].
+
+  # ── Notification fan-out ──────────────────────────────────────────────
+  - from: orders
+    to: notifications
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: OrderConfirmed
+        channel: orders.order.confirmed
+      - name: OrderCancelled
+        channel: orders.order.cancelled
+    notes: >
+      Notifications BC sends an order confirmation message when the order is confirmed
+      and a cancellation notice when the order is cancelled.
+
+  - from: delivery
+    to: notifications
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: DeliveryCompleted
+        channel: delivery.delivery.completed
+    notes: >
+      Notifications BC sends a delivery confirmation to the customer.
+
+  - from: notifications
+    to: notification-provider
+    pattern: acl
+    channel: http
+    contracts:
+      - sendMessage
+    notes: >
+      ACL adapter isolates the notifications BC from the external provider model.
+      Auth and resilience configured in externalSystems[notification-provider].
+
+  # ── Post-confirmation cancellation (PaymentRefunded compensation trigger) ──
+  - from: orders
+    to: payments
+    pattern: event
+    channel: message-broker
+    contracts:
+      - name: OrderCancelled
+        channel: orders.order.cancelled
+    notes: >
+      Payments BC consumes OrderCancelled to check if a card payment was already captured.
+      If so, it initiates a refund via payment-gateway and emits PaymentRefunded.
+      This closes the compensation chain for post-confirmation cancellations that occur
+      outside the CheckoutSaga (e.g., admin cancellation, customer cancellation request).
+
+sagas:
+  - name: CheckoutSaga
+    description: >
+      Coordinates the checkout process across inventory, payments, orders and delivery.
+      Reserves stock, processes payment, confirms the order and triggers home delivery.
+      Compensates by releasing reserved stock and refunding the card charge if any step fails.
+    trigger:
+      event: OrderPlaced
+      bc: orders
+    steps:
+      - order: 1
+        bc: inventory
+        triggeredBy: OrderPlaced
+        onSuccess: StockReserved
+        onFailure: StockReservationFailed
+        compensation: StockReleased
+      - order: 2
+        bc: payments
+        triggeredBy: StockReserved
+        onSuccess: PaymentApproved
+        onFailure: PaymentFailed
+        compensation: PaymentRefunded
+      - order: 3
+        bc: orders
+        triggeredBy: PaymentApproved
+        onSuccess: OrderConfirmed
+      - order: 4
+        bc: delivery
+        triggeredBy: OrderConfirmed
+        onSuccess: DeliveryOrderCreated
+
+infrastructure:
+  deployment:
+    strategy: modular-monolith
+    architectureStyle: hexagonal
+  database:
+    type: relational
+    isolationStrategy: schema-per-bc
+  messageBroker: true
+  authServer: true
+  reliability:
+    outbox: true
+    outboxRetentionDays: 7
+    consumerIdempotency: true
+    processedEventRetentionDays: 14
+  notes: >
+    Defaults applied: modular-monolith + hexagonal + relational + schema-per-bc.
+    outbox and consumerIdempotency activated due to CheckoutSaga (at-least-once delivery
+    and idempotent step execution required).
+    outboxRetentionDays: 7 — sufficient margin for message publication.
+    processedEventRetentionDays: 14 — exceeds typical broker redelivery window.
+    authServer: true — customer and admin actors have different access levels.
+    Technology choices (RabbitMQ/Kafka, PostgreSQL, Keycloak/Auth0) resolved at generator phase.

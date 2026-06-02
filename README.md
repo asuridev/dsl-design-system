@@ -14,6 +14,7 @@
   - [1.2 Qué es un artefacto canónico](#12-qué-es-un-artefacto-canónico)
   - [1.3 Diagrama de flujo de información](#13-diagrama-de-flujo-de-información)
   - [1.4 Revisión visual con `dsl preview`](#14-revisión-visual-con-dsl-preview)
+  - [1.5 Ejemplos y gobernanza](#15-ejemplos-y-gobernanza)
 - [2. Cómo leer este documento](#2-cómo-leer-este-documento)
 - [3. Glosario rápido](#3-glosario-rápido)
 - [4. `system.yaml` — Diseño estratégico](#4-systemyaml--diseño-estratégico)
@@ -137,6 +138,18 @@ Cada decisión visible en el HTML incluye alternativas de diseño y un bloque **
 agent** para copiar al chat. Ese prompt debe usarse como punto de partida para pedir al
 agente que ajuste `system.yaml`, `{bc}.yaml`, contratos o documentación relacionada,
 manteniendo los artefactos agnósticos de tecnología.
+
+### 1.5 Ejemplos y gobernanza
+
+Para aprender el flujo con un caso realista, usa [examples/README.md](examples/README.md).
+El ejemplo `canasta-familiar` contiene diseño estratégico y dos BCs tácticos (`catalog` y
+`orders`) con OpenAPI, AsyncAPI, diagramas, Local Read Model y participación en saga.
+
+Para decidir qué agente usar y cuándo validar o generar preview, consulta
+[docs/agent-decision-guide.md](docs/agent-decision-guide.md) y
+[docs/workflow-reference.md](docs/workflow-reference.md). Estas guías mantienen la
+separación de responsabilidades: este repositorio diseña, valida y revisa artefactos de
+Fase 1; la generación de código pertenece a la Fase 2.
 
 ---
 

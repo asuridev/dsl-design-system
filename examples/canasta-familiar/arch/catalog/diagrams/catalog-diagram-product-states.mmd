@@ -1,0 +1,10 @@
+stateDiagram-v2
+    [*] --> DRAFT : UC-CAT-007 CreateProduct
+
+    DRAFT --> ACTIVE : UC-CAT-009 ActivateProduct\n[CAT-RULE-001: product ready + category ACTIVE]\nemits ProductActivated
+
+    DRAFT --> DISCONTINUED : UC-CAT-010 DiscontinueProduct\nemits ProductDiscontinued
+
+    ACTIVE --> DISCONTINUED : UC-CAT-010 DiscontinueProduct\nemits ProductDiscontinued
+
+    DISCONTINUED --> [*] : Terminal state\nNo further transitions

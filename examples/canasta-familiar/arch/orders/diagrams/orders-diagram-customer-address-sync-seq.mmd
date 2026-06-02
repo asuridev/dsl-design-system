@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    participant CustomersBroker as Message Broker\n(customers topic)
+    participant EventConsumer as orders\nCustomerAddressUpdatedConsumer
+    participant IdempotencyStore as Idempotency Store\n(processedEvents)
+    participant AddressRepo as CustomerAddressRepository
+
+    CustomersBroker->>EventConsumer: CustomerAddressUpdated\n{ addressId, customerId, street, city,\n  postalCode, reference, deleted }
+
+    EventConsumer->>IdempotencyStore: isAlreadyProcessed(eventId)?
+    IdempotencyStore-->>EventConsumer: false (new event)
+
+    alt address exists in LRM
+        EventConsumer->>AddressRepo: findByAddressId(addressId)
+        AddressRepo-->>EventConsumer: CustomerAddress (existing record)
+        EventConsumer->>AddressRepo: upsert(updatedAddress)
+        Note over AddressRepo: UPDATE — apply new field values\nincluding deleted flag
+    else new address
+        EventConsumer->>AddressRepo: findByAddressId(addressId)
+        AddressRepo-->>EventConsumer: null
+        EventConsumer->>AddressRepo: upsert(newAddress)
+        Note over AddressRepo: INSERT — new CustomerAddress record
+    end
+
+    AddressRepo-->>EventConsumer: ✓ upserted
+    EventConsumer->>IdempotencyStore: markProcessed(eventId, TTL=14d)
+    EventConsumer-->>CustomersBroker: ACK
+
+    Note over EventConsumer: Redelivery scenario:\nIdempotencyStore returns true → skip processing → ACK
+    Note over AddressRepo: deleted=true → address hidden at checkout\n(DELIVERY_ADDRESS_NOT_FOUND guard in UC-ORD-005)
