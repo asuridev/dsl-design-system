@@ -1,7 +1,7 @@
 ---
 name: design-system
 description: "Diseña un sistema completo con DDD Paso 1 (Diseño Estratégico) y luego valida automáticamente la correcta elección de agregados, entidades e integraciones usando el skill de refinamiento. Úsalo cuando quieras diseñar un nuevo sistema desde cero: ingresa el contexto del negocio y el agente produce los cuatro artefactos canónicos (system.yaml, system-spec.md, system-diagram.mmd, AGENTS.md) más un informe de validación con correcciones aplicadas."
-tools: [read, edit, search, vscode/askQuestions]
+tools: [read, edit, search, execute, vscode/askQuestions]
 argument-hint: "Descripción del negocio a diseñar: modelo de negocio, actores, flujos principales, medios de pago, tipo de entrega, sistemas externos conocidos y restricciones tecnológicas"
 ---
 
@@ -120,13 +120,58 @@ Para cada hallazgo corregible:
 
 ### 2.3 Revisión visual recomendada
 
-No ejecutes comandos en esta fase porque este agente no tiene herramienta `execute`. En el resumen final, recomienda al usuario ejecutar desde la raíz del proyecto:
+Ejecuta desde la raíz del proyecto:
 
 ```bash
 dsl preview --no-open --format all --locale es
 ```
 
 Esto genera la mesa visual de revisión en `arch/review/` sin modificar los YAML canónicos.
+
+---
+
+## Fase 2.5 — Validación de coherencia (`dsl validate`)
+
+Esta fase ejecuta el validador de coherencia contra los artefactos producidos. Detecta inconsistencias estructurales entre `system.yaml` y los `bc.yaml` que ya existan en el workspace (útil cuando el Paso 1 se regenera sobre un sistema con BCs ya diseñados).
+
+### Paso 1 — Ejecutar el validador
+
+Ejecutar en terminal desde la raíz del proyecto (donde existe `arch/`):
+
+```
+node tools/dsl-validate/bin/dsl.js validate
+```
+
+Si `tools/dsl-validate/bin/dsl.js` no existe, usa este fallback:
+1. Si el comando `dsl` está disponible globalmente, ejecutar `dsl validate`.
+2. Si tampoco está disponible, informar que el workspace requiere `dsl init` para copiar `tools/dsl-validate/` y declarar la validación como pendiente en el resumen final. Mantén el informe de Fase 2 pero documenta que la validación ejecutable quedó incompleta.
+
+### Paso 2 — Interpretar el resultado
+
+- **Salida `✔ All validations passed`** → validación limpia. Avanzar a Fase 3.
+- **Sin bc.yaml en el workspace** → el validador pasará trivialmente (es esperable en un Paso 1 puro). Avanzar a Fase 3.
+- **Líneas con `✖`** → hay errores. Continuar con el Paso 3.
+- **Líneas con `⚠` (con o sin `✖`)** → hay advertencias. Procesar tras resolver los errores.
+
+### Paso 3 — Corregir errores y reiterar
+
+Por cada línea con `✖` en la salida:
+1. Identificar el artefacto y la ubicación a partir del texto entre paréntesis al final de la línea, p. ej. `(system.yaml#/integrations[0])` o `(catalog.yaml#/useCases[2])`.
+2. Aplicar la corrección mínima al archivo afectado.
+3. Volver al Paso 1 y re-ejecutar el comando.
+
+**Límite de iteraciones:** Si después de **3 ciclos de corrección** el validador sigue reportando errores `✖`, detener la iteración y presentar al usuario los errores que permanecen con la causa raíz y la corrección manual recomendada.
+
+### Paso 3b — Evaluar y corregir advertencias
+
+Cuando ya no haya líneas `✖`, procesar cada línea `⚠`:
+
+1. **Advertencias que solo tocan `system.yaml`** → aplicar la corrección directamente con nota en el resumen.
+2. **Advertencias que tocan bc.yaml existentes** → usar el Protocolo de Tensión Dual y pedir confirmación antes de editar.
+3. **Advertencias sin corrección técnica posible** → documentar como decisión de diseño explícita en `arch/system/system-spec.md` y avanzar.
+4. Tras corregir, volver al Paso 1 y re-ejecutar.
+
+**Límite compartido:** El contador de 3 ciclos del Paso 3 es compartido con el Paso 3b.
 
 ---
 
@@ -170,5 +215,5 @@ Presenta al usuario el resultado completo en este formato:
 Ejecutar `@design-bounded-context` con el BC más importante para comenzar el Paso 2 — Diseño Táctico. BC recomendado: [nombre] — [justificación en una oración].
 
 ### Revisión visual recomendada
-Ejecutar `dsl preview --no-open --format all --locale es` para inspeccionar decisiones, diagramas y prompts de revisión en `arch/review/`.
+Ejecutar `dsl preview --no-open --format all --locale es` para inspeccionar decisiones, diagramas y prompts de revisión en `arch/review/`. El agente ya ejecuta este comando automáticamente en la Fase 2.3.
 ```
