@@ -25,7 +25,7 @@ Usa este formato cuando la tensión cambie agregados, entidades, VOs, consistenc
 **Decisión requerida:** [sí/no]
 ```
 
-Si la decisión cambia `system.yaml`, fronteras del BC, estrategia HTTP/LRM, saga compensation o contratos públicos, usa `vscode_askQuestions` y espera confirmación. Si es una corrección segura de consistencia interna, aplícala con edición mínima y deja nota en el resumen.
+Si la decisión cambia `system.yaml`, fronteras del BC, estrategia HTTP/LRM, saga compensation o contratos públicos, usa `vscode_askQuestions` (o en texto directo) y espera confirmación. Si es una corrección segura de consistencia interna, aplícala con edición mínima y deja nota en el resumen.
 
 ---
 
@@ -69,7 +69,7 @@ Ejecuta el proceso completo definido en `ddd-step2-tactical-design/SKILL.md`. El
 
 Para cada integración `channel: http` hacia otro BC interno en system.yaml:
 - Evaluar los criterios de Local Read Model vs HTTP síncrono
-- Usar `vscode_askQuestions` para presentar la elección al usuario con las opciones y trade-offs del skill
+- Usar `vscode_askQuestions` (o en texto directo) para presentar la elección al usuario con las opciones y trade-offs del skill
 - Registrar la decisión antes de continuar
 - Si el usuario elige Local Read Model y `system.yaml` todavía declara HTTP, activar el Protocolo Checklist D antes de generar artefactos: mostrar el cambio exacto a `system.yaml`, pedir autorización y actualizar primero el diseño estratégico. No diseñar el BC sobre una estrategia que acabas de invalidar.
 
@@ -159,7 +159,7 @@ Si se detecta que bc.yaml declara algo que no existe en system.yaml:
    - Qué elemento del diseño táctico genera la discrepancia
    - Qué dice actualmente system.yaml
    - Exactamente qué campo/valor cambiaría en system.yaml
-3. Usar `vscode_askQuestions`:
+3. Usar `vscode_askQuestions` (o en texto directo):
    ```
    Header: "system.yaml requiere ajuste"
    Options:

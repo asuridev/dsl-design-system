@@ -1128,7 +1128,7 @@ Si durante la validación se detecta alguna de las siguientes situaciones:
    - Qué dice actualmente system.yaml
    - Exactamente qué cambio requeriría system.yaml (qué campo, qué valor, dónde)
    - Por qué el Paso 1 necesita actualizarse antes de continuar
-3. Usar `vscode_askQuestions` para presentar la decisión:
+3. Usar `vscode_askQuestions` (o en texto directo) para presentar la decisión:
    ```
    Header: "system.yaml requiere ajuste"
    Question: "El diseño táctico del BC [nombre] reveló una discrepancia con el Paso 1.
@@ -1209,7 +1209,7 @@ Aplica a `{bc}.yaml`, `{bc}-spec.md`, `{bc}-flows.md`, OpenAPI/AsyncAPI y diagra
 
 ### 2.2 Preguntar solo cuando sea bloqueante
 
-Usar `vscode_askQuestions` únicamente cuando:
+Usar `vscode_askQuestions` (o en texto directo) únicamente cuando:
 - El cambio es ambiguo y puede resolverse de al menos dos formas estructuralmente distintas
 - El cambio implica decisiones de negocio que el diseñador debe tomar
 - El impacto es mayor al esperado y conviene alertar antes de proceder

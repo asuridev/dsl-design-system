@@ -205,7 +205,7 @@ en todos los artefactos que le corresponden.
 - Para cada integración `pattern: customer-supplier` o `channel: http`, ¿la necesidad
   de respuesta inmediata está justificada por el flujo de negocio?
   - Integración sincrónica en un flujo que podría ser async sin afectar al usuario →
-    **siempre** usar `vscode_askQuestions` para presentar los trade-offs HTTP vs Local
+    **siempre** usar `vscode_askQuestions` (o en texto directo) para presentar los trade-offs HTTP vs Local
     Read Model al diseñador. No evaluar internamente si "califica" — el agente nunca
     toma esta decisión unilateralmente, incluso para datos monetarios. El diseñador
     toma la decisión final y el agente no aplica el cambio hasta recibir confirmación
@@ -644,7 +644,7 @@ Antes de actuar, clasifica qué tipo de cambio es:
 ### 2.2 Preguntar solo si es bloqueante
 
 No interrumpir el flujo con preguntas si el cambio es suficientemente claro. Preguntar
-usando `vscode_askQuestions` solo cuando:
+usando `vscode_askQuestions` (o en texto directo) solo cuando:
 
 - El cambio es ambiguo y podría resolverse de al menos dos formas estructuralmente distintas
 - El cambio implica decisiones de negocio que el usuario debe tomar (no solo técnicas)

@@ -25,7 +25,7 @@ Usa este formato cuando la tensión cambie fronteras de BC, agregados, consisten
 **Decisión requerida:** [sí/no]
 ```
 
-Si la decisión es estructural o irreversible para Paso 2, usa `vscode_askQuestions` y espera confirmación. Si es una corrección segura de nomenclatura, trazabilidad o consistencia interna, aplica la corrección y deja nota en el resumen.
+Si la decisión es estructural o irreversible para Paso 2, usa `vscode_askQuestions` (o en texto directo) y espera confirmación. Si es una corrección segura de nomenclatura, trazabilidad o consistencia interna, aplica la corrección y deja nota en el resumen.
 
 ---
 

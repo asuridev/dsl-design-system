@@ -81,7 +81,7 @@ contexto libre o responder preguntas. Evalúa qué tienes y qué falta.
 
 ### Cuándo hacer preguntas vs cuándo inferir
 
-**REGLA OBLIGATORIA:** Antes de generar cualquier artefacto, usa `vscode_askQuestions` para
+**REGLA OBLIGATORIA:** Antes de generar cualquier artefacto, usa `vscode_askQuestions` (o en texto directo) (o pregunta en texto si no está disponible) para
 cubrir **todas las dimensiones críticas que el usuario NO haya respondido explícitamente**
 en su prompt. No inferir dimensiones que cambiarían la estructura de BCs si el usuario
 las respondiera de forma distinta.
@@ -98,7 +98,7 @@ Dimensiones que SÍ puedes inferir y documentar como supuesto en `notes`:
 - Actores secundarios obvios del dominio (ej: administrador interno)
 
 Cuando infiras, registra el supuesto en el campo `notes` del artefacto correspondiente.
-Agrupa todas las preguntas en una **sola llamada** `vscode_askQuestions` — nunca en múltiples rondas.
+Agrupa todas las preguntas en una **sola llamada** `vscode_askQuestions` (o en texto directo) — nunca en múltiples rondas.
 
 ### Preguntas clave a hacer (adapta según lo que ya sabes)
 
@@ -115,7 +115,7 @@ Para sistemas de venta/ecommerce/tickets/seguros/etc., las dimensiones críticas
    — La tecnología concreta (PostgreSQL, MySQL, etc.) se decide en el generador de código, no aquí.
 
 Usa opciones cerradas con `allowFreeformInput: true` para agilizar. Agrupa en una sola
-llamada `vscode_askQuestions` con todas las preguntas pendientes.
+llamada `vscode_askQuestions` (o en texto directo) con todas las preguntas pendientes.
 
 ---
 
@@ -512,7 +512,7 @@ crea el snapshot es el único responsable de leer el valor autoritativo.
 #### Paso H — Presentación de Local Read Model al Diseñador (Obligatorio)
 
 Para **toda** integración `customer-supplier / http` detectada en los pasos anteriores
-donde el BC consumidor **solo lee** datos (no los modifica), usar `vscode_askQuestions`
+donde el BC consumidor **solo lee** datos (no los modifica), usar `vscode_askQuestions` (o en texto directo)
 para presentar los trade-offs al diseñador. **El agente nunca toma esta decisión
 unilateralmente** — es siempre el diseñador quien elige, incluso para datos monetarios.
 
@@ -526,7 +526,7 @@ Los trade-offs a presentar en cada pregunta son:
 | **Consistencia** | Estricta | Eventual (lag típico < 1–2 s) |
 | **Riesgo (solo datos monetarios)** | Ninguno — precio leído en tiempo real antes del cobro | **OWASP A04**: ventana de inconsistencia podría usarse para comprar a precio desactualizado |
 
-Agrupa todas las preguntas LRM de la misma sesión en **una sola llamada** `vscode_askQuestions`.
+Agrupa todas las preguntas LRM de la misma sesión en **una sola llamada** `vscode_askQuestions` (o en texto directo).
 
 **Formato para integraciones de datos NO monetarios** (dirección, perfil, nombre, referencia):
 
@@ -1279,7 +1279,7 @@ Crea el directorio `arch/system/` si no existe y genera los cuatro archivos:
         └── system-diagram.mmd
 ```
 
-Usa `create_file` para archivos nuevos. Si ya existen, confirma con el usuario antes
+Usa `Write` para archivos nuevos y `Edit` para modificar existentes. Si ya existen, confirma con el usuario antes
 de sobreescribir — puede ser un diseño en progreso. Para `AGENTS.md`, aplica además la
 salvaguarda de la sección 3.4: nunca reemplaces el `AGENTS.md` documental de este repo
 como efecto colateral de una prueba del agente diseñador.

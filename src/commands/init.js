@@ -18,6 +18,49 @@ const DSL_VALIDATE_SOURCES = [
   { src: ['utils', 'openapi-usecase-validator.js'], dest: ['src', 'utils', 'openapi-usecase-validator.js'] },
 ];
 
+// Maps GitHub Copilot tool names to Claude Code equivalents in agent frontmatter.
+async function copyAgentsTransformed(srcDir, destDir, label) {
+  const exists = await fs.pathExists(destDir);
+
+  if (exists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exists. Overwrite?`,
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
+  }
+
+  const spinner = ora(`Copying ${label}...`).start();
+  await fs.ensureDir(destDir);
+
+  const files = await fs.readdir(srcDir);
+  for (const file of files) {
+    const srcFile = path.join(srcDir, file);
+    const destFile = path.join(destDir, file);
+    const stat = await fs.stat(srcFile);
+    if (stat.isDirectory()) {
+      await fs.copy(srcFile, destFile, { overwrite: true });
+      continue;
+    }
+    let content = await fs.readFile(srcFile, 'utf8');
+    // Rewrite tools frontmatter from GitHub Copilot names to Claude Code names
+    content = content.replace(
+      /^tools:\s*\[.*vscode\/askQuestions.*\]$/m,
+      'tools: [Read, Write, Edit, Grep, Glob, Bash]',
+    );
+    await fs.writeFile(destFile, content, 'utf8');
+  }
+
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
+
 async function copyIfConfirmed(srcDir, destDir, label) {
   const exists = await fs.pathExists(destDir);
 
@@ -126,9 +169,9 @@ function registerInit(program) {
       const destAgents = path.join(cwd, '.github', 'agents');
       await copyIfConfirmed(srcAgents, destAgents, '.github/agents');
 
-      // 3b. Copy agents → .claude/agents/ (Claude Code CLI)
+      // 3b. Copy agents → .claude/agents/ (Claude Code CLI, tools frontmatter transformed)
       const destAgentsClaude = path.join(cwd, '.claude', 'agents');
-      await copyIfConfirmed(srcAgents, destAgentsClaude, '.claude/agents');
+      await copyAgentsTransformed(srcAgents, destAgentsClaude, '.claude/agents');
 
       // 4. Scaffold tools/dsl-validate/
       await scaffoldDslValidate(cwd);

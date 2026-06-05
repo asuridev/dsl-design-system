@@ -84,7 +84,7 @@ Usar **HTTP Síncrono** cuando:
 
 Cuando el skill detecta una integración `outbound.http` de un BC interno hacia otro BC
 interno, **interrumpe el flujo de diseño** y presenta la decisión al usuario usando
-`vscode_askQuestions`. Ver instrucción en SKILL.md §Etapa A, Paso 0.
+`vscode_askQuestions` (o en texto directo). Ver instrucción en SKILL.md §Etapa A, Paso 0.
 
 ---
 

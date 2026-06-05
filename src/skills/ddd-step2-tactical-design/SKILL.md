@@ -909,7 +909,7 @@ queryMethods:
 
 ## Fase 2: Clarificación con el Usuario
 
-**Siempre preguntar antes de asumir** cuando haya ambigüedad. Usar `vscode_askQuestions`
+**Siempre preguntar antes de asumir** cuando haya ambigüedad. Usar `vscode_askQuestions` (o en texto directo)
 con preguntas agrupadas en una sola llamada.
 
 ### Cuándo preguntar obligatoriamente
@@ -1372,7 +1372,7 @@ en `arch/system/system.yaml` para la misma integración.
 **OBLIGATORIO — Evaluar antes de modelar cualquier integración `outbound.http` hacia otro BC interno.**
 
 Cuando el BC que se está diseñando tiene en `system.yaml` una integración `channel: http`
-hacia otro BC interno, **interrumpir el flujo de diseño** y usar `vscode_askQuestions`
+hacia otro BC interno, **interrumpir el flujo de diseño** y usar `vscode_askQuestions` (o en texto directo)
 para presentar la elección al usuario:
 
 ```
@@ -2188,7 +2188,7 @@ interno (no sistema externo):
 1. Leer `references/local-read-model.md` — tabla de trade-offs y criterios de decisión.
 2. Para cada integración `from: {este-bc}, to: {bc-interno}, channel: http`, evaluar
    los criterios de la Sección 3.5.1.
-3. Usar `vscode_askQuestions` para presentar la elección al usuario (ver Sección 3.5.1
+3. Usar `vscode_askQuestions` (o en texto directo) para presentar la elección al usuario (ver Sección 3.5.1
    para el texto exacto de la pregunta y las opciones).
 4. Registrar la decisión antes de continuar con el diseño del yaml v1.
 5. Si la decisión cambia HTTP por LRM, actualizar primero `system.yaml` mediante el
