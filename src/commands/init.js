@@ -112,15 +112,23 @@ function registerInit(program) {
       await fs.ensureDir(archDir);
       archSpinner.succeed(chalk.green('  OK    arch/'));
 
-      // 2. Copy skills → .agents/skills/
+      // 2. Copy skills → .agents/skills/ (VSCode / GitHub Copilot)
       const srcSkills = path.join(__dirname, '../skills');
       const destSkills = path.join(cwd, '.agents', 'skills');
       await copyIfConfirmed(srcSkills, destSkills, '.agents/skills');
 
-      // 3. Copy agents → .github/agents/
+      // 2b. Copy skills → .claude/skills/ (Claude Code CLI)
+      const destSkillsClaude = path.join(cwd, '.claude', 'skills');
+      await copyIfConfirmed(srcSkills, destSkillsClaude, '.claude/skills');
+
+      // 3. Copy agents → .github/agents/ (GitHub Copilot)
       const srcAgents = path.join(__dirname, '../agents');
       const destAgents = path.join(cwd, '.github', 'agents');
       await copyIfConfirmed(srcAgents, destAgents, '.github/agents');
+
+      // 3b. Copy agents → .claude/agents/ (Claude Code CLI)
+      const destAgentsClaude = path.join(cwd, '.claude', 'agents');
+      await copyIfConfirmed(srcAgents, destAgentsClaude, '.claude/agents');
 
       // 4. Scaffold tools/dsl-validate/
       await scaffoldDslValidate(cwd);
