@@ -50,11 +50,18 @@ async function copyAgentsTransformed(srcDir, destDir, label) {
       continue;
     }
     let content = await fs.readFile(srcFile, 'utf8');
-    // Rewrite tools frontmatter from GitHub Copilot names to Claude Code names
+    // Rewrite tools frontmatter from GitHub Copilot names to Claude Code names.
+    // Matches any tools: [...] line that contains at least one Copilot-specific
+    // tool (vscode/*, read, search, execute) so it fires even if vscode/askQuestions
+    // is absent in future agent files.
     content = content.replace(
-      /^tools:\s*\[.*vscode\/askQuestions.*\]$/m,
+      /^tools:\s*\[.*(?:vscode\/\w+|(?<!\w)read(?!\w)|(?<!\w)search(?!\w)|(?<!\w)execute(?!\w)).*\]$/m,
       'tools: [Read, Write, Edit, Grep, Glob, Bash]',
     );
+    // Rewrite skill paths from the GitHub Copilot convention (.agents/skills/)
+    // to the Claude Code convention (.claude/skills/) so agents deployed under
+    // .claude/agents/ do not depend on the Copilot-specific directory.
+    content = content.replace(/\.agents\/skills\//g, '.claude/skills/');
     await fs.writeFile(destFile, content, 'utf8');
   }
 
