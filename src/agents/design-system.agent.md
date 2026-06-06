@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: "Diseña un sistema completo con DDD Paso 1 (Diseño Estratégico) y luego valida automáticamente la correcta elección de agregados, entidades e integraciones usando el skill de refinamiento. Úsalo cuando quieras diseñar un nuevo sistema desde cero: ingresa el contexto del negocio y el agente produce los cuatro artefactos canónicos (system.yaml, system-spec.md, system-diagram.mmd, AGENTS.md) más un informe de validación con correcciones aplicadas."
+description: "Diseña un sistema completo con DDD Paso 1 (Diseño Estratégico) y luego valida automáticamente la correcta elección de agregados, entidades e integraciones usando el skill de refinamiento. Úsalo cuando quieras diseñar un nuevo sistema desde cero: ingresa el contexto del negocio y el agente produce los cinco artefactos canónicos (system.yaml, system-spec.md, system-diagram.mmd, AGENTS.md, CLAUDE.md) más un informe de validación con correcciones aplicadas."
 tools: [read, edit, search, execute, vscode/askQuestions]
 argument-hint: "Descripción del negocio a diseñar: modelo de negocio, actores, flujos principales, medios de pago, tipo de entrega, sistemas externos conocidos y restricciones tecnológicas"
 ---
@@ -110,7 +110,7 @@ Aplica el análisis del skill:
 - Define integraciones con el patrón correcto (customer-supplier / event / acl) y canal correcto (http / message-broker)
 - Los `contracts[].name` en integraciones `channel: message-broker` SIEMPRE en inglés PascalCase (`OrderConfirmed`, no `PedidoConfirmado`)
 
-### 1.4 Generar los cuatro artefactos
+### 1.4 Generar los cinco artefactos
 
 Crea estos archivos en orden:
 
@@ -118,12 +118,77 @@ Crea estos archivos en orden:
 2. `arch/system/system-spec.md` — narrativa detallada por BC
 3. `arch/system/system-diagram.mmd` — diagrama C4 Contenedores (Mermaid)
 4. `AGENTS.md` — contexto consolidado en la raíz del proyecto
+5. `CLAUDE.md` — instrucciones para Claude Code en la raíz del proyecto
 
 Si los archivos ya existen, lee su contenido actual antes de decidir si reemplazar o actualizar.
 
 **Salvaguarda especial para `AGENTS.md`:** en proyectos de usuario, `AGENTS.md` raíz es el contexto generado del sistema diseñado. Pero si detectas que estás ejecutando dentro del repositorio `dsl-design-system` o que el `AGENTS.md` existente documenta el framework DSL Design System, no lo sobrescribas automáticamente. Presenta el conflicto y pide confirmación explícita antes de reemplazarlo.
 
-**No presentes el resumen post-generación aún.** Al terminar de crear los cuatro artefactos, pasa inmediatamente a la Fase 2.
+**Salvaguarda especial para `CLAUDE.md`:** aplica la misma lógica que para `AGENTS.md`. Si el `CLAUDE.md` existente documenta el framework DSL Design System (y no un sistema de usuario), no lo sobrescribas automáticamente. Presenta el conflicto y pide confirmación antes de reemplazarlo.
+
+**Estructura obligatoria de `CLAUDE.md`:**
+
+```markdown
+# CLAUDE.md
+
+> Generado automáticamente en el Paso 1 — Diseño Estratégico.
+> Proporciona contexto e instrucciones para Claude Code en este repositorio.
+
+## Proyecto
+
+[Nombre del sistema] — [descripción del propósito en 1-2 oraciones]
+
+## Comandos Clave
+
+```bash
+# Validar coherencia entre artefactos de arquitectura
+node tools/dsl-validate/bin/dsl.js validate
+
+# Validar un BC específico
+node tools/dsl-validate/bin/dsl.js validate --bc <nombre-bc>
+
+# Generar mesa visual de revisión (no modifica los YAML canónicos)
+dsl preview --no-open --format all --locale es
+```
+
+## Fuentes de Verdad
+
+| Archivo | Rol |
+|---------|-----|
+| `arch/system/system.yaml` | Diseño estratégico: BCs, integraciones, infraestructura |
+| `arch/system/system-spec.md` | Narrativa y lenguaje ubícuo por BC |
+| `arch/{bc}/bc.yaml` | Diseño táctico: agregados, UCs, contratos API/eventos |
+
+Antes de modificar cualquier BC, leer `arch/system/system.yaml` para entender el contexto estratégico completo.
+
+## Agentes Disponibles
+
+| Agente | Cuándo usar |
+|--------|-------------|
+| `@design-system` | Diseñar o actualizar el sistema completo (Paso 1) |
+| `@design-bounded-context <bc-name>` | Diseñar el dominio táctico de un BC (Paso 2) |
+
+## Convenciones de Artefactos YAML
+
+- Los YAML declaran **intención** (qué / para qué) — nunca implementación (cómo)
+- Sin nombres de frameworks, bases de datos concretas, SQL ni anotaciones de lenguaje
+- `system.yaml` es la fuente de verdad estratégica; los `bc.yaml` deben alinearse con él
+- Ejecutar `dsl validate` tras modificar cualquier artefacto YAML
+
+## Bounded Contexts
+
+| BC | Tipo | Propósito |
+|----|------|-----------|
+[tabla con los BCs del sistema, derivada de system.yaml]
+
+## Estado del Diseño
+
+- **Paso completado**: Paso 1 — Diseño Estratégico
+- **Fecha**: [fecha de generación]
+- **Próximo paso**: Paso 2 — ejecutar `@design-bounded-context` con el BC más importante
+```
+
+**No presentes el resumen post-generación aún.** Al terminar de crear los cinco artefactos, pasa inmediatamente a la Fase 2.
 
 ---
 
@@ -131,7 +196,7 @@ Si los archivos ya existen, lee su contenido actual antes de decidir si reemplaz
 
 Ejecuta el análisis de refinamiento sobre el diseño que acabas de generar. Esta fase es automática — no espera input adicional del usuario.
 
-Lee (o re-lee) los cuatro artefactos recién generados: `arch/system/system.yaml`, `arch/system/system-spec.md`, `arch/system/system-diagram.mmd` y `AGENTS.md`. Aplica el proceso dual completo de `ddd-step1-refine`, sin sustituirlo por una lista parcial:
+Lee (o re-lee) los cinco artefactos recién generados: `arch/system/system.yaml`, `arch/system/system-spec.md`, `arch/system/system-diagram.mmd`, `AGENTS.md` y `CLAUDE.md`. Aplica el proceso dual completo de `ddd-step1-refine`, sin sustituirlo por una lista parcial:
 
 - Checklist A — Consistencia cross-artefactos
 - Checklist B — Integridad del mapa de integraciones
@@ -247,6 +312,7 @@ Presenta al usuario el resultado completo en este formato:
 - arch/system/system-spec.md ✅
 - arch/system/system-diagram.mmd ✅
 - AGENTS.md ✅
+- CLAUDE.md ✅
 
 ### Bounded Contexts identificados
 | BC | Tipo | Agregados |
