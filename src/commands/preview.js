@@ -282,6 +282,203 @@ function extractBcDecisions(bcYaml, contracts) {
   ];
 }
 
+// ─── Detail extractors (semantic content, not just counts) ────────────────────
+// These surface the actual design decisions (use cases, endpoint protection,
+// saga flow, events) so a designer can review and refine them in-session,
+// instead of inferring intent from aggregate metrics.
+
+// Map operationId -> { method, path, summary } from an OpenAPI document so a use
+// case trigger.operationId can be resolved to its real HTTP endpoint.
+function indexOpenApiOperations(openApiDoc) {
+  const index = new Map();
+  const methods = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
+  for (const [routePath, pathItem] of Object.entries((openApiDoc && openApiDoc.paths) || {})) {
+    for (const method of Object.keys(pathItem || {})) {
+      if (!methods.includes(method)) continue;
+      const op = pathItem[method] || {};
+      if (op.operationId) {
+        index.set(op.operationId, {
+          method: method.toUpperCase(),
+          path: routePath,
+          summary: op.summary || '',
+        });
+      }
+    }
+  }
+  return index;
+}
+
+function useCaseTriggerLabel(uc, opIndex, internalIndex) {
+  const trigger = (uc && uc.trigger) || {};
+  if (trigger.kind === 'http') {
+    const op = (opIndex && opIndex.get(trigger.operationId))
+      || (internalIndex && internalIndex.get(trigger.operationId));
+    if (op) return `${op.method} ${op.path}`;
+    return trigger.operationId ? `HTTP ${trigger.operationId}` : 'HTTP';
+  }
+  if (trigger.kind === 'event') {
+    const eventName = trigger.consumes || trigger.event || 'event';
+    const meta = [trigger.fromBc, trigger.channel].filter(Boolean).join(' · ');
+    return meta ? `⇠ ${eventName} (${meta})` : `⇠ ${eventName}`;
+  }
+  return trigger.kind || '—';
+}
+
+function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
+  if (!bcYaml) return [];
+  return asArray(bcYaml.useCases).map((uc) => {
+    const target = [uc.aggregate, uc.method].filter(Boolean).join('.')
+      || asArray(uc.aggregates).join(', ') || '—';
+    const saga = uc.sagaStep
+      ? { saga: uc.sagaStep.saga, order: uc.sagaStep.order, role: uc.sagaStep.role }
+      : null;
+    return {
+      id: uc.id || '',
+      name: uc.name || '',
+      actor: uc.actor || '',
+      type: uc.type || '',
+      triggerKind: (uc.trigger && uc.trigger.kind) || '',
+      triggerLabel: useCaseTriggerLabel(uc, opIndex, internalIndex),
+      target,
+      rules: asArray(uc.rules),
+      returns: typeof uc.returns === 'string' ? uc.returns : '',
+      saga,
+      implementation: uc.implementation || '',
+    };
+  });
+}
+
+function extractSecurityMatrix(bcYaml, opIndex, internalIndex) {
+  if (!bcYaml) return [];
+  return asArray(bcYaml.useCases)
+    .filter((uc) => uc && uc.trigger && uc.trigger.kind === 'http')
+    .map((uc) => {
+      const auth = uc.authorization || {};
+      const ownership = auth.ownership
+        ? { field: auth.ownership.field || '', claim: auth.ownership.claim || '' }
+        : null;
+      const roles = asArray(auth.rolesAnyOf);
+      const permissions = asArray(auth.permissionsAnyOf);
+      const scopes = asArray(auth.scopesAnyOf);
+      const isPublic = uc.public === true;
+      const hasAuth = Boolean(roles.length || permissions.length || scopes.length || ownership);
+      return {
+        id: uc.id || '',
+        name: uc.name || '',
+        endpoint: useCaseTriggerLabel(uc, opIndex, internalIndex),
+        public: isPublic,
+        roles,
+        permissions,
+        scopes,
+        ownership,
+        unprotected: !isPublic && !hasAuth,
+      };
+    });
+}
+
+// Build a deterministic Mermaid sequenceDiagram for a saga: trigger event,
+// ordered cross-BC steps (labeled with the triggering event + implementing UC),
+// and failure/compensation notes.
+function buildSagaMermaid(saga, steps) {
+  const idFor = (name) => 'bc_' + String(name || 'unknown').replace(/[^A-Za-z0-9]/g, '_');
+  const clean = (text) => String(text || '').replace(/[\r\n]+/g, ' ').replace(/[;#]/g, ' ').trim();
+  const participants = [];
+  const addP = (bc) => { if (bc && !participants.includes(bc)) participants.push(bc); };
+  addP(saga.trigger && saga.trigger.bc);
+  for (const step of steps) addP(step.bc);
+
+  const lines = ['sequenceDiagram', '  autonumber'];
+  for (const bc of participants) lines.push(`  participant ${idFor(bc)} as ${clean(bc)}`);
+
+  const triggerBc = (saga.trigger && saga.trigger.bc) || (steps[0] && steps[0].bc) || participants[0];
+  if (saga.trigger && saga.trigger.event) {
+    lines.push(`  Note over ${idFor(triggerBc)}: trigger: ${clean(saga.trigger.event)}`);
+  }
+
+  let prev = triggerBc;
+  for (const step of steps) {
+    const impl = step.implementedBy ? ` [${step.implementedBy.id} ${step.implementedBy.name}]` : '';
+    const label = clean(`${step.order != null ? step.order + '. ' : ''}${step.triggeredBy}${impl}`);
+    lines.push(`  ${idFor(prev)}->>${idFor(step.bc)}: ${label || 'step'}`);
+    const notes = [];
+    if (step.onFailure) notes.push(`onFailure: ${step.onFailure}`);
+    if (step.compensation) notes.push(`compensacion: ${step.compensation}`);
+    if (notes.length) lines.push(`  Note over ${idFor(step.bc)}: ${clean(notes.join(' / '))}`);
+    prev = step.bc;
+  }
+
+  const last = steps[steps.length - 1];
+  if (last && last.onSuccess) {
+    lines.push(`  Note over ${idFor(last.bc)}: ✓ ${clean(last.onSuccess)}`);
+  }
+  return sanitizeMermaidSource(lines.join('\n'));
+}
+
+function extractSagas(systemData, bcYamls) {
+  const sagas = asArray(systemData && systemData.sagas);
+  // Resolve which use case implements each saga step via uc.sagaStep.
+  const stepImpl = new Map();
+  for (const bcYaml of asArray(bcYamls)) {
+    for (const uc of asArray(bcYaml.useCases)) {
+      const ss = uc && uc.sagaStep;
+      if (ss && ss.saga != null && ss.order != null) {
+        stepImpl.set(`${ss.saga}#${ss.order}`, { bc: bcYaml.bc, id: uc.id || '', name: uc.name || '' });
+      }
+    }
+  }
+  return sagas.map((saga) => {
+    const steps = asArray(saga.steps).map((step) => ({
+      order: step.order,
+      bc: step.bc || '',
+      triggeredBy: step.triggeredBy || '',
+      onSuccess: step.onSuccess || '',
+      onFailure: step.onFailure || '',
+      compensation: step.compensation || '',
+      implementedBy: stepImpl.get(`${saga.name}#${step.order}`) || null,
+    }));
+    return {
+      name: saga.name || '',
+      description: saga.description || '',
+      trigger: { event: (saga.trigger && saga.trigger.event) || '', bc: (saga.trigger && saga.trigger.bc) || '' },
+      steps,
+      mermaid: buildSagaMermaid(saga, steps),
+    };
+  });
+}
+
+function summarizePayload(payload) {
+  return asArray(payload).map((field) => `${field.name}: ${field.type || '—'}`);
+}
+
+function extractEvents(bcYaml) {
+  if (!bcYaml) return { published: [], consumed: [], readModels: [] };
+  const domainEvents = bcYaml.domainEvents || {};
+  const published = asArray(domainEvents.published).map((event) => ({
+    name: event.name || '',
+    channel: event.channel || '',
+    scope: event.scope || '',
+    payload: summarizePayload(event.payload),
+  }));
+  const consumed = asArray(domainEvents.consumed).map((event) => ({
+    name: event.name || '',
+    sourceBc: event.sourceBc || '',
+    channel: event.channel || '',
+  }));
+  const readModels = [
+    ...asArray(bcYaml.projections).filter((p) => p && p.persistent === true).map((p) => ({
+      name: p.name || '',
+      event: (p.source && p.source.event) || '',
+      from: (p.source && p.source.from) || '',
+      keyBy: p.keyBy || '',
+      upsertStrategy: p.upsertStrategy || '',
+    })),
+    ...asArray(bcYaml.aggregates).filter((a) => a && a.readModel === true).map((a) => ({
+      name: a.name || '', event: '', from: '', keyBy: '', upsertStrategy: '',
+    })),
+  ];
+  return { published, consumed, readModels };
+}
+
 function buildPatchProposals(reviewModel) {
   const diagnosticProposals = reviewModel.diagnostics.map((diagnostic, index) => ({
     id: `DIAG-${String(index + 1).padStart(3, '0')}`,
@@ -312,7 +509,32 @@ function buildPatchProposals(reviewModel) {
       agentPrompt: item.prompt,
     }));
 
-  return [...diagnosticProposals, ...decisionProposals];
+  // Security gaps: HTTP endpoints with neither authorization nor a public flag.
+  // Surfaced as explicit review points so the designer confirms intent in-session.
+  const securityProposals = asArray(reviewModel.boundedContexts).flatMap((bc) =>
+    asArray(bc.securityMatrix)
+      .filter((entry) => entry.unprotected)
+      .map((entry) => {
+        const file = `arch/${bc.name}/${bc.name}.yaml`;
+        return {
+          id: `SEC-${bc.name}-${entry.id}`,
+          title: `Unprotected endpoint ${entry.id} ${entry.name} (${entry.endpoint})`,
+          severity: 'review',
+          rationale: 'HTTP use case has no authorization and is not marked public; access control must be confirmed.',
+          affectedFiles: [file],
+          current: `${entry.endpoint} has no authorization and public is not set`,
+          proposed: 'Decide whether this endpoint is intentionally public or requires authorization (rolesAnyOf/permissionsAnyOf/scopesAnyOf/ownership).',
+          agentPrompt: buildAgentPrompt(
+            `Endpoint protection for ${entry.id} ${entry.name}`,
+            `${entry.endpoint} in ${bc.name} has no authorization and public is not set`,
+            [file],
+            'Confirm with the designer whether this endpoint should be public or protected, then set public:true or an authorization block accordingly.'
+          ),
+        };
+      })
+  );
+
+  return [...diagnosticProposals, ...decisionProposals, ...securityProposals];
 }
 
 function buildBcMetrics(bcDoc, diagnostics) {
@@ -955,6 +1177,219 @@ function renderDiagnostics(diagnostics, locale = 'es') {
     </div>`;
 }
 
+// ─── Detail renderers (use cases, security, sagas, events) ────────────────────
+
+function pillList(items, cls = 'text-bg-secondary') {
+  const arr = asArray(items);
+  if (!arr.length) return '<span class="text-muted">—</span>';
+  return arr.map((value) => `<span class="badge rounded-pill ${cls} me-1">${escapeHtml(value)}</span>`).join('');
+}
+
+function actorBadgeClass(actor) {
+  return { customer: 'primary', admin: 'danger', system: 'secondary' }[actor] || 'dark';
+}
+
+function ucTypeBadgeClass(type) {
+  return type === 'query' ? 'info text-dark' : 'warning text-dark';
+}
+
+function mermaidScriptTag() {
+  return `<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>`;
+}
+
+// Renders every .mermaid block on the page (used by review / explorer pages).
+function mermaidRenderAllScript() {
+  return `<script>
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    window.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.mermaid').forEach(function (el) {
+        try { mermaid.run({ nodes: [el], suppressErrors: true }); }
+        catch (e) { console.warn('Mermaid render error:', e); }
+      });
+    });
+  <\/script>`;
+}
+
+function useCaseTableHead(locale) {
+  return `<thead class="table-light"><tr>
+    <th data-i18n="uc.id">${i18nText('uc.id', locale)}</th>
+    <th data-i18n="uc.name">${i18nText('uc.name', locale)}</th>
+    <th data-i18n="uc.actor">${i18nText('uc.actor', locale)}</th>
+    <th data-i18n="uc.type">${i18nText('uc.type', locale)}</th>
+    <th data-i18n="uc.trigger">${i18nText('uc.trigger', locale)}</th>
+    <th data-i18n="uc.target">${i18nText('uc.target', locale)}</th>
+    <th data-i18n="uc.rules">${i18nText('uc.rules', locale)}</th>
+    <th data-i18n="uc.saga">${i18nText('uc.saga', locale)}</th>
+  </tr></thead>`;
+}
+
+function renderUseCaseRows(rows) {
+  return rows.map((uc) => {
+    const sagaBadge = uc.saga
+      ? `<span class="badge bg-dark" title="${escapeHtml(uc.saga.saga)}">${escapeHtml(uc.saga.saga)}${uc.saga.order != null ? ' #' + escapeHtml(uc.saga.order) : ''}</span>`
+      : '<span class="text-muted">—</span>';
+    return `
+      <tr>
+        <td class="font-monospace small">${escapeHtml(uc.id)}</td>
+        <td>${escapeHtml(uc.name)}</td>
+        <td><span class="badge bg-${actorBadgeClass(uc.actor)}">${escapeHtml(uc.actor || '—')}</span></td>
+        <td><span class="badge bg-${ucTypeBadgeClass(uc.type)}">${escapeHtml(uc.type || '—')}</span></td>
+        <td class="font-monospace small">${escapeHtml(uc.triggerLabel)}</td>
+        <td class="font-monospace small">${escapeHtml(uc.target)}</td>
+        <td>${pillList(uc.rules, 'text-bg-light border')}</td>
+        <td>${sagaBadge}</td>
+      </tr>`;
+  }).join('');
+}
+
+function renderUseCaseCatalog(catalog, locale = 'es') {
+  if (!asArray(catalog).length) return `<p class="text-muted small" data-i18n="ui.noUseCases">${i18nText('ui.noUseCases', locale)}</p>`;
+  const http = catalog.filter((uc) => uc.triggerKind === 'http');
+  const events = catalog.filter((uc) => uc.triggerKind !== 'http');
+  const group = (titleKey, rows) => rows.length ? `
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="${titleKey}">${i18nText(titleKey, locale)}</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      ${useCaseTableHead(locale)}<tbody>${renderUseCaseRows(rows)}</tbody>
+    </table></div>` : '';
+  return group('ui.httpTriggered', http) + group('ui.eventTriggered', events);
+}
+
+function renderSecurityMatrix(matrix, locale = 'es') {
+  if (!asArray(matrix).length) return `<p class="text-muted small" data-i18n="ui.noEndpoints">${i18nText('ui.noEndpoints', locale)}</p>`;
+  const rows = matrix.map((entry) => {
+    const access = entry.public
+      ? `<span class="badge bg-info text-dark" data-i18n="sec.public">${i18nText('sec.public', locale)}</span>`
+      : (entry.unprotected
+        ? `<span class="badge bg-danger" data-i18n="sec.unprotected">${i18nText('sec.unprotected', locale)}</span>`
+        : `<span class="badge bg-success" data-i18n="sec.protected">${i18nText('sec.protected', locale)}</span>`);
+    const ownership = entry.ownership
+      ? `<span class="font-monospace small">${escapeHtml(entry.ownership.field)} ↔ ${escapeHtml(entry.ownership.claim)}</span>`
+      : '<span class="text-muted">—</span>';
+    const warn = entry.unprotected
+      ? `<div class="small text-danger mt-1" data-i18n="sec.unprotectedWarn">${i18nText('sec.unprotectedWarn', locale)}</div>`
+      : '';
+    return `
+      <tr class="${entry.unprotected ? 'table-danger' : ''}">
+        <td><div class="font-monospace small">${escapeHtml(entry.endpoint)}</div><div class="text-muted small">${escapeHtml(entry.id)} ${escapeHtml(entry.name)}</div>${warn}</td>
+        <td>${access}</td>
+        <td>${pillList(entry.roles, 'text-bg-primary')}</td>
+        <td>${pillList(entry.permissions, 'text-bg-secondary')}</td>
+        <td>${pillList(entry.scopes, 'text-bg-dark')}</td>
+        <td>${ownership}</td>
+      </tr>`;
+  }).join('');
+  return `
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="sec.endpoint">${i18nText('sec.endpoint', locale)}</th>
+        <th data-i18n="sec.access">${i18nText('sec.access', locale)}</th>
+        <th data-i18n="sec.roles">${i18nText('sec.roles', locale)}</th>
+        <th data-i18n="sec.permissions">${i18nText('sec.permissions', locale)}</th>
+        <th data-i18n="sec.scopes">${i18nText('sec.scopes', locale)}</th>
+        <th data-i18n="sec.ownership">${i18nText('sec.ownership', locale)}</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function renderSagaViews(sagas, locale = 'es') {
+  if (!asArray(sagas).length) return `<p class="text-muted small" data-i18n="ui.noSagas">${i18nText('ui.noSagas', locale)}</p>`;
+  return sagas.map((saga) => {
+    const stepRows = saga.steps.map((step) => {
+      const impl = step.implementedBy
+        ? `<span class="font-monospace small">${escapeHtml(step.implementedBy.bc)}/${escapeHtml(step.implementedBy.id)}</span> ${escapeHtml(step.implementedBy.name)}`
+        : '<span class="text-muted">—</span>';
+      return `
+        <tr>
+          <td>${escapeHtml(step.order)}</td>
+          <td><span class="badge bg-secondary">${escapeHtml(step.bc)}</span></td>
+          <td class="font-monospace small">${escapeHtml(step.triggeredBy || '—')}</td>
+          <td class="font-monospace small text-success">${escapeHtml(step.onSuccess || '—')}</td>
+          <td class="font-monospace small text-danger">${escapeHtml(step.onFailure || '—')}</td>
+          <td class="font-monospace small">${escapeHtml(step.compensation || '—')}</td>
+          <td>${impl}</td>
+        </tr>`;
+    }).join('');
+    return `
+      <article class="saga-card mb-4">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+          <h6 class="mb-0">${escapeHtml(saga.name)}</h6>
+          <span class="badge bg-light text-dark border"><span data-i18n="saga.trigger">${i18nText('saga.trigger', locale)}</span>: ${escapeHtml(saga.trigger.event)} (${escapeHtml(saga.trigger.bc)})</span>
+        </div>
+        ${saga.description ? `<p class="small text-muted mb-2">${escapeHtml(saga.description)}</p>` : ''}
+        <div class="saga-diagram mb-3"><pre class="mermaid">${escapeHtml(saga.mermaid)}</pre></div>
+        <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+          <thead class="table-light"><tr>
+            <th data-i18n="saga.step">${i18nText('saga.step', locale)}</th>
+            <th data-i18n="saga.bc">${i18nText('saga.bc', locale)}</th>
+            <th data-i18n="saga.triggeredBy">${i18nText('saga.triggeredBy', locale)}</th>
+            <th data-i18n="saga.onSuccess">${i18nText('saga.onSuccess', locale)}</th>
+            <th data-i18n="saga.onFailure">${i18nText('saga.onFailure', locale)}</th>
+            <th data-i18n="saga.compensation">${i18nText('saga.compensation', locale)}</th>
+            <th data-i18n="saga.implementedBy">${i18nText('saga.implementedBy', locale)}</th>
+          </tr></thead><tbody>${stepRows}</tbody>
+        </table></div>
+      </article>`;
+  }).join('');
+}
+
+function renderSagaParticipation(bcName, sagas, locale = 'es') {
+  const rows = [];
+  for (const saga of asArray(sagas)) {
+    for (const step of saga.steps) {
+      if (step.bc === bcName || (step.implementedBy && step.implementedBy.bc === bcName)) {
+        rows.push({ saga: saga.name, ...step });
+      }
+    }
+  }
+  if (!rows.length) return `<p class="text-muted small" data-i18n="ui.noSagaParticipation">${i18nText('ui.noSagaParticipation', locale)}</p>`;
+  const body = rows.map((step) => `
+    <tr>
+      <td><span class="badge bg-dark">${escapeHtml(step.saga)}</span></td>
+      <td>${escapeHtml(step.order)}</td>
+      <td class="font-monospace small">${escapeHtml(step.triggeredBy || '—')}</td>
+      <td class="font-monospace small text-success">${escapeHtml(step.onSuccess || '—')}</td>
+      <td class="font-monospace small">${escapeHtml(step.compensation || '—')}</td>
+      <td>${step.implementedBy ? escapeHtml(`${step.implementedBy.id} ${step.implementedBy.name}`) : '<span class="text-muted">—</span>'}</td>
+    </tr>`).join('');
+  return `
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="uc.saga">${i18nText('uc.saga', locale)}</th>
+        <th data-i18n="saga.step">${i18nText('saga.step', locale)}</th>
+        <th data-i18n="saga.triggeredBy">${i18nText('saga.triggeredBy', locale)}</th>
+        <th data-i18n="saga.onSuccess">${i18nText('saga.onSuccess', locale)}</th>
+        <th data-i18n="saga.compensation">${i18nText('saga.compensation', locale)}</th>
+        <th data-i18n="saga.implementedBy">${i18nText('saga.implementedBy', locale)}</th>
+      </tr></thead><tbody>${body}</tbody>
+    </table></div>`;
+}
+
+function renderEvents(events, locale = 'es') {
+  const published = asArray(events && events.published);
+  const consumed = asArray(events && events.consumed);
+  const readModels = asArray(events && events.readModels);
+  if (!published.length && !consumed.length && !readModels.length) {
+    return `<p class="text-muted small" data-i18n="ui.noEvents">${i18nText('ui.noEvents', locale)}</p>`;
+  }
+  const sub = (titleKey, head, body) => `
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="${titleKey}">${i18nText(titleKey, locale)}</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">${head}<tbody>${body}</tbody></table></div>`;
+
+  const pub = published.length ? sub('events.published',
+    `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.channel">${i18nText('events.channel', locale)}</th><th data-i18n="events.scope">${i18nText('events.scope', locale)}</th><th data-i18n="events.payload">${i18nText('events.payload', locale)}</th></tr></thead>`,
+    published.map((e) => `<tr><td>${escapeHtml(e.name)}</td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td><td>${escapeHtml(e.scope || '—')}</td><td>${pillList(e.payload, 'text-bg-light border')}</td></tr>`).join('')) : '';
+
+  const con = consumed.length ? sub('events.consumed',
+    `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.sourceBc">${i18nText('events.sourceBc', locale)}</th><th data-i18n="events.channel">${i18nText('events.channel', locale)}</th></tr></thead>`,
+    consumed.map((e) => `<tr><td>${escapeHtml(e.name)}</td><td><span class="badge bg-secondary">${escapeHtml(e.sourceBc || '—')}</span></td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td></tr>`).join('')) : '';
+
+  const rmd = readModels.length ? sub('events.readModels',
+    `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.from">${i18nText('events.from', locale)}</th><th data-i18n="events.event">${i18nText('events.event', locale)}</th><th data-i18n="events.keyBy">${i18nText('events.keyBy', locale)}</th><th data-i18n="events.upsert">${i18nText('events.upsert', locale)}</th></tr></thead>`,
+    readModels.map((rm) => `<tr><td>${escapeHtml(rm.name)}</td><td><span class="badge bg-secondary">${escapeHtml(rm.from || '—')}</span></td><td class="font-monospace small">${escapeHtml(rm.event || '—')}</td><td class="font-monospace small">${escapeHtml(rm.keyBy || '—')}</td><td>${escapeHtml(rm.upsertStrategy || '—')}</td></tr>`).join('')) : '';
+
+  return pub + con + rmd;
+}
+
 function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   const health = countDiagnostics(bcReview.diagnostics);
   const linkButtons = [
@@ -970,9 +1405,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(bcReview.name)} — ${i18nText('ui.decisionReview', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${mermaidScriptTag()}
   <style>
     body { background: #f5f6f8; color: #20242a; }
-    .metric-tile, .decision-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
+    .metric-tile, .decision-card, .detail-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
+    .detail-card { margin-bottom: 1.25rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
     .metric-label { font-size: .8rem; color: #56606b; margin-top: .35rem; }
     .metric-detail { font-size: .72rem; color: #7a8490; margin-top: .2rem; }
@@ -981,6 +1418,7 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
     .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
     .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
@@ -1008,6 +1446,26 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
 
     ${renderMetricTiles(bcReview.metrics)}
 
+    <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.useCaseCatalog">${i18nText('ui.useCaseCatalog', locale)}</h2>
+      <div class="detail-card">${renderUseCaseCatalog(bcReview.useCaseCatalog, locale)}</div>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.endpointSecurity">${i18nText('ui.endpointSecurity', locale)}</h2>
+      <div class="detail-card">${renderSecurityMatrix(bcReview.securityMatrix, locale)}</div>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.sagaParticipation">${i18nText('ui.sagaParticipation', locale)}</h2>
+      <div class="detail-card">${renderSagaParticipation(bcReview.name, bcReview.sagas, locale)}</div>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.eventsReadModels">${i18nText('ui.eventsReadModels', locale)}</h2>
+      <div class="detail-card">${renderEvents(bcReview.events, locale)}</div>
+    </section>
+
     <section class="mb-5">
       <h2 class="h5 mb-3" data-i18n="ui.designDecisions">${i18nText('ui.designDecisions', locale)}</h2>
       ${renderDecisionCards(bcReview.decisions, locale)}
@@ -1019,11 +1477,114 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     </section>
   </main>
   ${clientI18nScript(locale)}
+  ${mermaidRenderAllScript()}
 </body>
 </html>`;
 }
 
-function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, locale = 'es') {
+// ─── Decision explorer (global, cross-BC) ─────────────────────────────────────
+
+function renderDecisionsExplorer(reviewModel, locale = 'es') {
+  const designedBcs = asArray(reviewModel.boundedContexts).filter((bc) => bc.hasDesign);
+
+  const bcOptions = ['<option value="all" data-i18n="ui.all">' + i18nText('ui.all', locale) + '</option>']
+    .concat(designedBcs.map((bc) => `<option value="${escapeHtml(bc.name)}">${escapeHtml(bc.name)}</option>`))
+    .join('');
+
+  const catOptions = [
+    ['all', 'ui.all'],
+    ['use-cases', 'ui.useCaseCatalog'],
+    ['security', 'ui.endpointSecurity'],
+    ['sagas', 'ui.systemSagas'],
+    ['events', 'ui.eventsReadModels'],
+  ].map(([value, key]) => `<option value="${value}" data-i18n="${key}">${i18nText(key, locale)}</option>`).join('');
+
+  const block = (bcName, cat, titleKey, body) => `
+    <section class="detail-card explorer-block" data-bc="${escapeHtml(bcName)}" data-cat="${cat}">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h2 class="h6 mb-0"><span data-i18n="${titleKey}">${i18nText(titleKey, locale)}</span></h2>
+        ${bcName !== '__all__' ? `<span class="badge bg-secondary">${escapeHtml(bcName)}</span>` : ''}
+      </div>
+      ${body}
+    </section>`;
+
+  const sagaBlock = block('__all__', 'sagas', 'ui.systemSagas', renderSagaViews(reviewModel.sagas, locale));
+
+  const bcBlocks = designedBcs.map((bc) => [
+    block(bc.name, 'use-cases', 'ui.useCaseCatalog', renderUseCaseCatalog(bc.useCaseCatalog, locale)),
+    block(bc.name, 'security', 'ui.endpointSecurity', renderSecurityMatrix(bc.securityMatrix, locale)),
+    block(bc.name, 'events', 'ui.eventsReadModels', renderEvents(bc.events, locale)),
+  ].join('')).join('');
+
+  return `
+    <div class="row g-2 align-items-end mb-4">
+      <div class="col-sm-4">
+        <label class="form-label small mb-1" for="filter-bc" data-i18n="ui.filterByBc">${i18nText('ui.filterByBc', locale)}</label>
+        <select id="filter-bc" class="form-select form-select-sm">${bcOptions}</select>
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label small mb-1" for="filter-cat" data-i18n="ui.filterByCategory">${i18nText('ui.filterByCategory', locale)}</label>
+        <select id="filter-cat" class="form-select form-select-sm">${catOptions}</select>
+      </div>
+    </div>
+    ${sagaBlock}
+    ${bcBlocks}
+    <script>
+      (function () {
+        var bcSel = document.getElementById('filter-bc');
+        var catSel = document.getElementById('filter-cat');
+        var blocks = Array.prototype.slice.call(document.querySelectorAll('.explorer-block'));
+        function applyFilters() {
+          var bc = bcSel.value, cat = catSel.value;
+          blocks.forEach(function (b) {
+            var bbc = b.getAttribute('data-bc'), bcat = b.getAttribute('data-cat');
+            var showBc = (bc === 'all') || (bbc === '__all__') || (bbc === bc);
+            var showCat = (cat === 'all') || (bcat === cat);
+            b.style.display = (showBc && showCat) ? '' : 'none';
+          });
+        }
+        bcSel.addEventListener('change', applyFilters);
+        catSel.addEventListener('change', applyFilters);
+      })();
+    <\/script>`;
+}
+
+function buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale = 'es') {
+  const systemName = systemData?.system?.name ?? t(locale, 'ui.designReview');
+  return `<!DOCTYPE html>
+<html lang="${escapeHtml(normalizeLocale(locale))}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(systemName)} — ${i18nText('ui.decisionsExplorer', locale)}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${mermaidScriptTag()}
+  <style>
+    body { background: #f5f6f8; color: #20242a; }
+    .detail-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; margin-bottom: 1.25rem; }
+    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>
+        <span class="navbar-brand fw-bold mb-0">${escapeHtml(systemName)} — <span data-i18n="ui.decisionsExplorer">${i18nText('ui.decisionsExplorer', locale)}</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${localeSwitcher(locale)}</div>
+    </div>
+  </nav>
+  <main class="container-xl pb-5">
+    ${renderDecisionsExplorer(reviewModel, locale)}
+  </main>
+  ${clientI18nScript(locale)}
+  ${mermaidRenderAllScript()}
+</body>
+</html>`;
+}
+
+function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale = 'es') {
   const systemName = systemData?.system?.name ?? t(locale, 'ui.designReview');
   const systemDesc = systemData?.system?.description ?? '';
   const health = reviewModel ? countDiagnostics(reviewModel.diagnostics) : { errors: 0, warnings: 0, total: 0 };
@@ -1104,6 +1665,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
         <h5 class="mb-0" data-i18n="ui.decisionReview">${i18nText('ui.decisionReview', locale)}</h5>
         <div class="d-flex gap-2 flex-wrap">
           <span class="badge bg-${health.errors ? 'danger' : (health.warnings ? 'warning text-dark' : 'success')}">${i18nText('ui.errorsWarnings', locale, health)}</span>
+          ${decisionsFile ? `<a href="${escapeHtml(decisionsFile)}" class="btn btn-sm btn-dark" data-i18n="ui.decisionsExplorer">${i18nText('ui.decisionsExplorer', locale)}</a>` : ''}
           ${patchFile ? `<a href="${escapeHtml(patchFile)}" class="btn btn-sm btn-outline-dark" data-i18n="ui.patchProposals">${i18nText('ui.patchProposals', locale)}</a>` : ''}
         </div>
       </div>
@@ -1120,6 +1682,12 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
       </div>
     </section>` : '';
 
+  const sagaSection = (reviewModel && asArray(reviewModel.sagas).length) ? `
+    <section class="mb-5">
+      <h5 class="mb-3" data-i18n="ui.systemSagas">${i18nText('ui.systemSagas', locale)}</h5>
+      ${renderSagaViews(reviewModel.sagas, locale)}
+    </section>` : '';
+
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(normalizeLocale(locale))}">
 <head>
@@ -1133,7 +1701,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     .bc-card { transition: transform .15s, box-shadow .15s; }
     .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
     .bg-purple { background-color: #6f42c1 !important; }
-    .metric-tile, .decision-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
+    .metric-tile, .decision-card, .saga-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
     .metric-label { font-size: .8rem; color: #56606b; margin-top: .35rem; }
     .metric-detail { font-size: .72rem; color: #7a8490; margin-top: .2rem; }
@@ -1142,6 +1710,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
     .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
     .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
@@ -1156,6 +1725,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     ${descAlert}
     ${reviewIntro}
     ${diagramSection}
+    ${sagaSection}
 
     <section>
       <h5 class="mb-3">
@@ -1168,6 +1738,12 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
 
   <script>
     mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    // Render saga sequence diagrams (and any .mermaid outside the system C4 diagram).
+    document.querySelectorAll('.mermaid').forEach(function (el) {
+      if (el.closest('#sys-diag-target')) return;
+      try { mermaid.run({ nodes: [el], suppressErrors: true }); }
+      catch (e) { console.warn('Saga diagram render error:', e); }
+    });
     (async function() {
       var mermaidEl = document.querySelector('#sys-diag-target .mermaid');
       if (!mermaidEl) return;
@@ -1488,6 +2064,10 @@ function registerPreview(program) {
         ));
       }
 
+      // Saga flows are cross-BC; resolved once from system.yaml + all bc.yaml docs
+      // so each BC review can show its participation and the explorer/index the full flow.
+      const sagas = extractSagas(systemData, bcYamls);
+
       // Generate viewer files per BC
       spinner.text = t(locale, 'cli.generating');
       const bcCards = [];
@@ -1536,6 +2116,8 @@ function registerPreview(program) {
           internalApi: artifact.internalApiDoc,
           asyncApi: artifact.asyncApiDoc,
         });
+        const opIndex = indexOpenApiOperations(artifact.openApiDoc);
+        const internalOpIndex = indexOpenApiOperations(artifact.internalApiDoc);
         const bcReview = {
           name: bcName,
           type: artifact.bcDoc?.type || bc.type,
@@ -1543,6 +2125,10 @@ function registerPreview(program) {
           hasDesign,
           metrics: buildBcMetrics(artifact.bcDoc, bcDiagnostics),
           decisions: bcDecisions,
+          useCaseCatalog: extractUseCaseCatalog(artifact.bcDoc, opIndex, internalOpIndex),
+          securityMatrix: extractSecurityMatrix(artifact.bcDoc, opIndex, internalOpIndex),
+          events: extractEvents(artifact.bcDoc),
+          sagas,
           diagnostics: bcDiagnostics,
           links: { reviewFile, designFile, openApiFile, internalApiFile, asyncApiFile },
         };
@@ -1573,6 +2159,7 @@ function registerPreview(program) {
         systemDecisions,
         boundedContexts: reviewBcs,
         decisions: [...systemDecisions, ...reviewBcs.flatMap((bc) => bc.decisions)],
+        sagas,
         diagnostics,
       };
 
@@ -1589,9 +2176,18 @@ function registerPreview(program) {
         process.exit(1);
       }
 
-      // Generate index.html
       const generatedAt = new Date().toLocaleString();
-      const indexHtml = buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, locale);
+
+      // Global decision explorer (aggregates use cases, security, sagas, events across BCs)
+      const decisionsFile = 'decisions.html';
+      await fs.writeFile(
+        path.join(reviewDir, decisionsFile),
+        buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale),
+        'utf8'
+      );
+
+      // Generate index.html
+      const indexHtml = buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale);
       const indexPath = path.join(reviewDir, 'index.html');
       await fs.writeFile(indexPath, indexHtml, 'utf8');
 

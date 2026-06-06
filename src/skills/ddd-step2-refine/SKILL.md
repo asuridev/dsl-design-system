@@ -1179,6 +1179,59 @@ Aplica a `{bc}.yaml`, `{bc}-spec.md`, `{bc}-flows.md`, OpenAPI/AsyncAPI y diagra
 
 ---
 
+### Checklist G — Completitud del bc.yaml v2 para Generación (Handoff Gate)
+
+Verifica que el `{bc-name}.yaml` es auto-suficiente para la Fase 2 — que el generador puede
+actuar sin leer otros archivos ni consultar al humano. Este checklist es el criterio de
+aceptación para declarar el diseño táctico completo.
+
+**G1 — Secciones obligatorias presentes y no vacías**
+
+| Sección | Obligatoria | Vacío aceptable cuando |
+|---------|-------------|------------------------|
+| `enums[]` | Condicional | El BC no tiene ciclos de vida con estados |
+| `valueObjects[]` | Condicional | Todos los campos son tipos canónicos primitivos |
+| `eventDtos[]` | Condicional | El BC no consume eventos de otros BCs |
+| `aggregates[]` | **Siempre** | Nunca — vacío es BC sin dominio modelado |
+| `integrations` | Condicional | Solo en BC totalmente aislado (muy raro) |
+| `domainEvents` | Condicional | Solo si el BC no publica ni consume eventos |
+| `useCases[]` | **Siempre** | Nunca — sin UCs el generador no produce nada |
+| `repositories[]` | **Siempre** | Nunca — sin repositorio no hay acceso a datos |
+| `errors[]` | **Siempre** | Nunca — forman parte del contrato público |
+
+- `aggregates[]` vacío o ausente → 🔴 ERROR: sin dominio no hay BC.
+- `useCases[]` vacío o ausente → 🔴 ERROR: el generador no produce ningún artefacto sin UCs.
+- `repositories[]` vacío o ausente → 🔴 ERROR: sin repositorio el generador no puede persistir.
+- `errors[]` vacío o ausente → 🔴 ERROR: faltan los códigos de error del contrato público.
+- `domainEvents` con `published[]` y `consumed[]` ambos vacíos, pero system.yaml declara eventos para este BC → 🟡 ALERTA: los eventos del diseño estratégico no están reflejados en el táctico.
+
+**G2 — bc.yaml está en versión v2 (listo para generación)**
+
+Verificar que las secciones de enriquecimiento de v2 están completas:
+- `domainRules[].type` asignado en todas las reglas — sin `type` el generador no clasifica la regla → 🟡 ALERTA por cada regla sin tipo.
+- `useCases[]` con todos los campos requeridos: `id`, `name`, `type`, `actor`, `trigger`, `aggregate` (cuando aplica), `implementation` → 🟡 ALERTA por cada UC incompleto.
+- `repositories[]` derivados de las 4 fuentes (implicit, uniqueness, openapi GET params, crossAggregateConstraint) — verificar que ninguna fuente fue omitida → 🔵 SUGERENCIA si el análisis de fuentes parece incompleto.
+- `errors[]` con `httpStatus` para todos los códigos de error usados en domainRules, notFoundError y fkValidations → 🔴 ERROR si falta algún código referenciado.
+
+**G3 — `derived_from` en artefactos derivados sigue los 3 patrones del VISION.md**
+
+El campo `derived_from` en `aggregates[].domainMethods[]`, `repositories[].queryMethods[]`,
+`repositories[].methods[]`, `aggregates[].properties[]` y `projections[].properties[]`
+debe seguir exactamente uno de estos patrones:
+
+| Patrón | Significado | Ejemplos válidos |
+|--------|-------------|------------------|
+| `implicit` | Heredado de JpaRepository por convención DDD | `findById`, `save`, `delete`, `count` |
+| `{RULE-ID}` | Generado por esta regla de dominio (ID literal de la regla, sin prefijo) | `PRD-RULE-003`, `CAT-RULE-001` |
+| `openapi:{operationId}` | Generado por este operationId del OpenAPI del BC | `openapi:listProducts`, `openapi:getOrder` |
+
+- `derived_from` con valor distinto de los 3 patrones → 🟡 ALERTA: trazabilidad rota — corregir o eliminar el campo.
+- `derived_from: {RULE-ID}` donde el RULE-ID no existe en `aggregates[].domainRules[].id` → 🔴 ERROR: referencia rota.
+- `derived_from: openapi:{operationId}` donde el operationId no existe en el OpenAPI del BC → 🔴 ERROR: referencia rota.
+- `derived_from` en `useCases[]` → 🔴 ERROR: campo no válido en UCs; el validador lo rechaza.
+
+---
+
 ### Resultado de la Fase 1B
 
 | Estado | Criterio | Acción |

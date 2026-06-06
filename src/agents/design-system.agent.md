@@ -29,6 +29,46 @@ Si la decisión es estructural o irreversible para Paso 2, usa `vscode_askQuesti
 
 ---
 
+## Protocolo de Interacción con el Diseñador (Human-in-the-Loop)
+
+El VISION.md establece que el control humano sobre las decisiones de dominio es un principio
+no negociable. Este protocolo define cuándo y cómo pausar para consultar.
+
+### Cuándo usar `vscode_askQuestions`
+
+Usar **siempre** esta herramienta cuando la decisión cumpla alguna de estas condiciones:
+- Afecta fronteras de BC, ownership de datos o clasificación Core/Supporting/Generic
+- Implica elegir entre LRM vs HTTP síncrono para una integración
+- Introduce o modifica una saga o su cadena de compensación
+- El impacto es irreversible sin reescribir artefactos ya generados
+
+### Cuándo usar texto directo (fallback)
+
+Si `vscode_askQuestions` no está disponible en el contexto actual, usar este formato
+de texto directo. El agente **no debe continuar** sin recibir la respuesta del diseñador.
+
+```
+⏸️ PAUSA — DECISIÓN REQUERIDA DEL DISEÑADOR
+
+**Contexto:** [qué situación genera la pausa]
+**Opciones:**
+  A) [primera opción — incluir implicaciones en 1 oración]
+  B) [segunda opción — incluir implicaciones en 1 oración]
+  [C) (opcional) si hay más de 2 opciones]
+
+Por favor responde con la letra de tu elección o escribe tu preferencia.
+```
+
+### Cuándo NO pausar
+
+El agente puede actuar sin pausa en:
+- Correcciones de naming o convenciones (PascalCase, idioma inglés en YAML)
+- Correcciones de consistencia interna sin impacto en fronteras ni contratos
+- Aplicar defaults de infraestructura documentados en el skill
+- Agregar `notes` con supuestos inferidos razonablemente
+
+---
+
 ## Bootstrap — Primera Acción Obligatoria
 
 Antes de hacer cualquier otra cosa, lee en paralelo estos dos archivos de skill:
@@ -175,6 +215,26 @@ Cuando ya no haya líneas `✖`, procesar cada línea `⚠`:
 
 ---
 
+## Fase 2.7 — VISION.md Gate (Obligatorio)
+
+Antes de generar el resumen final, verifica que el diseño producido cumple los cuatro
+principios del VISION.md. Es un gate binario — si algún resultado es ❌, corregir antes de
+continuar al Resumen.
+
+| # | Principio | Pregunta de verificación |
+|---|-----------|--------------------------|
+| 1 | **Separación intención / implementación** | ¿Todos los campos del YAML declaran QUÉ y PARA QUÉ, sin referencias a CÓMO? (sin nombres de clases, SQL físico, anotaciones de framework ni librerías concretas) |
+| 2 | **Agnosticismo tecnológico** | ¿El mismo `system.yaml` podría alimentar un generador Spring Boot y otro Django sin cambiar una línea? Solo primitivas DSL válidas: `message-broker`, `http`, `relational`, `hexagonal`, etc. |
+| 3 | **Completitud para el generador** | ¿El generador puede actuar sin leer otros archivos ni consultar al humano? ¿Toda decisión de dominio está declarada explícitamente en los artefactos? |
+| 4 | **Control humano sobre decisiones de dominio** | ¿El humano aprobó los BCs, sus fronteras, las integraciones estratégicas y las sagas? ¿O el agente tomó decisiones de dominio sin confirmar? |
+
+**Acción según resultado:**
+- **Principio 1 ó 2 → ❌**: localizar y eliminar la referencia tecnológica del artefacto antes de continuar.
+- **Principio 3 → ❌**: identificar qué información falta y agregarla al YAML o documentarla en el campo `notes` correspondiente.
+- **Principio 4 → ❌**: no bloquear la entrega, pero listar en el resumen las decisiones tomadas sin confirmación como **deuda de validación** y ofrecer al usuario revisarlas.
+
+---
+
 ## Fase 3 — Resumen Final
 
 Presenta al usuario el resultado completo en este formato:
@@ -216,4 +276,12 @@ Ejecutar `@design-bounded-context` con el BC más importante para comenzar el Pa
 
 ### Revisión visual recomendada
 Ejecutar `dsl preview --no-open --format all --locale es` para inspeccionar decisiones, diagramas y prompts de revisión en `arch/review/`. El agente ya ejecuta este comando automáticamente en la Fase 2.3.
+
+### Readiness para Fase 2
+[N/3 criterios cumplidos]:
+- [ ] `dsl validate` terminó sin líneas `✖`
+- [ ] Los artefactos declaran intención (qué/para qué) — sin clases, SQL físico ni frameworks concretos
+- [ ] El humano aprobó explícitamente BCs, fronteras, integraciones clave y sagas
+
+Si algún criterio está sin cumplir → listarlo como **deuda de validación** antes de entregar artefactos a la Fase 2.
 ```

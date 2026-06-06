@@ -795,8 +795,11 @@ test('dsl preview generates decision review assets without opening browser', asy
     assert.match(indexHtml, /data-locale="es"/);
     assert.match(bcReviewHtml, /Prompt para el agente/);
     assert.match(bcReviewHtml, /Use case topology/);
+    assert.match(bcReviewHtml, /Catálogo de casos de uso/);
+    assert.match(bcReviewHtml, /Seguridad de endpoints/);
     assert.ok(Array.isArray(reviewModel.decisions));
     assert.ok(reviewModel.decisions.length > 0);
+    assert.ok(Array.isArray(reviewModel.sagas), 'review model exposes sagas');
     assert.match(patchProposals, /proposals:/);
   });
 });
@@ -831,6 +834,7 @@ test('dsl preview can generate English UI text', async () => {
     const indexHtml = await fs.readFile(path.join(projectDir, 'arch', 'review', 'index.html'), 'utf8');
     assert.match(indexHtml, /Design Review/);
     assert.match(indexHtml, /Patch proposals/);
+    assert.match(indexHtml, /Decision Explorer/);
     assert.match(indexHtml, /data-locale="en"/);
   });
 });
@@ -923,6 +927,37 @@ test('canasta familiar example validates and previews as an incremental design',
     assert.ok(await fs.pathExists(path.join(reviewDir, 'catalog-review.html')));
     assert.ok(await fs.pathExists(path.join(reviewDir, 'orders-review.html')));
     assert.ok(await fs.pathExists(path.join(reviewDir, 'review-model.json')));
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'decisions.html')), 'decision explorer page generated');
+
+    // index shows the system saga flow (auto-generated Mermaid) and links the explorer
+    const indexHtml = await fs.readFile(path.join(reviewDir, 'index.html'), 'utf8');
+    assert.match(indexHtml, /Sagas del sistema/);
+    assert.match(indexHtml, /Explorador de decisiones/);
+    assert.match(indexHtml, /sequenceDiagram/);
+
+    // per-BC review surfaces the actual decisions, not just counts
+    const ordersReview = await fs.readFile(path.join(reviewDir, 'orders-review.html'), 'utf8');
+    assert.match(ordersReview, /Catálogo de casos de uso/);
+    assert.match(ordersReview, /Seguridad de endpoints/);
+    assert.match(ordersReview, /Participación en sagas/);
+    assert.match(ordersReview, /UC-ORD-020/);
+
+    // decision explorer aggregates BCs with working filters
+    const decisionsHtml = await fs.readFile(path.join(reviewDir, 'decisions.html'), 'utf8');
+    assert.match(decisionsHtml, /id="filter-bc"/);
+    assert.match(decisionsHtml, /id="filter-cat"/);
+    assert.match(decisionsHtml, /explorer-block/);
+
+    // review-model.json carries the structured detail for agent consumption
+    const reviewModel = JSON.parse(await fs.readFile(path.join(reviewDir, 'review-model.json'), 'utf8'));
+    assert.strictEqual(reviewModel.sagas[0].name, 'CheckoutSaga');
+    const orders = reviewModel.boundedContexts.find((bc) => bc.name === 'orders');
+    assert.ok(orders.useCaseCatalog.length > 0, 'orders use case catalog populated');
+    assert.ok(orders.securityMatrix.length > 0, 'orders security matrix populated');
+    const owned = orders.securityMatrix.find((entry) => entry.ownership);
+    assert.ok(owned && owned.ownership.field && owned.ownership.claim, 'ownership field/claim extracted');
+    const step3 = reviewModel.sagas[0].steps.find((step) => step.order === 3);
+    assert.strictEqual(step3.implementedBy.id, 'UC-ORD-020', 'saga step resolved to implementing use case');
   });
 });
 

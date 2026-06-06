@@ -648,6 +648,33 @@ Genera los tres artefactos en orden. Lee las referencias antes de escribir:
 → Lee `references/system-yaml-schema.md` para el schema completo de system.yaml
 → Lee `references/system-yaml-guide.md` para ejemplos anotados, señales de diseño (sobre/sub-diseño), patrones de integración con árbol de decisión y checklist de validación
 
+### Pre-vuelo: Verificación de Agnosticismo Tecnológico
+
+Gate no omitible — ejecutar antes de escribir cualquier archivo. Si detectas referencias
+tecnológicas en el diseño en memoria, corrígelas aquí antes de proceder.
+
+Buscar en todos los campos de texto del diseño (`purpose`, `description`, `notes`, nombres
+de BCs, agregados, entidades, contratos, actores):
+
+| Categoría | Ejemplos a detectar |
+|-----------|---------------------|
+| Frameworks / librerías | `Spring`, `JPA`, `Hibernate`, `Django`, `FastAPI`, `NestJS`, `TypeORM`, `Rails`, `Laravel`, `Express` |
+| Bases de datos concretas | `PostgreSQL`, `MySQL`, `MongoDB`, `DynamoDB`, `Redis`, `Cassandra`, `ElasticSearch` |
+| Message brokers concretos | `Kafka`, `RabbitMQ`, `SQS`, `PubSub`, `ServiceBus`, `NATS` |
+| Proveedores cloud | `AWS`, `GCP`, `Azure`, `S3`, `ECR`, `Lambda`, `Cloud Run` |
+| Anotaciones / tipos de lenguaje | `@Entity`, `@Column`, `BigDecimal`, `LocalDateTime`, `UUID` (Java), `List<T>`, `Dict`, `async def` |
+| SQL físico | Nombres de tablas, columnas, `SELECT`, `JOIN`, `INDEX ON`, secuencias, triggers |
+
+**Primitivas DSL válidas** que sí pueden aparecer (no son referencias tecnológicas):
+`message-broker`, `http`, `grpc`, `websocket`, `oauth2-cc`, `mTLS`, `internal-jwt`,
+`relational`, `document`, `key-value`, `graph`, `modular-monolith`, `microservices`,
+`serverless`, `hexagonal`, `layered`, `clean`, `schema-per-bc`, `db-per-bc`, `prefix-per-bc`.
+
+**Si se detecta cualquier referencia fuera de las primitivas válidas:**
+1. Reemplazarla por la primitiva DSL equivalente (ej: `Kafka` → `message-broker`)
+2. O moverla al campo `notes` con el prefijo `[Decisión de Fase 2 — no parte del diseño:]`
+3. Solo entonces continuar con la generación de artefactos
+
 ### 3.1 system.yaml
 
 > **PRE-REQUISITO OBLIGATORIO:** La Auditoría de Completitud de Integraciones (§2.6,
