@@ -336,6 +336,51 @@ test('dsl init scaffolds design assets and validator', async () => {
   });
 });
 
+test('dsl init generates Claude Code orchestrators as main-thread slash commands', async () => {
+  await withTempProject(async (projectDir) => {
+    const result = runNode([CLI, 'init'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+    // Orchestrators land in .claude/commands/ (main thread, AskUserQuestion can pause),
+    // NOT in .claude/agents/ (subagents cannot use AskUserQuestion).
+    const commandPath = path.join(projectDir, '.claude', 'commands', 'design-system.md');
+    assert.ok(await fs.pathExists(commandPath), 'Expected .claude/commands/design-system.md');
+    assert.ok(
+      !(await fs.pathExists(path.join(projectDir, '.claude', 'agents'))),
+      'Did not expect .claude/agents/ (orchestrators must be commands, not subagents)',
+    );
+
+    const command = await fs.readFile(commandPath, 'utf8');
+    // Command frontmatter: no name, allowed-tools incl. AskUserQuestion, $ARGUMENTS injected.
+    assert.ok(!/^name:/m.test(command), 'Command must not keep agent `name:` frontmatter');
+    assert.ok(
+      /^allowed-tools:.*AskUserQuestion/m.test(command),
+      'Command must declare allowed-tools including AskUserQuestion',
+    );
+    assert.ok(command.includes('$ARGUMENTS'), 'Command must inject $ARGUMENTS');
+    // The pause mechanism must point at the real interactive tool, not the dead text marker.
+    assert.ok(!command.includes('vscode_askQuestions'), 'No leftover vscode_askQuestions in command');
+    assert.ok(command.includes('AskUserQuestion'), 'Command must instruct calling AskUserQuestion');
+    assert.ok(!command.includes('@design-system'), 'Invocation refs must be /command, not @agent');
+
+    // Skills are transformed too (they carry the question templates).
+    const skill = await fs.readFile(
+      path.join(projectDir, '.claude', 'skills', 'ddd-step1-strategic-design', 'SKILL.md'),
+      'utf8',
+    );
+    assert.ok(!skill.includes('vscode_askQuestions'), 'No leftover vscode_askQuestions in skill');
+    assert.ok(skill.includes('AskUserQuestion'), 'Skill must reference AskUserQuestion');
+
+    // Copilot path is left untouched: real vscode/askQuestions tool + @agent invocation.
+    const copilotAgent = await fs.readFile(
+      path.join(projectDir, '.github', 'agents', 'design-system.agent.md'),
+      'utf8',
+    );
+    assert.ok(copilotAgent.includes('vscode_askQuestions'), 'Copilot agent must keep vscode_askQuestions');
+    assert.ok(copilotAgent.includes('@design-bounded-context'), 'Copilot agent must keep @agent refs');
+  });
+});
+
 test('copied dsl-validate rejects unsupported useCase keys before generation', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

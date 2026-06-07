@@ -32,68 +32,77 @@ const DSL_VALIDATE_SOURCES = [
  *   - "en una sola llamada vscode_askQuestions" → broken grammar after substitution,
  *     the model ignores the sentence.
  *
- * This function applies targeted rewrites so the protocol becomes imperative
- * in Claude Code: the agent MUST stop the flow and wait for user input.
+ * The correct Claude Code mechanism is the real interactive tool `AskUserQuestion`,
+ * which pauses the turn and shows a selectable prompt. This function rewrites the
+ * protocol so the agent MUST call `AskUserQuestion` (not emit a passive text block)
+ * and wait for the designer's answer before continuing.
+ *
+ * NOTE: `AskUserQuestion` only pauses when the flow runs in the MAIN conversation
+ * thread. Subagents (Agent/Task) cannot use it. That is why init generates these
+ * orchestrators as slash commands (.claude/commands/), not subagents — see
+ * agentToCommand() / copyAgentsAsCommands().
  *
  * Transformations applied (in order):
- *  1. tools: frontmatter — Copilot tool names → Claude Code names
+ *  1. tools: frontmatter — Copilot tool names → Claude Code names (incl. AskUserQuestion)
  *  2. Skill paths — .agents/skills/ → .claude/skills/
- *  3. "Cuándo usar `vscode_askQuestions`" section → "Cuándo pausar obligatoriamente"
- *  4. "Usar **siempre** esta herramienta cuando" → imperative pause instruction
- *  5. "Cuándo usar texto directo (fallback)" section → "(única vía en Claude Code)"
- *  6. "Si `vscode_askQuestions` no está disponible…" conditional → unconditional
- *  7. "en una sola llamada `vscode_askQuestions`" call syntax → grouping instruction
- *  8. All remaining inline `vscode_askQuestions` references → ⏸️ PAUSA marker
+ *  3. "Cuándo usar `vscode_askQuestions`" section → "Cuándo pausar … con `AskUserQuestion`"
+ *  4. "Usar **siempre** esta herramienta cuando" → imperative "llama a AskUserQuestion"
+ *  5. "Cuándo usar texto directo (fallback)" section → "Formato de la llamada a AskUserQuestion"
+ *  6. "Si `vscode_askQuestions` no está disponible…" conditional → unconditional tool call
+ *  7. "en una sola llamada `vscode_askQuestions`" → single AskUserQuestion call
+ *  8. All remaining inline `vscode_askQuestions` references → AskUserQuestion tool call
+ *  9. The "⏸️ PAUSA …" text template header/footer → AskUserQuestion call instructions
+ * 10. Option fields (recommended / allowFreeformInput) → AskUserQuestion semantics
+ * 11. Invocation refs in generated docs: @design-* (Copilot) → /design-* (Claude Code)
  */
 function applyClaudeCodeTransforms(content) {
   // 1. Rewrite tools frontmatter. Matches any tools: [...] line that contains at
   //    least one Copilot-specific tool so the rule fires even when vscode/askQuestions
-  //    is absent in future agent files.
+  //    is absent in future agent files. AskUserQuestion is included because every
+  //    human-in-the-loop flow needs the interactive pause tool.
   content = content.replace(
     /^tools:\s*\[.*(?:vscode\/\w+|(?<!\w)read(?!\w)|(?<!\w)search(?!\w)|(?<!\w)execute(?!\w)).*\]$/m,
-    'tools: [Read, Write, Edit, Grep, Glob, Bash]',
+    'tools: [Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion]',
   );
 
   // 2. Rewrite skill paths so .claude/agents/ files do not depend on .agents/skills/.
   content = content.replace(/\.agents\/skills\//g, '.claude/skills/');
 
-  // 3. Rename the "Cuándo usar vscode_askQuestions" section to describe the
-  //    SITUATION (when to pause) rather than a tool that doesn't exist.
+  // 3. Rename the "Cuándo usar vscode_askQuestions" section to name the real
+  //    Claude Code tool and describe the SITUATION (when to pause).
   content = content.replace(
     /### Cuándo usar `vscode_askQuestions`/g,
-    '### Cuándo pausar obligatoriamente para decisión del diseñador',
+    '### Cuándo pausar obligatoriamente con la herramienta `AskUserQuestion`',
   );
 
-  // 4. Replace "Usar **siempre** esta herramienta cuando..." with imperative pause
-  //    language. "esta herramienta" has no referent in Claude Code; the model
-  //    reads the section as not applicable and skips it entirely.
+  // 4. Replace "Usar **siempre** esta herramienta cuando..." with an imperative
+  //    instruction to call AskUserQuestion. "esta herramienta" had no referent in
+  //    Claude Code; naming the tool explicitly makes the rule actionable.
   content = content.replace(
     /Usar \*\*siempre\*\* esta herramienta cuando la decisión cumpla alguna de estas condiciones:/g,
-    '**Pausar el flujo siempre** y esperar respuesta del diseñador cuando la decisión cumpla alguna de estas condiciones:',
+    '**Llama siempre a la herramienta `AskUserQuestion`** y espera la respuesta del diseñador antes de continuar cuando la decisión cumpla alguna de estas condiciones:',
   );
 
   // 5. Rename "Cuándo usar texto directo (fallback)" — the "(fallback)" label
-  //    causes models to treat the text format as optional. It is the ONLY mechanism
-  //    in Claude Code and must not be labelled as a secondary option.
+  //    made models treat it as optional. The block actually describes the FIELDS
+  //    of the AskUserQuestion call, so rename it accordingly.
   content = content.replace(
     /### Cuándo usar texto directo \(fallback\)/g,
-    '### Formato ⏸️ PAUSA — único mecanismo en Claude Code',
+    '### Formato de la llamada a `AskUserQuestion`',
   );
 
-  // 6. Replace the conditional availability sentence (spans two lines). The
-  //    condition is always true in Claude Code so make it unconditional and
-  //    add an explicit "must stop" instruction.
+  // 6. Replace the conditional availability sentence (spans two lines) with an
+  //    unconditional instruction to build and issue the AskUserQuestion call.
   content = content.replace(
     /Si `vscode_askQuestions` no está disponible en el contexto actual, usar este formato\r?\nde texto directo\./g,
-    'Usar siempre este formato. Detener el flujo y esperar respuesta antes de continuar.',
+    'Construye una llamada a la herramienta `AskUserQuestion` con los campos descritos abajo. Detén el flujo y espera la respuesta del diseñador antes de continuar.',
   );
 
-  // 7. Fix the "en una sola llamada `vscode_askQuestions`" call syntax. After a
-  //    plain name substitution this becomes grammatically broken ("en una sola
-  //    llamada el protocolo"), which models ignore. Replace with grouping semantics.
+  // 7. Fix the "en una sola llamada `vscode_askQuestions`" call syntax → a single
+  //    AskUserQuestion call grouping all the questions.
   content = content.replace(
     /en una sola llamada `vscode_askQuestions`/g,
-    'en un único bloque ⏸️ PAUSA (agrupar todas las preguntas)',
+    'en una sola llamada a la herramienta `AskUserQuestion` (agrupar todas las preguntas)',
   );
 
   // 8. Replace all remaining inline references, including combined suffix variants:
@@ -101,33 +110,52 @@ function applyClaudeCodeTransforms(content) {
   //      `vscode_askQuestions` (o pregunta en texto si no está disponible)
   //      `vscode_askQuestions` (o en texto directo) (o pregunta en texto...)
   //      bare `vscode_askQuestions`
-  //    The ⏸️ marker and "detener el flujo" wording signal to the model that it
-  //    must stop and wait, not merely "present information".
   content = content.replace(
     /`vscode_askQuestions`(?:\s*\(o (?:en texto directo|pregunta en texto si no está disponible)\))*/g,
-    'el formato ⏸️ PAUSA (detener el flujo y esperar respuesta del diseñador)',
+    'la herramienta `AskUserQuestion` (pausa el turno y espera la respuesta del diseñador)',
   );
 
-  // 9. Remove vscode_askQuestions UI-only fields that cause agents to resolve
-  //    decisions autonomously instead of waiting for user input.
+  // 9. The agent files contain a literal "⏸️ PAUSA" text template. Rewrite its
+  //    header and footer so the model issues an AskUserQuestion call instead of
+  //    printing the template as passive text (which never pauses).
+  content = content.replace(
+    /⏸️ PAUSA — DECISIÓN REQUERIDA DEL DISEÑADOR/g,
+    'Llama a la herramienta `AskUserQuestion` con estos campos (NO escribas esto como texto):',
+  );
+  content = content.replace(
+    /Por favor responde con la letra de tu elección o escribe tu preferencia\./g,
+    'Invoca `AskUserQuestion` ahora y espera la selección del diseñador antes de continuar.',
+  );
+
+  // 10. Map the vscode_askQuestions option fields to AskUserQuestion semantics.
   //
-  //    (a) `recommended: true` — highlights one option in the VS Code UI widget.
-  //        In Claude Code, models read it as "this is the correct answer" and
-  //        apply it without asking. Remove the entire line (handles CRLF/LF).
-  content = content.replace(/^\s+recommended: true\r?\n/gm, '');
+  //     (a) `recommended: true` — in the VS Code widget it highlights one option.
+  //         AskUserQuestion conveys a recommendation by placing the option first and
+  //         adding "(Recomendado)" to its label. Convert the field into that
+  //         instruction so the recommendation survives WITHOUT becoming an
+  //         auto-decision (the model must still ask). Preserves indentation.
+  content = content.replace(
+    /^([ \t]*)recommended: true\r?\n/gm,
+    '$1# AskUserQuestion: coloca esta opción primero y añade "(Recomendado)" a su label — NO la apliques sin preguntar\n',
+  );
   //
-  //    (b) "(recomendado para datos monetarios)" in the option label — same effect:
-  //        the model reads it as a decision instruction and skips the question.
+  //     (b) "(recomendado para datos monetarios)" baked into a label pushes the
+  //         model to decide unilaterally. The recommendation is conveyed by 10a.
   content = content.replace(/ \(recomendado para datos monetarios\)/g, '');
   //
-  //    (c) Inject an explicit prohibition after every allowFreeformInput: false
-  //        block (the closing ``` of the vscode_askQuestions format template).
-  //        This fires for both the monetary and non-monetary format blocks.
-  //        The \r? handles both CRLF (Windows) and LF (Unix) source files.
+  //     (c) After every "allowFreeformInput: false" template block (closing ``` of
+  //         the format template), inject the mandatory instruction to actually call
+  //         AskUserQuestion and wait. \r? handles CRLF (Windows) and LF (Unix).
   content = content.replace(
     /allowFreeformInput: false\r?\n```/g,
-    'allowFreeformInput: false\n```\n\n> ⚠️ **Claude Code — obligatorio:** presentar el bloque ⏸️ PAUSA al usuario y esperar su respuesta explícita. No existe opción por defecto. No aplicar ninguna integración sin confirmación del diseñador.',
+    'allowFreeformInput: false\n```\n\n> ⚠️ **Claude Code — obligatorio:** llama a la herramienta `AskUserQuestion` usando estos `header` / `question` / `options` y **espera** la respuesta del diseñador. La herramienta siempre ofrece "Other" para texto libre. No existe opción por defecto: no apliques ninguna integración sin confirmación explícita.',
   );
+
+  // 11. Invocation references in generated docs: the @agent syntax is Copilot's.
+  //     In Claude Code these orchestrators are slash commands, so rewrite to /command.
+  //     The longer name is replaced first to avoid a partial @design-system match.
+  content = content.replace(/@design-bounded-context/g, '/design-bounded-context');
+  content = content.replace(/@design-system/g, '/design-system');
 
   return content;
 }
@@ -155,10 +183,46 @@ async function copyDirTransformed(srcDir, destDir) {
 }
 
 /**
- * Copies agent files to destDir, applying applyClaudeCodeTransforms to each file.
- * Agents live at the top level of srcDir (no subdirectories to recurse into).
+ * Converts an orchestrator agent file (src/agents/*.agent.md) into a Claude Code
+ * slash command body.
+ *
+ * Why a command and not a subagent: these flows are human-in-the-loop and must
+ * pause to ask the designer for decisions. AskUserQuestion is NOT available inside
+ * subagents (Agent/Task) — they run autonomously and cannot block for user input.
+ * Slash commands run in the MAIN conversation thread, where AskUserQuestion pauses
+ * reliably in both the terminal and the IDE.
+ *
+ * Frontmatter is rewritten agent → command:
+ *   - drop `name:`        (the command name comes from the file name)
+ *   - `tools: [...]`     → `allowed-tools: ...` (already includes AskUserQuestion)
+ *   - keep `description:` and `argument-hint:`
+ * The designer's argument is injected right after the frontmatter via $ARGUMENTS.
  */
-async function copyAgentsTransformed(srcDir, destDir, label) {
+function agentToCommand(content) {
+  // Body + frontmatter-value rewrites (paths, askQuestions → AskUserQuestion, @ → /).
+  content = applyClaudeCodeTransforms(content);
+
+  // Drop the `name:` frontmatter line (command name derives from the file name).
+  content = content.replace(/^name:.*\r?\n/m, '');
+
+  // tools: [A, B, C] → allowed-tools: A, B, C
+  content = content.replace(/^tools:\s*\[([^\]]*)\]\s*$/m, 'allowed-tools: $1');
+
+  // Inject the designer's request right after the closing frontmatter delimiter.
+  content = content.replace(
+    /^(---\r?\n[\s\S]*?\r?\n---\r?\n)/,
+    '$1\n> **Petición del diseñador:** $ARGUMENTS\n',
+  );
+
+  return content;
+}
+
+/**
+ * Reads each orchestrator agent file in srcDir and writes it to destDir as a Claude
+ * Code slash command (design-system.agent.md → design-system.md), so it runs in the
+ * main thread where AskUserQuestion can pause. See agentToCommand() for the rationale.
+ */
+async function copyAgentsAsCommands(srcDir, destDir, label) {
   const exists = await fs.pathExists(destDir);
 
   if (exists) {
@@ -182,14 +246,14 @@ async function copyAgentsTransformed(srcDir, destDir, label) {
   const files = await fs.readdir(srcDir);
   for (const file of files) {
     const srcFile = path.join(srcDir, file);
-    const destFile = path.join(destDir, file);
     const stat = await fs.stat(srcFile);
-    if (stat.isDirectory()) {
-      await fs.copy(srcFile, destFile, { overwrite: true });
-      continue;
-    }
+    if (stat.isDirectory()) continue;
+
+    // design-system.agent.md → design-system.md (slash command /design-system)
+    const commandFile = file.replace(/\.agent\.md$/, '.md');
+    const destFile = path.join(destDir, commandFile);
     let content = await fs.readFile(srcFile, 'utf8');
-    content = applyClaudeCodeTransforms(content);
+    content = agentToCommand(content);
     await fs.writeFile(destFile, content, 'utf8');
   }
 
@@ -327,14 +391,16 @@ function registerInit(program) {
       const destSkillsClaude = path.join(cwd, '.claude', 'skills');
       await copySkillsTransformed(srcSkills, destSkillsClaude, '.claude/skills');
 
-      // 3. Copy agents → .github/agents/ (GitHub Copilot, plain copy)
+      // 3. Copy agents → .github/agents/ (GitHub Copilot, plain copy, @-invoked)
       const srcAgents = path.join(__dirname, '../agents');
       const destAgents = path.join(cwd, '.github', 'agents');
       await copyIfConfirmed(srcAgents, destAgents, '.github/agents');
 
-      // 3b. Copy agents → .claude/agents/ (Claude Code CLI, fully transformed)
-      const destAgentsClaude = path.join(cwd, '.claude', 'agents');
-      await copyAgentsTransformed(srcAgents, destAgentsClaude, '.claude/agents');
+      // 3b. Generate orchestrators as Claude Code slash commands → .claude/commands/.
+      //     They run in the MAIN thread (not as subagents) so AskUserQuestion can
+      //     pause for designer decisions. Invoked as /design-system, /design-bounded-context.
+      const destCommandsClaude = path.join(cwd, '.claude', 'commands');
+      await copyAgentsAsCommands(srcAgents, destCommandsClaude, '.claude/commands');
 
       // 4. Scaffold tools/dsl-validate/
       await scaffoldDslValidate(cwd);

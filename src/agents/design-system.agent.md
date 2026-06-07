@@ -168,6 +168,14 @@ Antes de modificar cualquier BC, leer `arch/system/system.yaml` para entender el
 | `@design-system` | Diseñar o actualizar el sistema completo (Paso 1) |
 | `@design-bounded-context <bc-name>` | Diseñar el dominio táctico de un BC (Paso 2) |
 
+**Cómo invocarlos:** escribe el comando seguido de su argumento. Ejemplos:
+
+- `@design-system <descripción del negocio>` — p. ej. `@design-system tienda online de abarrotes con pagos y despacho a domicilio`
+- `@design-bounded-context <bc-name>` — el `<bc-name>` debe existir en `arch/system/system.yaml`. P. ej. `@design-bounded-context catalog`
+- Puedes añadir contexto extra tras el nombre del BC: `@design-bounded-context payments con pasarela externa y sin reembolsos parciales`
+
+Ambos pausan y piden tu confirmación en cada decisión de dominio bloqueante (fronteras de BC, LRM vs HTTP, sagas, ajustes a `system.yaml`); responde antes de que continúen.
+
 ## Convenciones de Artefactos YAML
 
 - Los YAML declaran **intención** (qué / para qué) — nunca implementación (cómo)

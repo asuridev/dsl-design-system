@@ -122,8 +122,8 @@ dsl-design-system/
 ├── examples/
 │   └── canasta-familiar/          ← ejemplo curado de sistema + BCs tácticos
 ├── src/
-│   ├── agents/                   ← definiciones de agentes (se copian a .github/agents/)
-│   │   ├── design-system.agent.md
+│   ├── agents/                   ← orquestadores: copia literal a .github/agents/ (Copilot, @-invoke)
+│   │   ├── design-system.agent.md  y transformados a .claude/commands/ (Claude Code, /-invoke)
 │   │   └── design-bounded-context.agent.md
 │   ├── commands/                 ← implementaciones de comandos CLI
 │   │   ├── init.js
