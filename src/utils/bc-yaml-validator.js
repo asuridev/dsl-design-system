@@ -34,6 +34,7 @@ class BcYamlValidator {
     this.validateUseCaseReferences();
     this.validateDomainMethodReferences();
     this.validateDomainEventPayloadMappings();
+    this.validateEventPayloadTypes();
     this.validateDomainEvents();
     this.validateReadModels();
     this.validateRepositories();
@@ -819,6 +820,42 @@ class BcYamlValidator {
         }
       }
     }
+  }
+
+  // BC-122 — El tipo declarado de cada payload de evento (published/consumed)
+  // debe resolver a un canónico o a un enum/valueObject/eventDto/aggregate
+  // declarado. Espeja la regla GEN-001 del generador (un tipo no declarado
+  // produce un import roto en la capa de mensajería → no compila). Solo valida
+  // entradas con `type` explícito; el mapeo nombre/source lo cubre BC-120/121.
+  validateEventPayloadTypes() {
+    const de = this.doc.domainEvents || {};
+    const sets = {
+      enumNames: this.enumNames(),
+      voNames: this.valueObjectNames(),
+      projectionNames: new Set(asArray(this.doc.projections).map((p) => p && p.name).filter(Boolean)),
+      eventDtoNames: new Set(asArray(this.doc.eventDtos).map((d) => d && d.name).filter(Boolean)),
+    };
+    const aggNames = this.aggregateNames();
+    const checkList = (events, kind) => {
+      for (let i = 0; i < asArray(events).length; i++) {
+        const ev = events[i];
+        if (!isMapping(ev)) continue;
+        for (let k = 0; k < asArray(ev.payload).length; k++) {
+          const pf = ev.payload[k];
+          if (!pf || typeof pf.type !== 'string' || !pf.type.trim()) continue;
+          const r = this.resolveType(pf.type, sets);
+          if (!r.resolved && !(r.aggregate && aggNames.has(r.aggregate))) {
+            this.error(
+              'BC-122',
+              `domainEvents.${kind} "${ev.name}" payload "${pf.name}" type "${pf.type}" no resuelve a un tipo canónico ni a un enum/valueObject/eventDto/aggregate declarado en el BC.`,
+              this.loc(`#/domainEvents/${kind}/${i}/payload/${k}`)
+            );
+          }
+        }
+      }
+    };
+    checkList(de.published, 'published');
+    checkList(de.consumed, 'consumed');
   }
 
   validateExplicitPayloadSource(payload, loc, agg, propNames, aggregateCamelId, paramNames, eventName, methodName) {

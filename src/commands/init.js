@@ -108,6 +108,27 @@ function applyClaudeCodeTransforms(content) {
     'el formato ⏸️ PAUSA (detener el flujo y esperar respuesta del diseñador)',
   );
 
+  // 9. Remove vscode_askQuestions UI-only fields that cause agents to resolve
+  //    decisions autonomously instead of waiting for user input.
+  //
+  //    (a) `recommended: true` — highlights one option in the VS Code UI widget.
+  //        In Claude Code, models read it as "this is the correct answer" and
+  //        apply it without asking. Remove the entire line (handles CRLF/LF).
+  content = content.replace(/^\s+recommended: true\r?\n/gm, '');
+  //
+  //    (b) "(recomendado para datos monetarios)" in the option label — same effect:
+  //        the model reads it as a decision instruction and skips the question.
+  content = content.replace(/ \(recomendado para datos monetarios\)/g, '');
+  //
+  //    (c) Inject an explicit prohibition after every allowFreeformInput: false
+  //        block (the closing ``` of the vscode_askQuestions format template).
+  //        This fires for both the monetary and non-monetary format blocks.
+  //        The \r? handles both CRLF (Windows) and LF (Unix) source files.
+  content = content.replace(
+    /allowFreeformInput: false\r?\n```/g,
+    'allowFreeformInput: false\n```\n\n> ⚠️ **Claude Code — obligatorio:** presentar el bloque ⏸️ PAUSA al usuario y esperar su respuesta explícita. No existe opción por defecto. No aplicar ninguna integración sin confirmación del diseñador.',
+  );
+
   return content;
 }
 

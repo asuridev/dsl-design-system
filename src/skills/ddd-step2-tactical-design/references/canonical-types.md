@@ -25,7 +25,6 @@ Nunca usar tipos de lenguajes de programación (`String`, `int`, `number` de TS,
 | `Money` | Monto monetario (VO compuesto) | ver sección Money |
 | `List[T]` | Lista ordenada de elementos tipo T | — |
 | `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | — |
-| `Map[K,V]` | Mapa clave-valor con tipos K y V | — |
 
 > El generador de cada plataforma destino traduce estos tipos canónicos al
 > sistema de tipos nativo del runtime (lenguaje + ORM/almacenamiento). El DSL
@@ -101,7 +100,8 @@ Estos tipos están prohibidos — siempre usar el equivalente canónico:
 | `any`, `object`, `{}` | Definir un VO específico | no tipado |
 | `varchar(n)` | `String(n)` | tipo del almacenamiento, no del DSL |
 | `bigint` | `Long` | tipo del almacenamiento, no del DSL |
-| `Page<X>`, `List<X>`, `Map<K,V>` (con `<>`) | `Page[X]`, `List[X]`, `Map[K,V]` (con `[]`) | sintaxis con `<>` ajena al DSL — el generador comprueba `startsWith('Page[')` |
+| `Page<X>`, `List<X>` (con `<>`) | `Page[X]`, `List[X]` (con `[]`) | sintaxis con `<>` ajena al DSL — el generador comprueba `startsWith('Page[')` |
+| `Map[K,V]`, `Map<K,V>` | Definir un Value Object específico | el generador no tiene mapeo para colecciones clave-valor |
 | `Enum<X>` | el nombre del enum directamente (ej: `CustomerStatus`) | wrapper de lenguaje — en el DSL los enums se referencian por nombre |
 
 > **Regla mnemotécnica:** El DSL usa **corchetes** `[T]` para genéricos, nunca ángulos `<T>`.
