@@ -9,7 +9,7 @@ const open = require('open');
 const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
 const { validateIntegrationCoherence } = require('../utils/integration-validator');
 const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
-const { clientI18nScript, localeSwitcher, normalizeLocale, t } = require('../utils/i18n');
+const { clientI18nScript, localeSwitcher, normalizeLocale, t, themeBootScript, themeSwitcher, clientThemeScript } = require('../utils/i18n');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -168,10 +168,20 @@ function extractSystemDecisions(systemData) {
       'External dependencies and cross-BC processes are high-value review points before generation.',
       files
     ),
+    decision(
+      'SYS-006',
+      'system',
+      'Reliability patterns',
+      'strategic',
+      `outbox=${Boolean(infrastructure.reliability?.outbox)} (retention ${infrastructure.reliability?.outboxRetentionDays ?? '∞'}d), consumerIdempotency=${Boolean(infrastructure.reliability?.consumerIdempotency)} (retention ${infrastructure.reliability?.processedEventRetentionDays ?? '∞'}d)`,
+      ['outbox on/off', 'consumerIdempotency on/off', 'set retention days'],
+      'Event reliability flags control at-least-once publication and consumer deduplication; recommended on whenever sagas exist.',
+      files
+    ),
   ];
 }
 
-function extractBcDecisions(bcYaml, contracts) {
+function extractBcDecisions(bcYaml, contracts, integrations) {
   if (!bcYaml) return [];
   const bcName = bcYaml.bc;
   const files = [`arch/${bcName}/${bcName}.yaml`];
@@ -254,7 +264,9 @@ function extractBcDecisions(bcYaml, contracts) {
       bcName,
       'Integration points',
       'integration',
-      `${outbound.length} outbound integration(s), ${inbound.length} inbound integration(s)`,
+      integrations
+        ? summarizeIntegrationStrategies(integrations)
+        : `${outbound.length} outbound integration(s), ${inbound.length} inbound integration(s)`,
       ['outbound HTTP', 'inbound HTTP', 'event subscription', 'external ACL', 'resilience override', 'auth override'],
       'Integration declarations must align with system.yaml and contract artifacts.',
       files
@@ -324,14 +336,44 @@ function useCaseTriggerLabel(uc, opIndex, internalIndex) {
   return trigger.kind || '—';
 }
 
+// Index every domainRule declared across a BC's aggregates (and their entities)
+// by its id, so a use case's `rules: [ID, ...]` can be resolved to what the rule
+// actually says (description, type, owning aggregate, error code).
+function extractDomainRuleIndex(bcYaml) {
+  const index = new Map();
+  for (const aggregate of asArray(bcYaml && bcYaml.aggregates)) {
+    if (!aggregate) continue;
+    const owners = [{ name: aggregate.name, rules: aggregate.domainRules }];
+    for (const entity of asArray(aggregate.entities)) {
+      if (entity && asArray(entity.domainRules).length) owners.push({ name: entity.name, rules: entity.domainRules });
+    }
+    for (const owner of owners) {
+      for (const rule of asArray(owner.rules)) {
+        if (rule && rule.id && !index.has(rule.id)) {
+          index.set(rule.id, {
+            id: rule.id,
+            description: (rule.description || '').replace(/\s+/g, ' ').trim(),
+            type: rule.type || '',
+            errorCode: rule.errorCode || '',
+            aggregate: owner.name || '',
+          });
+        }
+      }
+    }
+  }
+  return index;
+}
+
 function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
   if (!bcYaml) return [];
+  const ruleIndex = extractDomainRuleIndex(bcYaml);
   return asArray(bcYaml.useCases).map((uc) => {
     const target = [uc.aggregate, uc.method].filter(Boolean).join('.')
       || asArray(uc.aggregates).join(', ') || '—';
     const saga = uc.sagaStep
       ? { saga: uc.sagaStep.saga, order: uc.sagaStep.order, role: uc.sagaStep.role }
       : null;
+    const rules = asArray(uc.rules);
     return {
       id: uc.id || '',
       name: uc.name || '',
@@ -340,10 +382,71 @@ function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
       triggerKind: (uc.trigger && uc.trigger.kind) || '',
       triggerLabel: useCaseTriggerLabel(uc, opIndex, internalIndex),
       target,
-      rules: asArray(uc.rules),
+      rules,
+      // Resolved rule metadata for hover tooltips; `found: false` flags a
+      // dangling reference (rule id not declared in any aggregate's domainRules).
+      ruleDetails: rules.map((id) => ruleIndex.get(id) || { id, found: false }),
       returns: typeof uc.returns === 'string' ? uc.returns : '',
       saga,
       implementation: uc.implementation || '',
+      // Lightweight operational flags used for compact badges in the catalog.
+      idempotent: Boolean(uc.idempotency),
+      cacheable: Boolean(uc.cacheable),
+      async: Boolean(uc.async),
+      bulk: Boolean(uc.bulk),
+    };
+  });
+}
+
+// Operational / non-functional decisions declared per use case (idempotency,
+// caching, async execution, bulk, pagination, implementation completeness and
+// outbound dependencies). These determine critical runtime behavior in the
+// generated project but were previously invisible in the preview.
+function extractOperationsMatrix(bcYaml, opIndex, internalIndex) {
+  if (!bcYaml) return [];
+  return asArray(bcYaml.useCases).map((uc) => {
+    const idempotency = uc.idempotency
+      ? { header: uc.idempotency.header || 'Idempotency-Key', ttl: uc.idempotency.ttl || '' }
+      : null;
+    const cache = uc.cacheable
+      ? { ttl: uc.cacheable.ttl || '', keyFields: asArray(uc.cacheable.keyFields) }
+      : null;
+    const async = uc.async
+      ? { mode: uc.async.mode || '', statusEndpoint: uc.async.statusEndpoint || '' }
+      : null;
+    const bulk = uc.bulk
+      ? { maxItems: uc.bulk.maxItems != null ? uc.bulk.maxItems : '', onItemError: uc.bulk.onItemError || '' }
+      : null;
+    const pagination = uc.pagination
+      ? {
+        defaultSize: uc.pagination.defaultSize != null ? uc.pagination.defaultSize : '',
+        maxSize: uc.pagination.maxSize != null ? uc.pagination.maxSize : '',
+        sort: uc.pagination.defaultSort
+          ? `${uc.pagination.defaultSort.field || ''} ${uc.pagination.defaultSort.direction || ''}`.trim()
+          : '',
+      }
+      : null;
+    const outgoing = asArray(uc.outgoingCalls);
+    const fk = asArray(uc.fkValidations);
+    const lookups = asArray(uc.lookups);
+    const detail = [
+      ...outgoing.map((c) => `→ ${c && c.port ? c.port + '.' + (c.method || '') : 'outgoingCall'}`),
+      ...fk.map((c) => `fk ${(c && (c.aggregate || c.field)) || '?'}`),
+      ...lookups.map((l) => `lookup ${(l && (l.aggregate || l.param)) || '?'}`),
+    ];
+    return {
+      id: uc.id || '',
+      name: uc.name || '',
+      type: uc.type || '',
+      triggerKind: (uc.trigger && uc.trigger.kind) || '',
+      endpoint: useCaseTriggerLabel(uc, opIndex, internalIndex),
+      idempotency,
+      cache,
+      async,
+      bulk,
+      pagination,
+      implementation: uc.implementation || 'full',
+      deps: { outgoing: outgoing.length, fk: fk.length, lookups: lookups.length, detail },
     };
   });
 }
@@ -477,6 +580,175 @@ function extractEvents(bcYaml) {
     })),
   ];
   return { published, consumed, readModels };
+}
+
+// ─── Integrations (direct bounded-context relationships) ──────────────────────
+// Merge the tactical view (bcYaml.integrations.outbound/inbound) with the
+// strategic context map (system.integrations) so a designer can see, per BC,
+// what it depends on, who depends on it, with which DDD strategy and channel,
+// and — crucially — the rationale (necessity) behind each integration.
+
+// Normalize an integration pattern (tactical camelCase or strategic kebab-case)
+// to a canonical label plus a Bootstrap badge class.
+function normalizeIntegrationPattern(raw) {
+  const key = String(raw || '').toLowerCase().replace(/[^a-z]/g, '');
+  const map = {
+    customersupplier: { label: 'customer-supplier', badge: 'primary' },
+    event: { label: 'event', badge: 'info text-dark' },
+    acl: { label: 'acl', badge: 'danger' },
+    sharedkernel: { label: 'shared-kernel', badge: 'warning text-dark' },
+    openhost: { label: 'open-host', badge: 'success' },
+    conformist: { label: 'conformist', badge: 'secondary' },
+    partnership: { label: 'partnership', badge: 'dark' },
+  };
+  return map[key] || { label: raw ? String(raw) : '—', badge: 'secondary' };
+}
+
+function summarizeResilience(resilience) {
+  if (!resilience || typeof resilience !== 'object') return '';
+  const parts = [];
+  if (resilience.timeoutMs != null) parts.push(`timeout ${resilience.timeoutMs}ms`);
+  if (resilience.retries && resilience.retries.maxAttempts != null) parts.push(`retries ${resilience.retries.maxAttempts}`);
+  if (resilience.circuitBreaker && resilience.circuitBreaker.failureRateThreshold != null) {
+    parts.push(`CB ${resilience.circuitBreaker.failureRateThreshold}%`);
+  }
+  return parts.join(' · ');
+}
+
+function extractIntegrations(bcYaml, systemData) {
+  const result = { outbound: [], inbound: [], contextMap: '' };
+  const bcName = bcYaml && bcYaml.bc;
+  if (!bcName) return result;
+
+  const index = new Map();
+  const ensure = (direction, partner) => {
+    const key = `${direction}|${partner}`;
+    let entry = index.get(key);
+    if (!entry) {
+      entry = {
+        direction,
+        partner: partner || '—',
+        partnerType: '',
+        patternLabel: '',
+        badge: 'secondary',
+        channel: '',
+        contracts: [],
+        triggers: [],
+        auth: '',
+        resilience: '',
+        rationaleParts: [],
+      };
+      index.set(key, entry);
+      result[direction].push(entry);
+    }
+    return entry;
+  };
+  const addContracts = (entry, contracts) => {
+    for (const c of contracts) {
+      if (c && !entry.contracts.includes(c)) entry.contracts.push(c);
+    }
+  };
+  const setPattern = (entry, raw) => {
+    if (!raw) return;
+    const norm = normalizeIntegrationPattern(raw);
+    entry.patternLabel = norm.label;
+    entry.badge = norm.badge;
+  };
+  const addRationale = (entry, text) => {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (clean && !entry.rationaleParts.includes(clean)) entry.rationaleParts.push(clean);
+  };
+
+  // 1. Tactical integrations declared in the BC YAML.
+  const tactical = (bcYaml.integrations && typeof bcYaml.integrations === 'object') ? bcYaml.integrations : {};
+  for (const direction of ['outbound', 'inbound']) {
+    for (const item of asArray(tactical[direction])) {
+      if (!item) continue;
+      const entry = ensure(direction, item.name || '');
+      if (item.type) entry.partnerType = item.type;
+      setPattern(entry, item.pattern);
+      if (item.protocol && !entry.channel) entry.channel = item.protocol;
+      if (item.auth && item.auth.type && !entry.auth) entry.auth = item.auth.type;
+      addRationale(entry, item.description);
+      const ops = asArray(item.operations);
+      addContracts(entry, ops.map((op) => op && op.name).filter(Boolean));
+      for (const op of ops) {
+        if (op && op.triggersOn && !entry.triggers.includes(op.triggersOn)) entry.triggers.push(op.triggersOn);
+      }
+    }
+  }
+
+  // 2. Strategic integrations (system.integrations); from === BC is outbound,
+  //    to === BC is inbound. System metadata wins over tactical for shared fields.
+  for (const integ of asArray(systemData && systemData.integrations)) {
+    if (!integ) continue;
+    let direction = null;
+    let partner = null;
+    if (integ.from === bcName) { direction = 'outbound'; partner = integ.to; }
+    else if (integ.to === bcName) { direction = 'inbound'; partner = integ.from; }
+    if (!direction) continue;
+    const entry = ensure(direction, partner || '');
+    setPattern(entry, integ.pattern);
+    if (integ.channel) entry.channel = integ.channel;
+    if (integ.auth && integ.auth.type) entry.auth = integ.auth.type;
+    const resilience = summarizeResilience(integ.resilience);
+    if (resilience) entry.resilience = resilience;
+    addContracts(entry, asArray(integ.contracts).map((c) => (typeof c === 'string' ? c : (c && c.name))).filter(Boolean));
+    addRationale(entry, integ.notes);
+  }
+
+  for (const direction of ['outbound', 'inbound']) {
+    for (const entry of result[direction]) {
+      entry.rationale = entry.rationaleParts.join('\n');
+      entry.missingRationale = entry.rationale.length === 0;
+      delete entry.rationaleParts;
+      if (!entry.patternLabel) entry.patternLabel = '—';
+    }
+    result[direction].sort((a, b) => a.partner.localeCompare(b.partner));
+  }
+
+  result.contextMap = buildBcContextMapMermaid(bcName, result);
+  return result;
+}
+
+function summarizeIntegrationStrategies(integrations) {
+  const fmt = (list) => {
+    if (!list.length) return '0';
+    const counts = countBy(list, (e) => `${e.patternLabel}${e.channel ? '/' + e.channel : ''}`);
+    return `${list.length} (${describeCounts(counts)})`;
+  };
+  return `outbound: ${fmt(asArray(integrations && integrations.outbound))}; inbound: ${fmt(asArray(integrations && integrations.inbound))}`;
+}
+
+// Deterministic Mermaid flowchart placing the BC at the center, with outbound
+// edges to its dependencies and inbound edges from its consumers, each labeled
+// with the integration strategy and channel. External systems use a distinct shape.
+function buildBcContextMapMermaid(bcName, integrations) {
+  const outbound = asArray(integrations && integrations.outbound);
+  const inbound = asArray(integrations && integrations.inbound);
+  if (!outbound.length && !inbound.length) return '';
+  const idFor = (name) => 'n_' + String(name || 'unknown').replace(/[^A-Za-z0-9]/g, '_');
+  const clean = (text) => String(text || '').replace(/[\r\n]+/g, ' ').replace(/[;#|"]/g, ' ').trim();
+  const center = idFor(bcName);
+  const lines = ['flowchart LR', `  ${center}["${clean(bcName)}"]:::center`];
+  const declared = new Set([center]);
+  const declareNode = (entry) => {
+    const id = idFor(entry.partner);
+    if (!declared.has(id)) {
+      declared.add(id);
+      const isExternal = String(entry.partnerType || '').toLowerCase().includes('external');
+      lines.push(isExternal
+        ? `  ${id}[("${clean(entry.partner)}")]:::external`
+        : `  ${id}["${clean(entry.partner)}"]`);
+    }
+    return id;
+  };
+  const edgeLabel = (entry) => clean([entry.patternLabel, entry.channel].filter((v) => v && v !== '—').join(' / ')) || 'uses';
+  for (const entry of outbound) lines.push(`  ${center} -->|${edgeLabel(entry)}| ${declareNode(entry)}`);
+  for (const entry of inbound) lines.push(`  ${declareNode(entry)} -->|${edgeLabel(entry)}| ${center}`);
+  lines.push('  classDef center fill:#111827,color:#fff,stroke:#111827;');
+  lines.push('  classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12;');
+  return sanitizeMermaidSource(lines.join('\n'));
 }
 
 function buildPatchProposals(reviewModel) {
@@ -850,12 +1122,13 @@ function buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile, local
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(bcName)} — ${i18nText('nav.diagrams', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
   <style>
-    body { background: #f5f6f8; }
+    body { background: var(--bs-secondary-bg); }
     .diagram-wrap {
-      background: #fff;
-      border: 1px solid #dee2e6;
+      background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color);
       border-radius: .5rem;
       padding: 1.5rem;
       margin-bottom: 1.5rem;
@@ -868,19 +1141,21 @@ function buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile, local
     .diag-target { display: inline-block; max-width: none; transform-origin: 0 0; cursor: grab; }
     .diag-target.dragging { cursor: grabbing; }
     .seq-wrap .diag-target { display: block; min-width: 600px; }
-    .diagram-toolbar { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; margin-bottom: .5rem; position: sticky; top: 0; z-index: 2; background: rgba(255,255,255,.92); padding-bottom: .25rem; }
+    .diagram-toolbar { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; margin-bottom: .5rem; position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); padding-bottom: .25rem; }
     .diagram-hint { text-align: right; margin-bottom: .75rem; }
     .diag-error pre {
       background: #fff8e1; border: 1px solid #ffe082; border-radius: .4rem;
       padding: 1rem; font-size: .78rem; text-align: left; white-space: pre-wrap; margin: 0;
     }
     .diag-error .error-message { background: #fff3cd; border: 1px solid #ffecb5; border-radius: .4rem; padding: .75rem; text-align: left; margin-bottom: .75rem; }
-    .line-no { color: #6c757d; user-select: none; display: inline-block; width: 3.5rem; }
+    .line-no { color: var(--bs-secondary-color); user-select: none; display: inline-block; width: 3.5rem; }
     .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; text-align: left; }
-    .diagram-title { color: #495057; font-size: .85rem; font-weight: 600; margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
+    .diagram-title { color: var(--bs-secondary-color); font-size: .85rem; font-weight: 600; margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
     .nav-tabs .nav-link { font-size: .9rem; }
     .loading-spinner { color: #adb5bd; font-size: .85rem; padding: 2rem; }
     .diag-target svg { display: block; max-width: none; height: auto; }
+    [data-bs-theme="dark"] .diag-error pre { background: #2a2410; border-color: #5c4d12; color: #e8dca6; }
+    [data-bs-theme="dark"] .diag-error .error-message { background: #322a0c; border-color: #5c4d12; }
   </style>
 </head>
 <body>
@@ -890,7 +1165,7 @@ function buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile, local
         <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>
         <span class="navbar-brand fw-bold mb-0">${escapeHtml(bcName)} — <span data-i18n="nav.diagrams">${i18nText('nav.diagrams', locale)}</span></span>
       </div>
-      <div class="d-flex gap-2 align-items-center flex-wrap">${apiLinks}${localeSwitcher(locale)}</div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">${apiLinks}${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
     </div>
   </nav>
 
@@ -905,9 +1180,10 @@ function buildDesignHtml(bcName, diagramGroups, openApiFile, asyncApiFile, local
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"><\/script>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
   <script>
     ${diagramsJs}
-    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
 
     const rendered = new Set(); // ids successfully rendered
     const failed  = new Set(); // ids that threw — no retry
@@ -1185,12 +1461,49 @@ function pillList(items, cls = 'text-bg-secondary') {
   return arr.map((value) => `<span class="badge rounded-pill ${cls} me-1">${escapeHtml(value)}</span>`).join('');
 }
 
+// Render domain-rule badges with a native `title` tooltip describing what each
+// rule consists of (type · description → errorCode), resolved from ruleDetails.
+function rulePills(ruleDetails, locale = 'es') {
+  const arr = asArray(ruleDetails);
+  if (!arr.length) return '<span class="text-muted">—</span>';
+  return arr.map((rule) => {
+    if (rule.found === false) {
+      const tip = i18nText('uc.ruleNotFound', locale);
+      return `<span class="badge rounded-pill text-bg-warning me-1" title="${escapeHtml(tip)}">${escapeHtml(rule.id)} ?</span>`;
+    }
+    const parts = [];
+    if (rule.type) parts.push(rule.type);
+    if (rule.aggregate) parts.push(rule.aggregate);
+    const header = parts.join(' · ');
+    const tip = [header, rule.description, rule.errorCode ? `→ ${rule.errorCode}` : '']
+      .filter(Boolean).join('\n');
+    return `<span class="badge rounded-pill text-bg-light border me-1" title="${escapeHtml(tip)}" style="cursor:help">${escapeHtml(rule.id)}</span>`;
+  }).join('');
+}
+
 function actorBadgeClass(actor) {
   return { customer: 'primary', admin: 'danger', system: 'secondary' }[actor] || 'dark';
 }
 
 function ucTypeBadgeClass(type) {
   return type === 'query' ? 'info text-dark' : 'warning text-dark';
+}
+
+// Compact operational badges shown next to a use case name in the catalog.
+// Each badge is a glyph + i18n tooltip so the catalog hints at non-functional
+// behavior without a full table.
+function behaviorBadges(uc, locale = 'es') {
+  const badges = [];
+  const add = (glyph, cls, hintKey) =>
+    badges.push(`<span class="badge ${cls} ms-1" title="${i18nText(hintKey, locale)}">${glyph}</span>`);
+  if (uc.idempotent) add('&#10227;', 'bg-primary', 'ops.idempotentHint');
+  if (uc.cacheable) add('&#9889;', 'bg-info text-dark', 'ops.cacheableHint');
+  if (uc.async) add('&#9201;', 'bg-secondary', 'ops.asyncHint');
+  if (uc.bulk) add('&#9636;', 'bg-dark', 'ops.bulkHint');
+  if (uc.implementation === 'scaffold') {
+    badges.push(`<span class="badge bg-warning text-dark ms-1" title="${i18nText('ops.scaffoldHint', locale)}">scaffold</span>`);
+  }
+  return badges.join('');
 }
 
 function mermaidScriptTag() {
@@ -1200,7 +1513,7 @@ function mermaidScriptTag() {
 // Renders every .mermaid block on the page (used by review / explorer pages).
 function mermaidRenderAllScript() {
   return `<script>
-    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
     window.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('.mermaid').forEach(function (el) {
         try { mermaid.run({ nodes: [el], suppressErrors: true }); }
@@ -1223,7 +1536,7 @@ function useCaseTableHead(locale) {
   </tr></thead>`;
 }
 
-function renderUseCaseRows(rows) {
+function renderUseCaseRows(rows, locale = 'es') {
   return rows.map((uc) => {
     const sagaBadge = uc.saga
       ? `<span class="badge bg-dark" title="${escapeHtml(uc.saga.saga)}">${escapeHtml(uc.saga.saga)}${uc.saga.order != null ? ' #' + escapeHtml(uc.saga.order) : ''}</span>`
@@ -1231,12 +1544,12 @@ function renderUseCaseRows(rows) {
     return `
       <tr>
         <td class="font-monospace small">${escapeHtml(uc.id)}</td>
-        <td>${escapeHtml(uc.name)}</td>
+        <td>${escapeHtml(uc.name)}${behaviorBadges(uc, locale)}</td>
         <td><span class="badge bg-${actorBadgeClass(uc.actor)}">${escapeHtml(uc.actor || '—')}</span></td>
         <td><span class="badge bg-${ucTypeBadgeClass(uc.type)}">${escapeHtml(uc.type || '—')}</span></td>
         <td class="font-monospace small">${escapeHtml(uc.triggerLabel)}</td>
         <td class="font-monospace small">${escapeHtml(uc.target)}</td>
-        <td>${pillList(uc.rules, 'text-bg-light border')}</td>
+        <td>${rulePills(uc.ruleDetails, locale)}</td>
         <td>${sagaBadge}</td>
       </tr>`;
   }).join('');
@@ -1249,7 +1562,7 @@ function renderUseCaseCatalog(catalog, locale = 'es') {
   const group = (titleKey, rows) => rows.length ? `
     <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="${titleKey}">${i18nText(titleKey, locale)}</h6>
     <div class="table-responsive"><table class="table table-sm table-hover align-middle">
-      ${useCaseTableHead(locale)}<tbody>${renderUseCaseRows(rows)}</tbody>
+      ${useCaseTableHead(locale)}<tbody>${renderUseCaseRows(rows, locale)}</tbody>
     </table></div>` : '';
   return group('ui.httpTriggered', http) + group('ui.eventTriggered', events);
 }
@@ -1287,6 +1600,62 @@ function renderSecurityMatrix(matrix, locale = 'es') {
         <th data-i18n="sec.permissions">${i18nText('sec.permissions', locale)}</th>
         <th data-i18n="sec.scopes">${i18nText('sec.scopes', locale)}</th>
         <th data-i18n="sec.ownership">${i18nText('sec.ownership', locale)}</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function renderOperationsMatrix(matrix, locale = 'es') {
+  if (!asArray(matrix).length) return `<p class="text-muted small" data-i18n="ui.noUseCases">${i18nText('ui.noUseCases', locale)}</p>`;
+  const dash = '<span class="text-muted">—</span>';
+  const rows = matrix.map((entry) => {
+    const idempotency = entry.idempotency
+      ? `<span class="badge bg-primary" title="storage: cache">${escapeHtml(entry.idempotency.header)}${entry.idempotency.ttl ? ' · ' + escapeHtml(entry.idempotency.ttl) : ''}</span>`
+      : dash;
+    const cache = entry.cache
+      ? `<span class="badge bg-info text-dark">${escapeHtml(entry.cache.ttl || '—')}${entry.cache.keyFields.length ? ' · [' + escapeHtml(entry.cache.keyFields.join(', ')) + ']' : ''}</span>`
+      : dash;
+    const async = entry.async
+      ? `<span class="badge bg-secondary" title="${escapeHtml(entry.async.statusEndpoint || '')}">${escapeHtml(entry.async.mode || 'async')}</span>`
+      : dash;
+    const bulk = entry.bulk
+      ? `<span class="badge bg-dark">${escapeHtml(String(entry.bulk.maxItems || '∞'))}${entry.bulk.onItemError ? ' · ' + escapeHtml(entry.bulk.onItemError) : ''}</span>`
+      : dash;
+    const pagination = entry.pagination
+      ? `<span class="font-monospace small">${escapeHtml(String(entry.pagination.defaultSize || '—'))}/${escapeHtml(String(entry.pagination.maxSize || '—'))}${entry.pagination.sort ? ' · ' + escapeHtml(entry.pagination.sort) : ''}</span>`
+      : dash;
+    const implementation = `<span class="badge bg-${entry.implementation === 'scaffold' ? 'warning text-dark' : 'success'}">${escapeHtml(entry.implementation)}</span>`;
+    const depsParts = [];
+    if (entry.deps.fk) depsParts.push(`${entry.deps.fk} fk`);
+    if (entry.deps.outgoing) depsParts.push(`${entry.deps.outgoing} out`);
+    if (entry.deps.lookups) depsParts.push(`${entry.deps.lookups} lkp`);
+    const deps = depsParts.length
+      ? `<span class="badge bg-light text-dark border" title="${escapeHtml(entry.deps.detail.join('\n'))}">${escapeHtml(depsParts.join(' · '))}</span>`
+      : dash;
+    return `
+      <tr>
+        <td><div class="font-monospace small">${escapeHtml(entry.endpoint)}</div><div class="text-muted small">${escapeHtml(entry.id)} ${escapeHtml(entry.name)}</div></td>
+        <td><span class="badge bg-${ucTypeBadgeClass(entry.type)}">${escapeHtml(entry.type || '—')}</span></td>
+        <td>${idempotency}</td>
+        <td>${cache}</td>
+        <td>${async}</td>
+        <td>${bulk}</td>
+        <td>${pagination}</td>
+        <td>${implementation}</td>
+        <td>${deps}</td>
+      </tr>`;
+  }).join('');
+  return `
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="ops.endpoint">${i18nText('ops.endpoint', locale)}</th>
+        <th data-i18n="uc.type">${i18nText('uc.type', locale)}</th>
+        <th data-i18n="ops.idempotency">${i18nText('ops.idempotency', locale)}</th>
+        <th data-i18n="ops.cache">${i18nText('ops.cache', locale)}</th>
+        <th data-i18n="ops.async">${i18nText('ops.async', locale)}</th>
+        <th data-i18n="ops.bulk">${i18nText('ops.bulk', locale)}</th>
+        <th data-i18n="ops.pagination">${i18nText('ops.pagination', locale)}</th>
+        <th data-i18n="ops.implementation">${i18nText('ops.implementation', locale)}</th>
+        <th data-i18n="ops.dependencies">${i18nText('ops.dependencies', locale)}</th>
       </tr></thead><tbody>${rows}</tbody>
     </table></div>`;
 }
@@ -1390,6 +1759,56 @@ function renderEvents(events, locale = 'es') {
   return pub + con + rmd;
 }
 
+function renderIntegrations(integrations, locale = 'es') {
+  const outbound = asArray(integrations && integrations.outbound);
+  const inbound = asArray(integrations && integrations.inbound);
+  if (!outbound.length && !inbound.length) {
+    return `<p class="text-muted small" data-i18n="int.noIntegrations">${i18nText('int.noIntegrations', locale)}</p>`;
+  }
+
+  const contextMap = (integrations && integrations.contextMap)
+    ? `<h6 class="text-uppercase text-muted small mt-1 mb-2" data-i18n="int.contextMap">${i18nText('int.contextMap', locale)}</h6>
+       <div class="saga-diagram mb-3"><pre class="mermaid">${escapeHtml(integrations.contextMap)}</pre></div>`
+    : '';
+
+  const head = `<thead class="table-light"><tr>
+    <th data-i18n="int.partner">${i18nText('int.partner', locale)}</th>
+    <th data-i18n="int.strategy">${i18nText('int.strategy', locale)}</th>
+    <th data-i18n="int.channel">${i18nText('int.channel', locale)}</th>
+    <th data-i18n="int.contracts">${i18nText('int.contracts', locale)}</th>
+    <th data-i18n="int.triggers">${i18nText('int.triggers', locale)}</th>
+    <th data-i18n="int.auth">${i18nText('int.auth', locale)}</th>
+    <th data-i18n="int.resilience">${i18nText('int.resilience', locale)}</th>
+    <th data-i18n="int.necessity">${i18nText('int.necessity', locale)}</th>
+  </tr></thead>`;
+
+  const row = (entry) => {
+    const isExternal = String(entry.partnerType || '').toLowerCase().includes('external');
+    const partnerBadge = `<span class="badge bg-secondary">${escapeHtml(entry.partner)}</span>${
+      isExternal ? ` <span class="badge bg-warning text-dark" data-i18n="int.external">${i18nText('int.external', locale)}</span>` : ''}`;
+    const necessity = entry.missingRationale
+      ? `<span class="badge bg-warning text-dark" data-i18n="int.missingRationale">${i18nText('int.missingRationale', locale)}</span>`
+      : `<span class="small">${escapeHtml(entry.rationale)}</span>`;
+    return `
+      <tr class="${entry.missingRationale ? 'table-warning' : ''}">
+        <td>${partnerBadge}</td>
+        <td><span class="badge bg-${entry.badge}">${escapeHtml(entry.patternLabel)}</span></td>
+        <td class="font-monospace small">${escapeHtml(entry.channel || '—')}</td>
+        <td>${pillList(entry.contracts, 'text-bg-light border')}</td>
+        <td>${pillList(entry.triggers, 'text-bg-light border')}</td>
+        <td class="font-monospace small">${escapeHtml(entry.auth || '—')}</td>
+        <td class="font-monospace small">${escapeHtml(entry.resilience || '—')}</td>
+        <td>${necessity}</td>
+      </tr>`;
+  };
+
+  const group = (titleKey, rows) => rows.length ? `
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="${titleKey}">${i18nText(titleKey, locale)}</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">${head}<tbody>${rows.map(row).join('')}</tbody></table></div>` : '';
+
+  return contextMap + group('int.outbound', outbound) + group('int.inbound', inbound);
+}
+
 function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   const health = countDiagnostics(bcReview.diagnostics);
   const linkButtons = [
@@ -1405,20 +1824,21 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(bcReview.name)} — ${i18nText('ui.decisionReview', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
   ${mermaidScriptTag()}
   <style>
-    body { background: #f5f6f8; color: #20242a; }
-    .metric-tile, .decision-card, .detail-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    .metric-tile, .decision-card, .detail-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
     .detail-card { margin-bottom: 1.25rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-    .metric-label { font-size: .8rem; color: #56606b; margin-top: .35rem; }
-    .metric-detail { font-size: .72rem; color: #7a8490; margin-top: .2rem; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
     .decision-card { margin-bottom: 1rem; }
-    .decision-id { font-size: .72rem; color: #65717e; text-transform: uppercase; letter-spacing: .04em; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
     .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
     .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
     .diagnostic-list code { white-space: normal; }
-    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
@@ -1428,7 +1848,7 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
         <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>
         <span class="navbar-brand fw-bold mb-0">${escapeHtml(bcReview.name)} — <span data-i18n="ui.decisionReview">${i18nText('ui.decisionReview', locale)}</span></span>
       </div>
-      <div class="d-flex gap-2 align-items-center flex-wrap">${linkButtons}${localeSwitcher(locale)}</div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">${linkButtons}${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
     </div>
   </nav>
 
@@ -1457,6 +1877,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     </section>
 
     <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.operationalBehavior">${i18nText('ui.operationalBehavior', locale)}</h2>
+      <div class="detail-card">${renderOperationsMatrix(bcReview.operationsMatrix, locale)}</div>
+    </section>
+
+    <section class="mb-4">
       <h2 class="h5 mb-3" data-i18n="ui.sagaParticipation">${i18nText('ui.sagaParticipation', locale)}</h2>
       <div class="detail-card">${renderSagaParticipation(bcReview.name, bcReview.sagas, locale)}</div>
     </section>
@@ -1464,6 +1889,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     <section class="mb-4">
       <h2 class="h5 mb-3" data-i18n="ui.eventsReadModels">${i18nText('ui.eventsReadModels', locale)}</h2>
       <div class="detail-card">${renderEvents(bcReview.events, locale)}</div>
+    </section>
+
+    <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.directIntegrations">${i18nText('ui.directIntegrations', locale)}</h2>
+      <div class="detail-card">${renderIntegrations(bcReview.integrations, locale)}</div>
     </section>
 
     <section class="mb-5">
@@ -1477,6 +1907,7 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     </section>
   </main>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
   ${mermaidRenderAllScript()}
 </body>
 </html>`;
@@ -1495,8 +1926,10 @@ function renderDecisionsExplorer(reviewModel, locale = 'es') {
     ['all', 'ui.all'],
     ['use-cases', 'ui.useCaseCatalog'],
     ['security', 'ui.endpointSecurity'],
+    ['operations', 'ui.operationalBehavior'],
     ['sagas', 'ui.systemSagas'],
     ['events', 'ui.eventsReadModels'],
+    ['integrations', 'ui.directIntegrations'],
   ].map(([value, key]) => `<option value="${value}" data-i18n="${key}">${i18nText(key, locale)}</option>`).join('');
 
   const block = (bcName, cat, titleKey, body) => `
@@ -1513,7 +1946,9 @@ function renderDecisionsExplorer(reviewModel, locale = 'es') {
   const bcBlocks = designedBcs.map((bc) => [
     block(bc.name, 'use-cases', 'ui.useCaseCatalog', renderUseCaseCatalog(bc.useCaseCatalog, locale)),
     block(bc.name, 'security', 'ui.endpointSecurity', renderSecurityMatrix(bc.securityMatrix, locale)),
+    block(bc.name, 'operations', 'ui.operationalBehavior', renderOperationsMatrix(bc.operationsMatrix, locale)),
     block(bc.name, 'events', 'ui.eventsReadModels', renderEvents(bc.events, locale)),
+    block(bc.name, 'integrations', 'ui.directIntegrations', renderIntegrations(bc.integrations, locale)),
   ].join('')).join('');
 
   return `
@@ -1558,11 +1993,12 @@ function buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(systemName)} — ${i18nText('ui.decisionsExplorer', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
   ${mermaidScriptTag()}
   <style>
-    body { background: #f5f6f8; color: #20242a; }
-    .detail-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; margin-bottom: 1.25rem; }
-    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    .detail-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; margin-bottom: 1.25rem; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
@@ -1572,13 +2008,14 @@ function buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale
         <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>
         <span class="navbar-brand fw-bold mb-0">${escapeHtml(systemName)} — <span data-i18n="ui.decisionsExplorer">${i18nText('ui.decisionsExplorer', locale)}</span></span>
       </div>
-      <div class="d-flex gap-2 align-items-center flex-wrap"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${localeSwitcher(locale)}</div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
     </div>
   </nav>
   <main class="container-xl pb-5">
     ${renderDecisionsExplorer(reviewModel, locale)}
   </main>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
   ${mermaidRenderAllScript()}
 </body>
 </html>`;
@@ -1640,7 +2077,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     ? `
       <section class="mb-5">
         <h5 class="mb-3" data-i18n="ui.systemArchitecture">${i18nText('ui.systemArchitecture', locale)}</h5>
-        <div class="sys-diagram-wrap bg-white rounded border">
+        <div class="sys-diagram-wrap bg-body rounded border">
           <div class="sys-toolbar">
             <button class="sys-btn" data-sys-zoom="in" data-i18n-title="diagram.zoomIn" title="${i18nText('diagram.zoomIn', locale)}">+</button>
             <button class="sys-btn" data-sys-zoom="out" data-i18n-title="diagram.zoomOut" title="${i18nText('diagram.zoomOut', locale)}">&minus;</button>
@@ -1695,29 +2132,30 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(systemName)} — ${i18nText('ui.designReview', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
   <style>
-    body { background: #f5f6f8; }
+    body { background: var(--bs-secondary-bg); }
     .bc-card { transition: transform .15s, box-shadow .15s; }
     .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
     .bg-purple { background-color: #6f42c1 !important; }
-    .metric-tile, .decision-card, .saga-card { background: #fff; border: 1px solid #dde2e8; border-radius: .5rem; padding: 1rem; }
+    .metric-tile, .decision-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-    .metric-label { font-size: .8rem; color: #56606b; margin-top: .35rem; }
-    .metric-detail { font-size: .72rem; color: #7a8490; margin-top: .2rem; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
     .decision-card { margin-bottom: 1rem; }
-    .decision-id { font-size: .72rem; color: #65717e; text-transform: uppercase; letter-spacing: .04em; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
     .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
     .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
     .diagnostic-list code { white-space: normal; }
-    .saga-diagram { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
   <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container-xl d-flex justify-content-between align-items-center">
       <span class="navbar-brand fw-bold fs-5">${escapeHtml(systemName)} — <span data-i18n="ui.designReview">${i18nText('ui.designReview', locale)}</span></span>
-      <div class="d-flex gap-3 align-items-center"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${localeSwitcher(locale)}</div>
+      <div class="d-flex gap-3 align-items-center"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
     </div>
   </nav>
 
@@ -1737,7 +2175,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
   </div>
 
   <script>
-    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
     // Render saga sequence diagrams (and any .mermaid outside the system C4 diagram).
     document.querySelectorAll('.mermaid').forEach(function (el) {
       if (el.closest('#sys-diag-target')) return;
@@ -1844,6 +2282,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     })();
   <\/script>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
 </body>
 </html>`;
 }
@@ -1856,20 +2295,48 @@ function buildOpenApiHtml(bcName, spec, locale = 'es') {
   <meta charset="UTF-8">
   <title>${escapeHtml(bcName)} — REST API</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  ${themeBootScript()}
   <style>
     .topbar { display: none; }
-    .back-bar { background: #1b1b1b; color: #ccc; padding: 8px 20px; font-size: 13px; }
+    .back-bar { background: #1b1b1b; color: #ccc; padding: 8px 20px; font-size: 13px; display: flex; align-items: center; gap: 12px; }
     .back-bar a { color: #90caf9; text-decoration: none; }
     .back-bar a:hover { text-decoration: underline; }
+    /* Basic dark theme for Swagger UI (no Bootstrap on this page). */
+    [data-bs-theme="dark"] body { background: #1a1a1a; }
+    [data-bs-theme="dark"] .swagger-ui,
+    [data-bs-theme="dark"] .swagger-ui .info .title,
+    [data-bs-theme="dark"] .swagger-ui .info li,
+    [data-bs-theme="dark"] .swagger-ui .info p,
+    [data-bs-theme="dark"] .swagger-ui .info a,
+    [data-bs-theme="dark"] .swagger-ui .opblock-tag,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-description,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-path,
+    [data-bs-theme="dark"] .swagger-ui table thead tr td,
+    [data-bs-theme="dark"] .swagger-ui table thead tr th,
+    [data-bs-theme="dark"] .swagger-ui .parameter__name,
+    [data-bs-theme="dark"] .swagger-ui .parameter__type,
+    [data-bs-theme="dark"] .swagger-ui .response-col_status,
+    [data-bs-theme="dark"] .swagger-ui .response-col_description,
+    [data-bs-theme="dark"] .swagger-ui .model,
+    [data-bs-theme="dark"] .swagger-ui .model-title,
+    [data-bs-theme="dark"] .swagger-ui label { color: #e0e0e0; }
+    [data-bs-theme="dark"] .swagger-ui .scheme-container,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-section-header { background: #2a2a2a; box-shadow: none; }
+    [data-bs-theme="dark"] .swagger-ui section.models,
+    [data-bs-theme="dark"] .swagger-ui .opblock { background: #232323; border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary { border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .model-box { background: rgba(255,255,255,.05); }
+    [data-bs-theme="dark"] .swagger-ui svg:not(:root) { fill: #e0e0e0; }
   </style>
 </head>
 <body>
   <div class="back-bar">
-    <a href="index.html">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a> &nbsp;/&nbsp; ${escapeHtml(bcName)} — <span data-i18n="nav.restApi">${i18nText('nav.restApi', locale)}</span> ${localeSwitcher(locale)}
+    <a href="index.html">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a> &nbsp;/&nbsp; ${escapeHtml(bcName)} — <span data-i18n="nav.restApi">${i18nText('nav.restApi', locale)}</span> ${themeSwitcher(locale)}${localeSwitcher(locale)}
   </div>
   <div id="swagger-ui"></div>
   <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"><\/script>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
   <script>
     SwaggerUIBundle({
       spec: ${safeJson(derefSpec)},
@@ -1907,15 +2374,16 @@ function buildAsyncApiHtml(bcName, spec, locale = 'es') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(bcName)} — ${i18nText('nav.events', locale)}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
   <style>
-    body { background: #f5f6f8; }
+    body { background: var(--bs-secondary-bg); }
   </style>
 </head>
 <body>
   <nav class="navbar navbar-dark mb-4" style="background:#1a1a2e">
     <div class="container-xl d-flex justify-content-between align-items-center">
       <span class="navbar-brand fw-bold">${escapeHtml(bcName)} — <span data-i18n="nav.events">${i18nText('nav.events', locale)}</span></span>
-      <div class="d-flex gap-2 align-items-center"><a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>${localeSwitcher(locale)}</div>
+      <div class="d-flex gap-2 align-items-center"><a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
     </div>
   </nav>
 
@@ -1940,6 +2408,7 @@ function buildAsyncApiHtml(bcName, spec, locale = 'es') {
     ${channelCards}
   </div>
   ${clientI18nScript(locale)}
+  ${clientThemeScript()}
 </body>
 </html>`;
 }
@@ -2111,11 +2580,12 @@ function registerPreview(program) {
         }
 
         const bcDiagnostics = diagnosticsForOwner(diagnostics, bcName);
+        const bcIntegrations = extractIntegrations(artifact.bcDoc, systemData);
         const bcDecisions = extractBcDecisions(artifact.bcDoc, {
           openApi: artifact.openApiDoc,
           internalApi: artifact.internalApiDoc,
           asyncApi: artifact.asyncApiDoc,
-        });
+        }, bcIntegrations);
         const opIndex = indexOpenApiOperations(artifact.openApiDoc);
         const internalOpIndex = indexOpenApiOperations(artifact.internalApiDoc);
         const bcReview = {
@@ -2127,7 +2597,9 @@ function registerPreview(program) {
           decisions: bcDecisions,
           useCaseCatalog: extractUseCaseCatalog(artifact.bcDoc, opIndex, internalOpIndex),
           securityMatrix: extractSecurityMatrix(artifact.bcDoc, opIndex, internalOpIndex),
+          operationsMatrix: extractOperationsMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           events: extractEvents(artifact.bcDoc),
+          integrations: bcIntegrations,
           sagas,
           diagnostics: bcDiagnostics,
           links: { reviewFile, designFile, openApiFile, internalApiFile, asyncApiFile },

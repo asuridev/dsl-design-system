@@ -69,10 +69,87 @@ function localeSwitcher(locale) {
     </div>`;
 }
 
+// Inline <head> script that applies the persisted (or OS-preferred) theme to
+// <html data-bs-theme> *before first paint* to avoid a flash of light theme,
+// and exposes window.__dslPreviewTheme so Mermaid can initialize with the
+// matching light/dark theme. Must be placed in <head>, after the Bootstrap CSS.
+function themeBootScript() {
+  return `
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    <\/script>`;
+}
+
+// Theme toggle button (light/dark). Mirrors localeSwitcher styling so it sits
+// next to it in the dark navbars. The icon reflects the action: a moon in light
+// mode (click → dark) and a sun in dark mode (click → light).
+function themeSwitcher(locale) {
+  const lang = normalizeLocale(locale);
+  const title = t(lang, 'theme.toggle');
+  return `
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="${title}" data-i18n-title="theme.toggle" aria-label="${title}" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>`;
+}
+
+// Client runtime for the theme toggle: applies data-bs-theme instantly (Bootstrap
+// recolors via CSS variables) and persists the choice. Pages with Mermaid reload
+// so the diagrams re-render with the matching Mermaid theme (SVGs are themed at
+// render time, not via CSS variables).
+function clientThemeScript() {
+  return `
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    <\/script>`;
+}
+
 module.exports = {
   DEFAULT_LOCALE,
   normalizeLocale,
   t,
   clientI18nScript,
   localeSwitcher,
+  themeBootScript,
+  themeSwitcher,
+  clientThemeScript,
 };

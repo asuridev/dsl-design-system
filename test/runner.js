@@ -87,6 +87,75 @@ flowchart LR
 `.trimStart(), 'utf8');
 }
 
+async function writeArchWithIntegrations(projectDir) {
+  await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
+system:
+  name: integrations-system
+  description: Integrations fixture system.
+  domainType: core
+boundedContexts:
+  - name: catalog
+    type: core
+    purpose: Manages catalog data.
+    aggregates:
+      - name: Product
+        root: Product
+        entities: []
+  - name: orders
+    type: core
+    purpose: Manages orders.
+    aggregates:
+      - name: Order
+        root: Order
+        entities: []
+externalSystems: []
+integrations:
+  - from: orders
+    to: catalog
+    pattern: customer-supplier
+    channel: http
+    contracts:
+      - validateProductsAndPrices
+    notes: Mandatory HTTP for monetary snapshot to prevent OWASP A04 fraud.
+infrastructure: {}
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), `
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents:
+  published: []
+  consumed: []
+`);
+
+  await writeYaml(path.join(projectDir, 'arch', 'orders', 'orders.yaml'), `
+bc: orders
+type: core
+description: Orders BC.
+domainEvents:
+  published: []
+  consumed: []
+integrations:
+  outbound:
+    - name: catalog
+      type: internalBc
+      pattern: customerSupplier
+      protocol: http
+      description: Reads authoritative prices at checkout.
+      operations:
+        - name: validateProductsAndPrices
+          triggersOn: UC-ORD-001
+  inbound:
+    - name: billing
+      type: internalBc
+      pattern: customerSupplier
+      protocol: http
+      operations:
+        - name: notifyOrderShipped
+`);
+}
+
 async function writeAuthContextInvalidArch(projectDir) {
   await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
 system:
@@ -849,6 +918,48 @@ test('dsl preview generates decision review assets without opening browser', asy
   });
 });
 
+test('dsl preview renders the direct-integrations section per bounded context', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeArchWithIntegrations(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const reviewDir = path.join(projectDir, 'arch', 'review');
+    const ordersHtml = await fs.readFile(path.join(reviewDir, 'orders-review.html'), 'utf8');
+    const reviewModel = JSON.parse(await fs.readFile(path.join(reviewDir, 'review-model.json'), 'utf8'));
+
+    // Section + context-map diagram are present.
+    assert.match(ordersHtml, /Integraciones directas/);
+    assert.match(ordersHtml, /Mapa de contexto/);
+    assert.match(ordersHtml, /class="mermaid"/);
+    assert.match(ordersHtml, /flowchart LR/);
+
+    // Strategy badge, contracts and triggers surface the design intent.
+    assert.match(ordersHtml, /customer-supplier/);
+    assert.match(ordersHtml, /validateProductsAndPrices/);
+    assert.match(ordersHtml, /UC-ORD-001/);
+
+    // Rationale merges tactical description with strategic notes.
+    assert.match(ordersHtml, /OWASP A04/);
+    assert.match(ordersHtml, /authoritative prices/);
+
+    // An integration with no description/notes is flagged as missing rationale.
+    // Assert on the rendered marker (the data-i18n attribute and the row class),
+    // not the plain text, which is also present in the embedded locale catalog.
+    assert.match(ordersHtml, /data-i18n="int\.missingRationale"/);
+    assert.match(ordersHtml, /<tr class="table-warning">/);
+
+    // Review model exposes the structured integrations per BC.
+    const orders = reviewModel.boundedContexts.find((bc) => bc.name === 'orders');
+    assert.ok(orders && orders.integrations, 'orders BC exposes integrations');
+    assert.ok(orders.integrations.outbound.length >= 1, 'orders has outbound integrations');
+    assert.ok(orders.integrations.inbound.length >= 1, 'orders has inbound integrations');
+    assert.ok(typeof orders.integrations.contextMap === 'string' && orders.integrations.contextMap.length > 0, 'context map is generated');
+  });
+});
+
 test('dsl preview diagram page includes locale switcher and zoom controls', async () => {
   await withTempProject(async (projectDir) => {
     await writeArchWithDiagram(projectDir);
@@ -865,6 +976,26 @@ test('dsl preview diagram page includes locale switcher and zoom controls', asyn
     assert.match(designHtml, /catalog-diagram\.mmd/);
     assert.match(designHtml, /diagram\.syntaxError/);
     assert.match(designHtml, /numberedSource/);
+  });
+});
+
+test('dsl preview includes the dark-mode theme toggle and boot script', async () => {
+  await withTempProject(async (projectDir) => {
+    await writeValidArch(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const indexHtml = await fs.readFile(path.join(projectDir, 'arch', 'review', 'index.html'), 'utf8');
+    // Toggle button + runtime.
+    assert.match(indexHtml, /data-theme-toggle/);
+    assert.match(indexHtml, /dslToggleTheme\(\)/);
+    // Persistence + applied attribute.
+    assert.match(indexHtml, /dsl-preview-theme/);
+    assert.match(indexHtml, /data-bs-theme/);
+    // Anti-FOUC: theme resolved from OS preference before paint.
+    assert.match(indexHtml, /prefers-color-scheme: dark/);
   });
 });
 
