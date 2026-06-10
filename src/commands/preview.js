@@ -1828,6 +1828,16 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   ${mermaidScriptTag()}
   <style>
     body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
     .metric-tile, .decision-card, .detail-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
     .detail-card { margin-bottom: 1.25rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
@@ -2137,8 +2147,20 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
   <style>
     body { background: var(--bs-secondary-bg); }
     .bc-card { transition: transform .15s, box-shadow .15s; }
-    .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
+    .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
     .bg-purple { background-color: #6f42c1 !important; }
+    /* Bootstrap does not flip dark-flavored buttons with data-bs-theme; remap
+       them to light variants so card/section actions stay visible on dark cards. */
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
     .metric-tile, .decision-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
     .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
     .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
