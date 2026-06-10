@@ -1,5 +1,11 @@
 # AGENTS.md — DSL Design System
 
+> **TL;DR para agentes:** este repo es la **Fase 1 (Diseño)** de un flujo de tres fases.
+> Produce artefactos YAML **agnósticos de tecnología** en `arch/` que condensan las
+> decisiones de dominio y arquitectura. Un generador externo (Fase 2, p. ej. `dsl-springboot`)
+> los consume. **Aquí NO se genera código.** Los artefactos declaran **qué** y **para qué**,
+> nunca **cómo**. Para Claude Code, el contexto de entrada es [CLAUDE.md](CLAUDE.md).
+
 Este repositorio implementa **exclusivamente la Fase 1: Diseño** del framework de tres fases
 descrito en [VISION.md](VISION.md). Su única responsabilidad es producir artefactos YAML
 agnósticos que un generador externo consumirá en la Fase 2.
@@ -36,7 +42,7 @@ Para elegir agente y secuencia operativa, ver tambien:
 Ejecuta el proceso completo del Paso 1 + autovalidación:
 1. Analiza el contexto del negocio
 2. Identifica Bounded Contexts, Agregados e integraciones
-3. Genera los cuatro artefactos canónicos en `arch/system/`
+3. Genera los tres artefactos de diseño en `arch/system/` más el contexto raíz (`AGENTS.md`, `CLAUDE.md`)
 4. Ejecuta automáticamente `ddd-step1-refine` sobre el diseño producido
 
 Artefactos producidos:
@@ -45,11 +51,14 @@ arch/system/
 ├── system.yaml          ← fuente de verdad del sistema
 ├── system-spec.md       ← narrativa detallada por BC
 └── system-diagram.mmd   ← diagrama C4 Contenedores (Mermaid)
+AGENTS.md                ← contexto consolidado del sistema (raíz del proyecto usuario)
+CLAUDE.md                ← contexto e instrucciones para Claude Code (raíz del proyecto usuario)
 ```
 
-Además produce un `AGENTS.md` en la raíz del proyecto usuario como contexto consolidado
-del sistema diseñado. Dentro de este repositorio, el `AGENTS.md` raíz es documentación del
-framework y no debe sobrescribirse durante pruebas del agente sin confirmación explícita.
+Además produce `AGENTS.md` y `CLAUDE.md` en la raíz del proyecto usuario como contexto
+consolidado del sistema diseñado. Dentro de este repositorio, `AGENTS.md` y `CLAUDE.md`
+raíz son documentación del framework y **no deben sobrescribirse** durante pruebas del
+agente sin confirmación explícita.
 
 ### `design-bounded-context`
 **Cuándo usarlo:** El usuario quiere diseñar o refinar el dominio táctico de un BC ya existente en `arch/system/system.yaml`.
@@ -134,7 +143,8 @@ dsl-design-system/
 │       ├── ddd-step1-refine/
 │       ├── ddd-step2-tactical-design/
 │       └── ddd-step2-refine/
-├── AGENTS.md                     ← este archivo
+├── AGENTS.md                     ← este archivo (contexto del framework para agentes)
+├── CLAUDE.md                     ← contexto breve para Claude Code (importa AGENTS.md y VISION.md)
 ├── VISION.md                     ← filosofía y principios del sistema completo
 └── package.json
 ```

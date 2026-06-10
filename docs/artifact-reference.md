@@ -141,13 +141,13 @@ manteniendo los artefactos agnósticos de tecnología.
 
 ### 1.5 Ejemplos y gobernanza
 
-Para aprender el flujo con un caso realista, usa [examples/README.md](examples/README.md).
+Para aprender el flujo con un caso realista, usa [examples/README.md](../examples/README.md).
 El ejemplo `canasta-familiar` contiene diseño estratégico y dos BCs tácticos (`catalog` y
 `orders`) con OpenAPI, AsyncAPI, diagramas, Local Read Model y participación en saga.
 
 Para decidir qué agente usar y cuándo validar o generar preview, consulta
-[docs/agent-decision-guide.md](docs/agent-decision-guide.md) y
-[docs/workflow-reference.md](docs/workflow-reference.md). Estas guías mantienen la
+[docs/agent-decision-guide.md](agent-decision-guide.md) y
+[docs/workflow-reference.md](workflow-reference.md). Estas guías mantienen la
 separación de responsabilidades: este repositorio diseña, valida y revisa artefactos de
 Fase 1; la generación de código pertenece a la Fase 2.
 
@@ -1674,7 +1674,7 @@ errors:
   title, errorType, chainable, usedFor, messageTemplate, args, kind, triggeredBy}` —
   y aborta el build ante claves desconocidas.
 - **Por qué:** el nombre del UNIQUE INDEX físico es **detalle de implementación de
-  infraestructura**, no información de dominio (regla #7 de [AGENTS.md](AGENTS.md):
+  infraestructura**, no información de dominio (regla #7 de [AGENTS.md](../AGENTS.md):
   separación intención/implementación). El YAML declara la **intención**
   (`type: uniqueness` en `domainRules`) y el generador decide el nombre del constraint
   en la entidad JPA.
@@ -1734,7 +1734,7 @@ useCases:
 
 - **Regla:** las claves `derived_from` y `derivedFrom` **NO son válidas** en `useCases[]`.
   El generador valida con whitelist estricta y aborta el build ante claves desconocidas
-  (regla #1 de [AGENTS.md](AGENTS.md): el generador no toma decisiones de dominio; un
+  (regla #1 de [AGENTS.md](../AGENTS.md): el generador no toma decisiones de dominio; un
   typo silencioso como `triger:` no debe pasar desapercibido).
 - **Por qué:** un UC ya queda identificado unívocamente por su `id` (UC-XXX-NNN) y por
   el binding explícito con el contrato externo via `trigger.kind` + `trigger.operationId`
