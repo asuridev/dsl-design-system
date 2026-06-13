@@ -211,6 +211,22 @@ infrastructure:
                                      # Activar en producción siempre que consumerIdempotency: true.
                                      # El valor típico debe superar el max-delivery-timeout del broker.
 
+  objectStorage:        # OPCIONAL — OMITIR si el sistema no almacena binarios (archivos,
+                        # imágenes, documentos). Lista de stores lógicos (buckets).
+                        # Declara INTENCIÓN, no implementación: el proveedor concreto
+                        # (S3, GCS, Azure Blob, MinIO, filesystem) es decisión del
+                        # generador de código (Fase 2), no del diseño.
+    - name: ""          # kebab-case — nombre lógico del store. Referenciado por
+                        # useCases[].storageCalls[].store en el diseño táctico (Paso 2).
+      visibility: ""    # public | private — ¿los objetos son legibles sin autorización?
+      urlAccess: ""     # public-url | signed-url — cómo se produce la URL de acceso:
+                        # enlace estable vs. firmado/temporal (presigned).
+      ownedBy: ""       # nombre de un boundedContexts[] — BC responsable del store.
+      signedUrlTtl: ""  # OPCIONAL — ISO-8601 Duration (ej: PT15M). Vigencia del enlace
+                        # firmado. Solo aplica con urlAccess: signed-url.
+      notes: >          # OPCIONAL — propósito del store.
+        ...
+
   integrations:         # NO IMPLEMENTADO EN EL GENERADOR (reservado para uso futuro)
                         # El campo infrastructure.integrations.defaults NO es leído por
                         # resilience-auth-resolver.js. Declararlo no tiene efecto en generación.
@@ -255,6 +271,9 @@ infrastructure:
 - Si un `channel` es `message-broker`, debe existir `infrastructure.messageBroker: true`
 - Si algún BC tiene UCs con bloque `authorization` (o endpoints no públicos), debe existir `infrastructure.authServer: true`
 - Si `deployment.strategy` es `modular-monolith`, `database.isolationStrategy` debe ser `schema-per-bc` (recomendado) o `db-per-bc`
+- `objectStorage[].name` → kebab-case, único; `visibility` ∈ {public, private}; `urlAccess` ∈ {public-url, signed-url}
+- `objectStorage[].ownedBy` debe ser un `name` de `boundedContexts` (INT-031, warn si no)
+- Todo `useCases[].storageCalls[].store` del diseño táctico debe referenciar un `objectStorage[].name` declarado aquí (INT-028, error si no)
 - Si `channel` es `message-broker`, cada elemento de `contracts[]` DEBE ser un objeto con `name` y `channel`. Si `channel` es `http | grpc | websocket`, cada elemento DEBE ser un string camelCase.
 - Todo `externalSystem` referenciado por una `integration` (como `from` o `to`) DEBE declarar `operations[]` no vacío (INT-014).
 - Si `auth.type: oauth2-cc` (global o por integración), `tokenEndpoint` y `credentialKey` son obligatorios (INT-015).

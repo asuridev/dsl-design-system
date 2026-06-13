@@ -390,7 +390,10 @@ paths:
     post:
       operationId: addProductImage
       summary: Agregar imagen al producto
-      description: Agrega una nueva imagen al gallery de un producto. No aplicable a productos DISCONTINUED.
+      description: >
+        Sube una nueva imagen al gallery de un producto como multipart/form-data. El binario
+        se almacena en el object store product-media y se persiste su URL pública.
+        No aplicable a productos DISCONTINUED.
       tags: [products]
       security:
         - bearerAuth: [ROLE_ADMIN]
@@ -399,9 +402,25 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: '#/components/schemas/AddProductImageRequest'
+              type: object
+              required: [image, imageType, displayOrder]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Archivo de imagen (PNG, JPEG o WebP, máx. 5MB).
+                altText:
+                  type: string
+                  maxLength: 200
+                  description: Texto alternativo accesible.
+                imageType:
+                  type: string
+                  description: Rol de la imagen dentro del gallery.
+                displayOrder:
+                  type: integer
+                  description: Orden ascendente de aparición.
       responses:
         '201':
           description: Imagen agregada exitosamente
@@ -670,24 +689,6 @@ components:
         categoryId:
           type: string
           format: uuid
-
-    AddProductImageRequest:
-      type: object
-      required: [url, imageType, displayOrder]
-      properties:
-        url:
-          type: string
-          format: uri
-          example: "https://cdn.canastafamiliar.co/images/leche-1l.jpg"
-        altText:
-          type: string
-          maxLength: 200
-        imageType:
-          $ref: '#/components/schemas/ImageType'
-        displayOrder:
-          type: integer
-          minimum: 0
-          description: Orden de visualización en el gallery (0 = primero)
 
     # ─── RESPONSE BODIES ────────────────────────────────────────────────────
 

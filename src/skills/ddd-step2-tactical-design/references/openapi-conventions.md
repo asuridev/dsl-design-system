@@ -275,6 +275,48 @@ paths:
 
 ---
 
+## Subida y descarga de archivos (object storage)
+
+Cuando un use case declara un input `type: File` (`source: multipart`), el endpoint usa
+`multipart/form-data`. El binario va como parte con `format: binary`; los metadatos viajan como
+partes adicionales. El use case sube el archivo a un `infrastructure.objectStorage[]` vía
+`storageCalls[].operation: put` y persiste la `Url` devuelta.
+
+```yaml
+paths:
+  /products/{id}/images:
+    post:
+      operationId: addProductImage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary        # ← la parte binaria del File
+                altText:
+                  type: string
+      responses:
+        "201":
+          description: Imagen subida; Location apunta al recurso creado.
+          headers:
+            Location:
+              schema: { type: string }
+```
+
+- **Descarga (proxy):** un use case query con `returns: BinaryStream` (alimentado por
+  `storageCalls[].operation: get`) responde con un cuerpo binario y `Content-Disposition`
+  (`application/octet-stream` o el MIME concreto).
+- **URL pública / firmada:** para stores `urlAccess: public-url` la respuesta JSON incluye la
+  `url` estable; para `signed-url`, un query con `storageCalls[].operation: signUrl` devuelve la
+  `Url` firmada y temporal.
+
+---
+
 ## HTTP Status Codes por Situación
 
 | Situación | Code | Body | Cuándo usar |

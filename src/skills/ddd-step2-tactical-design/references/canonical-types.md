@@ -23,6 +23,7 @@ Nunca usar tipos de lenguajes de programación (`String`, `int`, `number` de TS,
 | `Email` | Dirección de correo electrónico válida | formato email + longitud máxima 254 |
 | `Url` | URL absoluta válida | formato URL absoluta |
 | `Money` | Monto monetario (VO compuesto) | ver sección Money |
+| `StoredObject` | Referencia a un binario en un object store (VO compuesto) | ver sección StoredObject |
 | `List[T]` | Lista ordenada de elementos tipo T | — |
 | `Page[T]` | Resultado paginado de tipo T (solo en `repositories[].methods[].returns`) | — |
 
@@ -76,6 +77,31 @@ value_objects:
 ```
 En APIs REST y AsyncAPI, `amount` se serializa como **string decimal** (nunca float)
 para evitar pérdida de precisión en sistemas intermedios.
+
+### StoredObject
+`StoredObject` es un Value Object canónico compuesto que representa un binario persistido en un
+`infrastructure.objectStorage[]` (ver `system.yaml`). Tiene siempre estas propiedades:
+
+```yaml
+# forma canónica (el generador la conoce — no es necesario redeclararla):
+StoredObject:
+  - name: storageKey   # String — clave/objeto dentro del store
+  - name: url          # Url    — pública (public-url) o firmada en lectura (signed-url)
+  - name: contentType  # String — MIME type
+  - name: sizeBytes    # Long   — tamaño en bytes
+```
+
+Se usa como `type` de una propiedad de un agregado/entidad (ej: `image: StoredObject`) o como
+parámetro de un `domainMethod`. Un use case lo produce/consume mediante el bloque
+`storageCalls[]` (ver guía de `{bc-name}.yaml`):
+
+- `operation: put` recibe un input `File` (source: multipart) → devuelve un `StoredObject`.
+- `operation: signUrl` recibe un `storageKey` → devuelve una `Url` firmada (stores `signed-url`).
+- `operation: get` recibe un `storageKey` → devuelve un `BinaryStream` (descarga proxy).
+- `operation: delete` recibe un `storageKey` → no devuelve nada.
+
+Para stores privados (`urlAccess: signed-url`), el agregado normalmente persiste solo el
+`storageKey` y la `url` firmada se materializa en lectura.
 
 ### DateTime vs Date
 - Usar `DateTime` para cualquier timestamp de evento o auditoría (`createdAt`, `updatedAt`, `occurredAt`)

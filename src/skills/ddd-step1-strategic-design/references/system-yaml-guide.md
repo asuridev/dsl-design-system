@@ -657,6 +657,41 @@ infrastructure:
 > no dependiente de reintentos automáticos. Los fallos transitorios deben manejarse
 > dentro del propio use case (ej: retry interno, circuit breaker) — no vía redelivery del broker.
 
+### `objectStorage` (opcional)
+
+Declara los **stores de objetos** (buckets) del sistema cuando algún BC necesita persistir
+binarios: imágenes, documentos, adjuntos. Es **intención, no implementación**: el proveedor
+concreto (S3, GCS, Azure Blob, MinIO, filesystem) lo decide el generador en Fase 2. Omite el
+bloque por completo si el sistema no almacena binarios.
+
+```yaml
+infrastructure:
+  objectStorage:
+    - name: product-media       # nombre lógico (kebab-case)
+      visibility: public        # public | private
+      urlAccess: public-url     # public-url | signed-url
+      ownedBy: catalog          # BC responsable
+    - name: invoice-pdf
+      visibility: private
+      urlAccess: signed-url
+      signedUrlTtl: PT15M        # vigencia del enlace firmado (solo signed-url)
+      ownedBy: billing
+```
+
+| Campo | Significado (intención) |
+|---|---|
+| `name` | Nombre lógico del store. Lo referencian los `storageCalls[].store` del diseño táctico. |
+| `visibility` | `public` (legible sin autorización) \| `private`. |
+| `urlAccess` | `public-url` (enlace estable) \| `signed-url` (enlace firmado/temporal generado en lectura). |
+| `ownedBy` | BC que posee el store. Debe existir en `boundedContexts`. |
+| `signedUrlTtl` | Opcional, ISO-8601 Duration. Solo con `urlAccess: signed-url`. |
+
+**Lo que NO se declara** (decisión del generador): proveedor, región, nombre real del bucket,
+endpoint, credenciales, política IAM, CDN, algoritmo de firma.
+
+En el diseño táctico (Paso 2), un use case sube/lee/borra binarios mediante el bloque
+`storageCalls[]` referenciando `store: <name>`. Ver la guía de `{bc-name}.yaml`.
+
 ### `integrations.defaults` — Solo `auth` implementado (nivel 3 de fallback)
 
 > **Estado de implementación parcial:** el bloque `infrastructure.integrations.defaults`

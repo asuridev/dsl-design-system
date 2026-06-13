@@ -144,8 +144,10 @@ class BcYamlValidator {
       'aggregates', 'steps', 'input', 'returns', 'rules', 'notFoundError', 'lookups',
       'fkValidations', 'implementation', 'emits', 'emitsList', 'pagination',
       'authorization', 'idempotency', 'cacheable', 'bulk', 'async', 'validations',
-      'loadAggregate', 'public', 'notes', 'outgoingCalls', 'sagaStep',
+      'loadAggregate', 'public', 'notes', 'outgoingCalls', 'storageCalls', 'sagaStep',
     ]);
+    const allowedStorageCallKeys = new Set(['store', 'operation', 'input', 'bindsTo']);
+    const allowedStorageOperations = new Set(['put', 'signUrl', 'get', 'delete']);
     const allowedTriggerKeys = new Set(['kind', 'operationId', 'event', 'channel', 'consumes', 'fromBc', 'filter']);
     const allowedInputKeys = new Set(['name', 'type', 'required', 'source', 'loadAggregate', 'headerName', 'default', 'max', 'partName', 'maxSize', 'contentTypes', 'fields']);
     const allowedInputSources = new Set(['body', 'path', 'query', 'authContext', 'header', 'multipart']);
@@ -212,6 +214,7 @@ class BcYamlValidator {
       this.validateUseCaseAsync(uc, baseLoc, allowedAsyncKeys);
       this.validateUseCaseMultiAggregate(uc, baseLoc, allowedStepKeys, allowedOnFailureKeys, allowedCompensateKeys);
       this.validateUseCaseFkLookupsValidations(uc, baseLoc, allowedFkKeys, allowedLookupKeys, allowedValidationKeys);
+      this.validateUseCaseStorageCalls(uc, baseLoc, allowedStorageCallKeys, allowedStorageOperations);
       this.validateUseCaseReturns(uc, baseLoc);
 
       if (this.systemActors && uc.actor && !this.systemActors.has(uc.actor)) {
@@ -251,10 +254,14 @@ class BcYamlValidator {
       this.validateType(input.type, 'BC-090', `Use case "${uc.id}" input "${input.name}"`, `${loc}/type`);
       if (input.source === 'header' && (!input.headerName || typeof input.headerName !== 'string')) this.error('BC-023', `Use case "${uc.id}" input "${input.name}" declares source: header but is missing headerName.`, `${loc}/headerName`);
       if (input.headerName != null && input.source !== 'header') this.error('BC-023', `Use case "${uc.id}" input "${input.name}" declares headerName but source is not header.`, `${loc}/headerName`);
-      if (input.source === 'multipart' && input.type !== 'File') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares source: multipart but type is not File.`, `${loc}/type`);
+      // A multipart UC may carry a File part plus scalar/enum form-field parts (e.g. altText).
+      // Only File parts accept the binary qualifiers maxSize/contentTypes.
       if (input.type === 'File' && input.source !== 'multipart') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" has type File but source is not multipart.`, `${loc}/source`);
       for (const key of ['partName', 'maxSize', 'contentTypes']) {
         if (input[key] != null && input.source !== 'multipart') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but source is not multipart.`, `${loc}/${key}`);
+      }
+      for (const key of ['maxSize', 'contentTypes']) {
+        if (input[key] != null && input.type !== 'File') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but type is not File.`, `${loc}/${key}`);
       }
       if (input.max != null) {
         if (!Number.isInteger(input.max)) this.error('BC-025', `Use case "${uc.id}" input "${input.name}" max must be an integer.`, `${loc}/max`);
@@ -267,6 +274,29 @@ class BcYamlValidator {
     }
     const hasMultipart = uc.input.some((i) => isMapping(i) && i.source === 'multipart');
     if (hasMultipart && uc.input.some((i) => isMapping(i) && i.source === 'body')) this.error('BC-024', `Use case "${uc.id}" mixes source: multipart with source: body.`, `${baseLoc}/input`);
+  }
+
+  validateUseCaseStorageCalls(uc, baseLoc, allowedStorageCallKeys, allowedStorageOperations) {
+    if (uc.storageCalls == null) return;
+    if (!Array.isArray(uc.storageCalls)) {
+      this.error('BC-028', `Use case "${uc.id}" storageCalls must be a list.`, `${baseLoc}/storageCalls`);
+      return;
+    }
+    for (let j = 0; j < uc.storageCalls.length; j++) {
+      const call = uc.storageCalls[j];
+      const loc = `${baseLoc}/storageCalls/${j}`;
+      if (!isMapping(call)) {
+        this.error('BC-028', `Use case "${uc.id}" storageCalls[] contains a non-mapping entry.`, loc);
+        continue;
+      }
+      this.checkAllowedKeys(call, allowedStorageCallKeys, 'BC-012', `Use case "${uc.id}" storageCall`, loc);
+      if (!call.store) this.error('BC-028', `Use case "${uc.id}" storageCall is missing required field "store".`, `${loc}/store`);
+      if (!call.operation) {
+        this.error('BC-028', `Use case "${uc.id}" storageCall is missing required field "operation".`, `${loc}/operation`);
+      } else if (!allowedStorageOperations.has(call.operation)) {
+        this.error('BC-028', `Use case "${uc.id}" storageCall has unsupported operation "${call.operation}". Allowed: ${[...allowedStorageOperations].join(', ')}.`, `${loc}/operation`);
+      }
+    }
   }
 
   validateUseCasePagination(uc, baseLoc, allowedPaginationKeys, allowedDefaultSortKeys) {

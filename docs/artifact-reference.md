@@ -847,6 +847,39 @@ infrastructure:
 - **Qué resuelve:** evita repetir auth y resilience en cada integración cuando hay
   una política común.
 
+#### 4.6.6 `infrastructure.objectStorage`
+
+Lista **opcional** de *stores* de objetos (buckets) cuando algún BC persiste binarios
+(imágenes, documentos, adjuntos). Declara **intención, no implementación**: el proveedor
+concreto (S3, GCS, Azure Blob, MinIO, filesystem) lo decide el generador en Fase 2. Omitir
+el bloque si el sistema no almacena binarios.
+
+```yaml
+infrastructure:
+  objectStorage:
+    - name: product-media      # kebab-case, único — referenciado por storageCalls[].store
+      visibility: public       # public | private
+      urlAccess: public-url    # public-url | signed-url
+      ownedBy: catalog         # BC responsable (debe existir en boundedContexts)
+    - name: invoice-pdf
+      visibility: private
+      urlAccess: signed-url
+      signedUrlTtl: PT15M       # ISO-8601 Duration — solo signed-url
+      ownedBy: billing
+```
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| `name` | string (kebab-case) | Nombre lógico del store. Lo referencian los `storageCalls[].store` tácticos. |
+| `visibility` | enum | `public` \| `private`. |
+| `urlAccess` | enum | `public-url` (enlace estable) \| `signed-url` (enlace firmado/temporal). |
+| `ownedBy` | string | BC dueño. Debe existir en `boundedContexts`. |
+| `signedUrlTtl` | ISO-8601 Duration | Opcional; vigencia del enlace firmado. Solo con `signed-url`. |
+
+**Intención → implementación:** `visibility: public` → bucket/CDN público; `urlAccess:
+signed-url` + `signedUrlTtl` → presigned URL con expiración; el generador elige bucket real,
+región, IAM y firma. Validado por INT-028..031 (ver 4.7).
+
 ---
 
 ### 4.7 Reglas de validación INT-001 .. INT-021
@@ -915,7 +948,16 @@ Cada diagnóstico tiene la forma:
 | 🟡 ALERTA | Sistema en `externalSystems` sin integración → posible huérfano. |
 | 🔴 ERROR  | Si hay `channel: message-broker` en alguna integración, `infrastructure.messageBroker: true` debe estar presente. |
 
-#### 4.7.7 Modo de ejecución
+#### 4.7.7 Reglas de object storage
+
+| ID | Severidad | Regla |
+|---|---|---|
+| INT-028 | 🔴 ERROR | Todo `useCases[].storageCalls[].store` referencia un `infrastructure.objectStorage[].name` declarado. |
+| INT-029 | 🔴 ERROR | `operation: signUrl` solo es válido contra un store cuyo `urlAccess` sea `signed-url`. |
+| INT-030 | 🟡 ALERTA | `operation: put` debería convivir con un input `File` (`source: multipart`) en el mismo use case. |
+| INT-031 | 🟡 ALERTA | `objectStorage[].ownedBy` debe ser un BC declarado; un `storageCall` que alcanza un store desde un BC distinto a su `ownedBy` se marca como acceso cruzado. |
+
+#### 4.7.8 Modo de ejecución
 
 ```bash
 dsl-springboot build --strict       # aborta al primer error (default)
@@ -1967,6 +2009,37 @@ async:
 - **`SearchText`** — string que se matcha vía `LIKE_CONTAINS` sobre los campos
   declarados en `fields`.
 
+#### 5.8.14 `useCases[].storageCalls[]`
+
+Interacciones del use case con un *object store* (bucket) declarado en
+`system.yaml#/infrastructure/objectStorage`. Paralelo a `outgoingCalls[]`, pero para
+infraestructura de almacenamiento de binarios en lugar de puertos de integración.
+
+```yaml
+useCases:
+  - id: UC-CAT-011
+    name: UploadProductImage
+    input:
+      - { name: image, type: File, source: multipart, partName: image,
+          maxSize: 5MB, contentTypes: [image/png, image/jpeg] }
+    storageCalls:
+      - store: product-media     # → infrastructure.objectStorage[].name (INT-028)
+        operation: put           # put | signUrl | get | delete
+        input: image             # input File (put) o fuente del storageKey
+        bindsTo: image           # param de domainMethods[method] que recibe el resultado
+```
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| `store` | string | Nombre del store. Debe existir en `objectStorage[]` (INT-028). |
+| `operation` | enum | `put` (File → `StoredObject`) · `signUrl` (key → `Url` firmada, requiere store `signed-url`, INT-029) · `get` (key → `BinaryStream`) · `delete` (key → void). |
+| `input` | string | Opcional. Nombre del input `File` (para `put`) o fuente del `storageKey`. |
+| `bindsTo` | string | Opcional. Param del `domainMethod` que recibe el resultado. |
+
+**Combinaciones típicas:** subida → URL pública (`put` sobre store `public-url`); subida
+privada → URL firmada (`put` al guardar + `signUrl` al leer, store `signed-url`); descarga
+proxy (`get` → `returns: BinaryStream`); borrado (`delete`). Validado por INT-028..031.
+
 ---
 
 ### 5.9 `repositories[]`
@@ -2361,6 +2434,7 @@ Vocabulario de tipos válidos en `properties.type`, `input[].type`, `params[].ty
 | `Email` | Correo electrónico | formato email |
 | `Url` | URL absoluta | formato URL |
 | `Money` | VO compuesto `{amount, currency}` | ver § 5.3 |
+| `StoredObject` | VO compuesto `{storageKey, url, contentType, sizeBytes}` — binario en un object store | ver § 6.5 / `storageCalls` |
 | `Json` | Estructura JSON arbitraria | — |
 
 ### 6.4 Tipos contenedores
@@ -2380,6 +2454,7 @@ Vocabulario de tipos válidos en `properties.type`, `input[].type`, `params[].ty
 |---|---|---|
 | `File` | `input[].type` con `source: multipart` | Archivo subido. |
 | `BinaryStream` | `returns` (queries) | Descarga binaria. |
+| `StoredObject` | `type` de propiedad/param; producido por `storageCalls` | Binario persistido en un object store: `{storageKey, url, contentType, sizeBytes}`. |
 | `Range[T]` | `input[].type` | Genera `<name>From` y `<name>To`. |
 | `SearchText` | `input[].type` con `fields[]` | Texto que se matcha con `LIKE_CONTAINS`. |
 | `Void` | `returns` (commands) | El UC no retorna valor. |

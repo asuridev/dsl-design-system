@@ -485,6 +485,14 @@ infrastructure:
     outboxRetentionDays: 7
     consumerIdempotency: true
     processedEventRetentionDays: 14
+  objectStorage:
+    - name: product-media
+      visibility: public
+      urlAccess: public-url
+      ownedBy: catalog
+      notes: >
+        Product gallery images. Served publicly via CDN; the catalog BC uploads
+        binaries and persists the returned public URL on each ProductImage.
   notes: >
     Defaults applied: modular-monolith + hexagonal + relational + schema-per-bc.
     outbox and consumerIdempotency activated due to CheckoutSaga (at-least-once delivery

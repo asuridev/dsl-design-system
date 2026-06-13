@@ -27,6 +27,7 @@ const CANONICAL_TYPES = new Set([
   'Email',
   'Url',
   'Money',
+  'StoredObject',
   'PageRequest',
   'File',
   'BinaryStream',

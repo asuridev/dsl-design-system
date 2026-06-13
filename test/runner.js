@@ -381,6 +381,83 @@ async function assertTacticalValidationFails(bcYaml, expectedCode) {
   });
 }
 
+// Writes a system.yaml with a parameterised infrastructure.objectStorage block (plus catalog
+// and orders BCs) and a catalog.yaml, then runs the copied validator. Returns { status, output }.
+async function runStorageValidation(projectDir, objectStorageYaml, bcYaml) {
+  await writeYaml(path.join(projectDir, 'arch', 'system', 'system.yaml'), `
+system:
+  name: storage-system
+  description: Object storage fixture system.
+  domainType: core
+boundedContexts:
+  - name: catalog
+    type: core
+    purpose: Manages catalog data.
+    aggregates:
+      - name: Product
+        root: Product
+        entities: []
+  - name: orders
+    type: core
+    purpose: Manages orders.
+    aggregates:
+      - name: Order
+        root: Order
+        entities: []
+externalSystems: []
+integrations: []
+infrastructure:
+  objectStorage:
+${objectStorageYaml}
+`);
+  await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), bcYaml);
+
+  const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+  const result = runNode([validateCli, 'validate', '--bc', 'catalog'], { cwd: projectDir });
+  return { status: result.status, output: `${result.stdout}\n${result.stderr}` };
+}
+
+const STORAGE_UPLOAD_BC = `
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: image
+        type: File
+        required: true
+        source: multipart
+        partName: image
+    storageCalls:
+      - store: %STORE%
+        operation: %OP%
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`;
+
 test('dsl init scaffolds design assets and validator', async () => {
   await withTempProject(async (projectDir) => {
     const result = runNode([CLI, 'init'], { cwd: projectDir });
@@ -861,6 +938,121 @@ test('incremental undeveloped BC consumers are warnings, not strict failures', a
     assert.match(output, /INT-007/);
     assert.match(output, /warning\(s\) found, no errors/);
     assert.doesNotMatch(output, /error\(s\)/);
+  });
+});
+
+test('copied dsl-validate rejects storageCalls referencing an undeclared object store', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: image
+        type: File
+        required: true
+        source: multipart
+        partName: image
+    storageCalls:
+      - store: product-media
+        operation: put
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, 'INT-028');
+});
+
+test('copied dsl-validate rejects storageCalls with an unsupported operation', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    storageCalls:
+      - store: product-media
+        operation: upsert
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, 'BC-028');
+});
+
+test('copied dsl-validate rejects signUrl against a public-url store', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    const { status, output } = await runStorageValidation(
+      projectDir,
+      `    - name: product-media
+      visibility: public
+      urlAccess: public-url
+      ownedBy: catalog`,
+      STORAGE_UPLOAD_BC.replace('%STORE%', 'product-media').replace('%OP%', 'signUrl'),
+    );
+    assert.notStrictEqual(status, 0, output);
+    assert.match(output, /INT-029/);
+  });
+});
+
+test('copied dsl-validate warns on cross-BC object storage access', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    const { output } = await runStorageValidation(
+      projectDir,
+      `    - name: order-receipts
+      visibility: private
+      urlAccess: signed-url
+      ownedBy: orders`,
+      STORAGE_UPLOAD_BC.replace('%STORE%', 'order-receipts').replace('%OP%', 'put'),
+    );
+    assert.match(output, /INT-031/);
+  });
+});
+
+test('copied dsl-validate accepts a well-formed upload to a declared store', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    const { output } = await runStorageValidation(
+      projectDir,
+      `    - name: product-media
+      visibility: public
+      urlAccess: public-url
+      ownedBy: catalog`,
+      STORAGE_UPLOAD_BC.replace('%STORE%', 'product-media').replace('%OP%', 'put'),
+    );
+    assert.doesNotMatch(output, /INT-028|INT-029|INT-030|INT-031/);
   });
 });
 

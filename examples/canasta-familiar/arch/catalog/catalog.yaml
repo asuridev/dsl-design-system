@@ -402,10 +402,16 @@ aggregates:
             readOnly: true
             defaultValue: generated
             description: Unique identifier of the image.
+          - name: storageKey
+            type: String
+            required: true
+            description: >
+              Key of the binary object within the product-media store. Persisted so the
+              image can later be signed, served or deleted. Produced by the storage put.
           - name: url
             type: Url
             required: true
-            description: URL of the image hosted in the media storage service.
+            description: Public URL of the image hosted in the product-media store.
           - name: altText
             type: String(200)
             required: false
@@ -494,10 +500,11 @@ aggregates:
         emits: ProductDiscontinued
 
       - name: addImage
-        signature: "addImage(url: Url, altText?: String(200), imageType: ImageType, displayOrder: Integer): void"
+        signature: "addImage(image: StoredObject, altText?: String(200), imageType: ImageType, displayOrder: Integer): void"
         description: >
-          Adds a new image to the product gallery. Blocked if the product is DISCONTINUED
-          (CAT-RULE-003).
+          Adds a new image to the product gallery from an already-stored binary. The
+          StoredObject (storageKey + public url) is produced by the storage put before
+          the method runs. Blocked if the product is DISCONTINUED (CAT-RULE-003).
         returns: void
         emits: null
 
@@ -867,7 +874,9 @@ useCases:
     type: command
     actor: admin
     description: >
-      Adds a new image to a product's gallery. Blocked if the product is DISCONTINUED.
+      Uploads a new image to a product's gallery. The endpoint receives the binary as
+      multipart/form-data; the use case stores it in the product-media object store and
+      persists the returned public URL on the product. Blocked if the product is DISCONTINUED.
     trigger:
       kind: http
       operationId: addProductImage
@@ -879,22 +888,33 @@ useCases:
         required: true
         source: path
         loadAggregate: true
-      - name: url
-        type: Url
+      - name: image
+        type: File
         required: true
-        source: body
+        source: multipart
+        partName: image
+        maxSize: 5MB
+        contentTypes: [image/png, image/jpeg, image/webp]
       - name: altText
         type: String(200)
         required: false
-        source: body
+        source: multipart
+        partName: altText
       - name: imageType
         type: ImageType
         required: true
-        source: body
+        source: multipart
+        partName: imageType
       - name: displayOrder
         type: Integer
         required: true
-        source: body
+        source: multipart
+        partName: displayOrder
+    storageCalls:
+      - store: product-media
+        operation: put
+        input: image
+        bindsTo: image
     notFoundError: PRODUCT_NOT_FOUND
     rules: [CAT-RULE-003]
     authorization:
@@ -906,8 +926,9 @@ useCases:
     type: command
     actor: admin
     description: >
-      Removes an image from a product's gallery. Blocked if the product is DISCONTINUED.
-      The image must exist in the product's gallery.
+      Removes an image from a product's gallery and deletes the underlying binary from the
+      product-media object store. Blocked if the product is DISCONTINUED. The image must
+      exist in the product's gallery.
     trigger:
       kind: http
       operationId: removeProductImage
@@ -923,6 +944,9 @@ useCases:
         type: Uuid
         required: true
         source: path
+    storageCalls:
+      - store: product-media
+        operation: delete
     notFoundError: PRODUCT_NOT_FOUND
     rules: [CAT-RULE-003]
     authorization:

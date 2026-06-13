@@ -76,6 +76,18 @@ const { toKebabCase } = require('./naming');
  *            o nombre de schema del mismo sistema externo, o un nombre de schema del
  *            mismo sistema externo. Referencias circulares o indefinidas son error.
  *            Nivel: error.
+ *
+ * Reglas Fase 7 (almacenamiento de objetos — object storage / buckets):
+ *
+ *   INT-028  Todo `useCases[].storageCalls[].store` debe referenciar un
+ *            `infrastructure.objectStorage[].name` declarado en system.yaml. Nivel: error.
+ *   INT-029  `operation: signUrl` solo es válido contra un store cuyo `urlAccess`
+ *            sea `signed-url`. Nivel: error.
+ *   INT-030  `operation: put` debería convivir con un input `File` (source: multipart)
+ *            en el mismo use case. Nivel: warn.
+ *   INT-031  `objectStorage[].ownedBy` debe ser un BC declarado; un `storageCall` que
+ *            alcanza un store desde un BC distinto a su `ownedBy` se marca como acceso
+ *            cruzado a storage. Nivel: warn.
  */
 
 // ─── Tipos auxiliares ────────────────────────────────────────────────────────
@@ -728,6 +740,87 @@ function checkExternalSchemas(system, diagnostics) {
     }
   }
 }
+/**
+ * INT-028 — Every useCases[].storageCalls[].store must reference a declared
+ *           infrastructure.objectStorage[].name in system.yaml.
+ * INT-029 — operation: signUrl is only valid against a store whose urlAccess is signed-url.
+ * INT-030 — operation: put should coexist with a File/multipart input in the same UC (warn).
+ * INT-031 — objectStorage[].ownedBy must be a declared BC; storageCalls reaching a store from a
+ *           BC other than its ownedBy is flagged as cross-BC storage access (warn).
+ */
+function checkStorageCalls(system, bcYamls, declaredBcNames, diagnostics) {
+  const stores = ((system.infrastructure && system.infrastructure.objectStorage) || []);
+  const storeByName = new Map();
+  for (let i = 0; i < stores.length; i++) {
+    const store = stores[i] || {};
+    if (store.name) storeByName.set(store.name, store);
+    // INT-031: ownedBy must be a declared bounded context.
+    if (store.ownedBy && !declaredBcNames.has(store.ownedBy)) {
+      diagnostics.push({
+        code: 'INT-031',
+        level: 'warn',
+        message: `Object store "${store.name || `[${i}]`}" declares ownedBy "${store.ownedBy}" which is not a declared boundedContext.`,
+        location: `system.yaml#/infrastructure/objectStorage[${i}]/ownedBy`,
+      });
+    }
+  }
+
+  for (const bcYaml of bcYamls) {
+    const bcName = bcYaml.bc;
+    for (const uc of (bcYaml.useCases || [])) {
+      const calls = uc && uc.storageCalls;
+      if (!Array.isArray(calls)) continue;
+      const hasFileInput = (uc.input || []).some((inp) => inp && inp.type === 'File');
+      for (let j = 0; j < calls.length; j++) {
+        const call = calls[j] || {};
+        const loc = `arch/${bcName}/${bcName}.yaml useCases[${uc.id || uc.name}].storageCalls[${j}]`;
+        const store = call.store ? storeByName.get(call.store) : null;
+
+        // INT-028: the referenced store must exist.
+        if (call.store && !store) {
+          diagnostics.push({
+            code: 'INT-028',
+            level: 'error',
+            message: `Use case "${uc.id || uc.name}" storageCall references store "${call.store}" which is not declared in system.yaml#/infrastructure/objectStorage.`,
+            location: loc,
+          });
+          continue;
+        }
+        if (!store) continue;
+
+        // INT-029: signUrl requires a signed-url store.
+        if (call.operation === 'signUrl' && store.urlAccess !== 'signed-url') {
+          diagnostics.push({
+            code: 'INT-029',
+            level: 'error',
+            message: `Use case "${uc.id || uc.name}" storageCall operation "signUrl" targets store "${call.store}" whose urlAccess is "${store.urlAccess || '<unset>'}"; signUrl requires urlAccess: signed-url.`,
+            location: loc,
+          });
+        }
+
+        // INT-030: put should accompany a File (multipart) input.
+        if (call.operation === 'put' && !hasFileInput) {
+          diagnostics.push({
+            code: 'INT-030',
+            level: 'warn',
+            message: `Use case "${uc.id || uc.name}" storageCall operation "put" has no File input in the same use case; an upload normally receives a File via source: multipart.`,
+            location: loc,
+          });
+        }
+
+        // INT-031: cross-BC storage access.
+        if (store.ownedBy && store.ownedBy !== bcName) {
+          diagnostics.push({
+            code: 'INT-031',
+            level: 'warn',
+            message: `Use case "${uc.id || uc.name}" in BC "${bcName}" reaches store "${call.store}" owned by "${store.ownedBy}". Consider routing storage access through the owning BC.`,
+            location: loc,
+          });
+        }
+      }
+    }
+  }
+}
 // ─── API pública ────────────────────────────────────────────────────────────
 
 // INT-024 — auth.type must be one of the recognised values.
@@ -1260,6 +1353,7 @@ function validateIntegrationCoherence(system, bcYamls, archDir, asyncApiByBc) {
   checkAuthTypeValid(system, bcYamls, diagnostics);
   checkOAuth2ClientCredentials(system, bcYamls, diagnostics);
   checkExternalSchemas(system, diagnostics);
+  checkStorageCalls(system, bcYamls, declaredBcNames, diagnostics);
 
   if (asyncApiByBc && asyncApiByBc.size > 0) {
     checkAsyncApiContractCoherence(bcYamls, asyncApiByBc, diagnostics);

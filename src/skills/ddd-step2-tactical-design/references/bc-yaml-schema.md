@@ -559,6 +559,15 @@ useCases:
         method: {methodName}
         params: [{paramName}, ...]  # nombres de input[] pasados al puerto; omitir si ninguno
         bindsTo: {domainMethodParam} # parámetro de domainMethods[method].params al que se asigna el resultado
+    storageCalls:                   # opcional — interacciones con un object store (bucket)
+      - store: {storeName}          # debe existir en system.yaml infrastructure.objectStorage[].name (INT-028)
+        operation: put              # put | signUrl | get | delete
+                                    #   put     → recibe input File (multipart), devuelve StoredObject
+                                    #   signUrl → recibe storageKey, devuelve Url firmada (solo stores signed-url, INT-029)
+                                    #   get     → recibe storageKey, devuelve BinaryStream (descarga proxy)
+                                    #   delete  → recibe storageKey, no devuelve nada
+        input: {inputName}          # opcional — nombre del input File (put) o de la fuente del storageKey
+        bindsTo: {domainMethodParam} # opcional — param de domainMethods[method] que recibe el resultado
     implementation: full | scaffold  # full = todos los params resolvibles; scaffold = TODOs pendientes
     authorization:                  # opcional — omitir solo si el endpoint es público (`public: true`)
       rolesAnyOf:                   # RBAC por rol — claim JWT: realm_access.roles
@@ -1101,5 +1110,7 @@ Antes de dar el `{bc-name}.yaml` v2 por completo, verificar:
 - [ ] `permissionsAnyOf[]` usa formato `recurso:accion` (dos puntos) — nunca puntos (`recurso.accion`)
 - [ ] `scopesAnyOf[]` declara los scopes **sin** prefijo `SCOPE_` (el generador lo añade)
 - [ ] Si declara `ownership`, al menos un `input[]` tiene `loadAggregate: true` o existe `lookups[]` que carga el agregado
+- [ ] Todo `storageCalls[].store` referencia un `infrastructure.objectStorage[].name` declarado en `system.yaml` (INT-028); `operation` ∈ {put, signUrl, get, delete}
+- [ ] Un `storageCalls` con `operation: put` tiene un input `type: File` (source: multipart) en el mismo UC; `operation: signUrl` apunta a un store `urlAccess: signed-url` (INT-029)
 - [ ] `public: true` y `authorization` no coexisten en el mismo UC
 - [ ] Todo UC con `implementation: scaffold` tiene ≥1 flujo **dedicado** en `{bc-name}-flows.md` (ver DECISIÓN-001 en SKILL.md y regla 5.2). Un UC scaffold sin flujo dedicado es un gap táctico bloqueante.
