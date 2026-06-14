@@ -77,6 +77,9 @@ Antes de entregar a un generador externo:
 3. Los artefactos deben declarar que y para que, no clases, anotaciones, SQL fisico ni decisiones de framework.
 4. No agregues codigo fuente generado a este repositorio; la generacion pertenece a la Fase 2.
 
+Cuando una caracteristica nueva amplie el schema, deja al generador una serie de tareas de handoff:
+- Object storage (buckets): [docs/proposals/object-storage-phase2-tasks.md](proposals/object-storage-phase2-tasks.md).
+
 ## Ejemplo de referencia
 
 El ejemplo `examples/canasta-familiar/` muestra un sistema ecommerce parcial con `catalog` y `orders`. Desde esa carpeta puedes ejecutar:

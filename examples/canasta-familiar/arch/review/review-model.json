@@ -1,0 +1,4058 @@
+{
+  "generatedAt": "2026-06-14T14:47:20.393Z",
+  "archPath": "C:\\Documentos\\dsl-project\\dsl-design-system\\examples\\canasta-familiar\\arch",
+  "system": {
+    "name": "canasta-familiar",
+    "description": "B2C digital platform for selling grocery and household staple products. Customers browse a catalog, place orders online, and receive home delivery using the company's own courier fleet. Supports card payments via an external payment gateway and cash-on-delivery.\n"
+  },
+  "systemDecisions": [
+    {
+      "id": "SYS-001",
+      "scope": "system",
+      "title": "System profile",
+      "category": "strategic",
+      "current": "canasta-familiar (unclassified)",
+      "options": [
+        "core",
+        "supporting",
+        "generic"
+      ],
+      "rationale": "Confirms how much domain design investment the system deserves.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"System profile\". Context: canasta-familiar (unclassified) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (core | supporting | generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-002",
+      "scope": "system",
+      "title": "Bounded context boundaries",
+      "category": "strategic",
+      "current": "7 BC(s), type split: core: 2, supporting: 4, generic: 1",
+      "options": [
+        "keep current BCs",
+        "split oversized BCs",
+        "merge thin BCs",
+        "reclassify core/supporting/generic"
+      ],
+      "rationale": "BC boundaries drive ownership, language and downstream generation modules.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Bounded context boundaries\". Context: 7 BC(s), type split: core: 2, supporting: 4, generic: 1 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (keep current BCs | split oversized BCs | merge thin BCs | reclassify core/supporting/generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-003",
+      "scope": "system",
+      "title": "Integration style",
+      "category": "strategic",
+      "current": "16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3",
+      "options": [
+        "customer-supplier http",
+        "event message-broker",
+        "acl",
+        "open-host",
+        "shared-kernel"
+      ],
+      "rationale": "This is the main coupling and availability map of the system.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Integration style\". Context: 16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (customer-supplier http | event message-broker | acl | open-host | shared-kernel) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-004",
+      "scope": "system",
+      "title": "Infrastructure constraints",
+      "category": "strategic",
+      "current": "deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url)",
+      "options": [
+        "modular-monolith",
+        "microservices",
+        "schema-per-bc",
+        "db-per-bc",
+        "auth server on/off",
+        "message broker on/off",
+        "object storage on/off"
+      ],
+      "rationale": "Infrastructure flags explain why generated projects need shared auth, broker, or object storage capabilities.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Infrastructure constraints\". Context: deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (modular-monolith | microservices | schema-per-bc | db-per-bc | auth server on/off | message broker on/off | object storage on/off) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-005",
+      "scope": "system",
+      "title": "External systems and sagas",
+      "category": "strategic",
+      "current": "2 external system(s), 1 saga(s), 3 actor type(s)",
+      "options": [
+        "declare external ACL",
+        "model saga",
+        "keep process inside one BC",
+        "declare actors for validation"
+      ],
+      "rationale": "External dependencies and cross-BC processes are high-value review points before generation.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"External systems and sagas\". Context: 2 external system(s), 1 saga(s), 3 actor type(s) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (declare external ACL | model saga | keep process inside one BC | declare actors for validation) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-006",
+      "scope": "system",
+      "title": "Reliability patterns",
+      "category": "strategic",
+      "current": "outbox=true (retention 7d), consumerIdempotency=true (retention 14d)",
+      "options": [
+        "outbox on/off",
+        "consumerIdempotency on/off",
+        "set retention days"
+      ],
+      "rationale": "Event reliability flags control at-least-once publication and consumer deduplication; recommended on whenever sagas exist.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Reliability patterns\". Context: outbox=true (retention 7d), consumerIdempotency=true (retention 14d) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (outbox on/off | consumerIdempotency on/off | set retention days) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    }
+  ],
+  "boundedContexts": [
+    {
+      "name": "catalog",
+      "type": "core",
+      "purpose": "Manages the product catalog lifecycle: categories, products, images, and pricing. Single authoritative source for all product data and prices in the platform.\n",
+      "hasDesign": true,
+      "metrics": [
+        {
+          "label": "Aggregates",
+          "value": 2,
+          "detail": "1 entities"
+        },
+        {
+          "label": "Use cases",
+          "value": 15,
+          "detail": "10 commands, 5 queries"
+        },
+        {
+          "label": "Events",
+          "value": 2,
+          "detail": "2 published, 0 consumed"
+        },
+        {
+          "label": "Integrations",
+          "value": 1,
+          "detail": "0 outbound, 1 inbound"
+        },
+        {
+          "label": "Read models",
+          "value": 0,
+          "detail": "readModel aggregates + persistent projections"
+        },
+        {
+          "label": "Storage",
+          "value": 1,
+          "detail": "product-media"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 0,
+          "detail": "0 errors, 0 warnings"
+        }
+      ],
+      "decisions": [
+        {
+          "id": "catalog-DM-001",
+          "scope": "catalog",
+          "title": "Domain model shape",
+          "category": "domain-model",
+          "current": "2 aggregate(s), 1 entity/entities, 1 value object(s)",
+          "options": [
+            "aggregate",
+            "entity composition",
+            "entity aggregation",
+            "value object",
+            "projection"
+          ],
+          "rationale": "Confirms whether concepts are modeled with identity, ownership or value semantics.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Domain model shape\". Context: 2 aggregate(s), 1 entity/entities, 1 value object(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (aggregate | entity composition | entity aggregation | value object | projection) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-DM-002",
+          "scope": "catalog",
+          "title": "State management",
+          "category": "domain-model",
+          "current": "3 enum(s), 2 lifecycle enum(s) with transitions",
+          "options": [
+            "lifecycle enum with transitions",
+            "classification enum",
+            "boolean flag",
+            "domain rule gate"
+          ],
+          "rationale": "Lifecycle states define allowed transitions and event emission points.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"State management\". Context: 3 enum(s), 2 lifecycle enum(s) with transitions Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (lifecycle enum with transitions | classification enum | boolean flag | domain rule gate) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-UC-001",
+          "scope": "catalog",
+          "title": "Use case topology",
+          "category": "behavior",
+          "current": "15 use case(s), command: 10, query: 5; triggers: http=15, event=0",
+          "options": [
+            "command",
+            "query",
+            "http trigger",
+            "event trigger",
+            "bulk",
+            "async",
+            "cacheable",
+            "idempotent"
+          ],
+          "rationale": "Use case shape determines whether behavior mutates state, exposes reads, or reacts to events.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Use case topology\". Context: 15 use case(s), command: 10, query: 5; triggers: http=15, event=0 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (command | query | http trigger | event trigger | bulk | async | cacheable | idempotent) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-UC-002",
+          "scope": "catalog",
+          "title": "Authorization strategy",
+          "category": "security",
+          "current": "11 authorized use case(s), 4 public use case(s)",
+          "options": [
+            "public",
+            "rolesAnyOf",
+            "permissionsAnyOf",
+            "scopesAnyOf",
+            "ownership"
+          ],
+          "rationale": "Security choices should be visible to the designer before implementation.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Authorization strategy\". Context: 11 authorized use case(s), 4 public use case(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (public | rolesAnyOf | permissionsAnyOf | scopesAnyOf | ownership) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-UC-003",
+          "scope": "catalog",
+          "title": "Lookup and FK validation routes",
+          "category": "consistency",
+          "current": "4 FK validation(s), 0 use case(s) with lookups",
+          "options": [
+            "notFoundError",
+            "lookups[]",
+            "same-BC fkValidation",
+            "Local Read Model lookup",
+            "external ServicePort"
+          ],
+          "rationale": "These choices decide where referential integrity is checked and which dependencies appear.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Lookup and FK validation routes\". Context: 4 FK validation(s), 0 use case(s) with lookups Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-EV-001",
+          "scope": "catalog",
+          "title": "Events and Local Read Models",
+          "category": "events",
+          "current": "2 published event(s), 0 consumed event(s), 0 local read model(s)",
+          "options": [
+            "publish event",
+            "consume event",
+            "listenerRequired false",
+            "persistent projection",
+            "readModel aggregate",
+            "HTTP sync instead of LRM"
+          ],
+          "rationale": "Event and LRM decisions control coupling, availability and eventual consistency trade-offs.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Events and Local Read Models\". Context: 2 published event(s), 0 consumed event(s), 0 local read model(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-INT-001",
+          "scope": "catalog",
+          "title": "Integration points",
+          "category": "integration",
+          "current": "outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1)",
+          "options": [
+            "outbound HTTP",
+            "inbound HTTP",
+            "event subscription",
+            "external ACL",
+            "resilience override",
+            "auth override"
+          ],
+          "rationale": "Integration declarations must align with system.yaml and contract artifacts.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Integration points\". Context: outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-API-001",
+          "scope": "catalog",
+          "title": "API contracts",
+          "category": "contracts",
+          "current": "public REST operations=14, internal REST operations=1, async channels=2",
+          "options": [
+            "public OpenAPI",
+            "internal OpenAPI",
+            "AsyncAPI publish",
+            "AsyncAPI subscribe",
+            "no external contract"
+          ],
+          "rationale": "Contract files are how the tactical design becomes reviewable by clients and other BCs.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"API contracts\". Context: public REST operations=14, internal REST operations=1, async channels=2 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (public OpenAPI | internal OpenAPI | AsyncAPI publish | AsyncAPI subscribe | no external contract) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "catalog-ERR-001",
+          "scope": "catalog",
+          "title": "Error catalog",
+          "category": "errors",
+          "current": "9 declared error(s), HTTP status split: 404: 3, 409: 3, 422: 3",
+          "options": [
+            "domain error",
+            "not found",
+            "conflict",
+            "validation error",
+            "manual-only error"
+          ],
+          "rationale": "Error catalog completeness affects generated exception contracts and API responses.",
+          "files": [
+            "arch/catalog/catalog.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Error catalog\". Context: 9 declared error(s), HTTP status split: 404: 3, 409: 3, 422: 3 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (domain error | not found | conflict | validation error | manual-only error) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        }
+      ],
+      "useCaseCatalog": [
+        {
+          "id": "UC-CAT-001",
+          "name": "CreateCategory",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /categories",
+          "target": "Category.create",
+          "rules": [
+            "CAT-RULE-005"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-005",
+              "description": "Category name must be unique across all categories.",
+              "type": "uniqueness",
+              "errorCode": "CATEGORY_NAME_ALREADY_EXISTS",
+              "aggregate": "Category"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": true,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-002",
+          "name": "UpdateCategory",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /categories/{id}",
+          "target": "Category.update",
+          "rules": [
+            "CAT-RULE-005"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-005",
+              "description": "Category name must be unique across all categories.",
+              "type": "uniqueness",
+              "errorCode": "CATEGORY_NAME_ALREADY_EXISTS",
+              "aggregate": "Category"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-003",
+          "name": "DeactivateCategory",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /categories/{id}/deactivate",
+          "target": "Category.deactivate",
+          "rules": [
+            "CAT-RULE-006"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-006",
+              "description": "A category cannot be deactivated if it has ACTIVE products assigned to it. All active products must be reassigned or discontinued before deactivation.",
+              "type": "statePrecondition",
+              "errorCode": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+              "aggregate": "Category"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-004",
+          "name": "ReactivateCategory",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /categories/{id}/reactivate",
+          "target": "Category.reactivate",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-005",
+          "name": "GetCategory",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /categories/{id}",
+          "target": "Category",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "CategoryResponse",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-006",
+          "name": "ListCategories",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /categories",
+          "target": "Category",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "Page[CategorySummary]",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-007",
+          "name": "CreateProduct",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /products",
+          "target": "Product.create",
+          "rules": [
+            "CAT-RULE-002",
+            "CAT-RULE-008"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-002",
+              "description": "SKU must be unique across all products in the catalog.",
+              "type": "uniqueness",
+              "errorCode": "PRODUCT_SKU_ALREADY_EXISTS",
+              "aggregate": "Product"
+            },
+            {
+              "id": "CAT-RULE-008",
+              "description": "A product can only be assigned to a category in ACTIVE status. Assigning a product to an INACTIVE category is not permitted.",
+              "type": "crossAggregateConstraint",
+              "errorCode": "CATEGORY_NOT_ACTIVE",
+              "aggregate": "Product"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": true,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-008",
+          "name": "UpdateProduct",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /products/{id}",
+          "target": "Product.update",
+          "rules": [
+            "CAT-RULE-002",
+            "CAT-RULE-003",
+            "CAT-RULE-008"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-002",
+              "description": "SKU must be unique across all products in the catalog.",
+              "type": "uniqueness",
+              "errorCode": "PRODUCT_SKU_ALREADY_EXISTS",
+              "aggregate": "Product"
+            },
+            {
+              "id": "CAT-RULE-003",
+              "description": "A DISCONTINUED product is in a terminal state and cannot be modified. Any attempt to update, add images, or change the status of a discontinued product must be rejected.",
+              "type": "terminalState",
+              "errorCode": "PRODUCT_ALREADY_DISCONTINUED",
+              "aggregate": "Product"
+            },
+            {
+              "id": "CAT-RULE-008",
+              "description": "A product can only be assigned to a category in ACTIVE status. Assigning a product to an INACTIVE category is not permitted.",
+              "type": "crossAggregateConstraint",
+              "errorCode": "CATEGORY_NOT_ACTIVE",
+              "aggregate": "Product"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-009",
+          "name": "ActivateProduct",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /products/{id}/activate",
+          "target": "Product.activate",
+          "rules": [
+            "CAT-RULE-001",
+            "CAT-RULE-002"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-001",
+              "description": "A product must have a non-empty name, a positive price, and be assigned to a category with ACTIVE status before it can be activated. If the category is INACTIVE, activation is blocked even if the product data is otherwise complete.",
+              "type": "statePrecondition",
+              "errorCode": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+              "aggregate": "Product"
+            },
+            {
+              "id": "CAT-RULE-002",
+              "description": "SKU must be unique across all products in the catalog.",
+              "type": "uniqueness",
+              "errorCode": "PRODUCT_SKU_ALREADY_EXISTS",
+              "aggregate": "Product"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-010",
+          "name": "DiscontinueProduct",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /products/{id}/discontinue",
+          "target": "Product.discontinue",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-011",
+          "name": "AddProductImage",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /products/{id}/images",
+          "target": "Product.addImage",
+          "rules": [
+            "CAT-RULE-003"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-003",
+              "description": "A DISCONTINUED product is in a terminal state and cannot be modified. Any attempt to update, add images, or change the status of a discontinued product must be rejected.",
+              "type": "terminalState",
+              "errorCode": "PRODUCT_ALREADY_DISCONTINUED",
+              "aggregate": "Product"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": [
+            "product-media:put"
+          ]
+        },
+        {
+          "id": "UC-CAT-012",
+          "name": "RemoveProductImage",
+          "actor": "admin",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "DELETE /products/{id}/images/{imageId}",
+          "target": "Product.removeImage",
+          "rules": [
+            "CAT-RULE-003"
+          ],
+          "ruleDetails": [
+            {
+              "id": "CAT-RULE-003",
+              "description": "A DISCONTINUED product is in a terminal state and cannot be modified. Any attempt to update, add images, or change the status of a discontinued product must be rejected.",
+              "type": "terminalState",
+              "errorCode": "PRODUCT_ALREADY_DISCONTINUED",
+              "aggregate": "Product"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": [
+            "product-media:delete"
+          ]
+        },
+        {
+          "id": "UC-CAT-013",
+          "name": "GetProduct",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /products/{id}",
+          "target": "Product",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "ProductDetail",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-014",
+          "name": "ListProducts",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /products",
+          "target": "Product",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "Page[ProductSummary]",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-CAT-015",
+          "name": "ValidateProductsAndPrices",
+          "actor": "system",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "POST /internal/products/price-snapshot",
+          "target": "Product",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "List[ProductPriceSnapshot]",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        }
+      ],
+      "securityMatrix": [
+        {
+          "id": "UC-CAT-001",
+          "name": "CreateCategory",
+          "endpoint": "POST /categories",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-002",
+          "name": "UpdateCategory",
+          "endpoint": "PATCH /categories/{id}",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-003",
+          "name": "DeactivateCategory",
+          "endpoint": "PATCH /categories/{id}/deactivate",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-004",
+          "name": "ReactivateCategory",
+          "endpoint": "PATCH /categories/{id}/reactivate",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-005",
+          "name": "GetCategory",
+          "endpoint": "GET /categories/{id}",
+          "public": true,
+          "roles": [],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-006",
+          "name": "ListCategories",
+          "endpoint": "GET /categories",
+          "public": true,
+          "roles": [],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-007",
+          "name": "CreateProduct",
+          "endpoint": "POST /products",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-008",
+          "name": "UpdateProduct",
+          "endpoint": "PATCH /products/{id}",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-009",
+          "name": "ActivateProduct",
+          "endpoint": "PATCH /products/{id}/activate",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-010",
+          "name": "DiscontinueProduct",
+          "endpoint": "PATCH /products/{id}/discontinue",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-011",
+          "name": "AddProductImage",
+          "endpoint": "POST /products/{id}/images",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-012",
+          "name": "RemoveProductImage",
+          "endpoint": "DELETE /products/{id}/images/{imageId}",
+          "public": false,
+          "roles": [
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-013",
+          "name": "GetProduct",
+          "endpoint": "GET /products/{id}",
+          "public": true,
+          "roles": [],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-014",
+          "name": "ListProducts",
+          "endpoint": "GET /products",
+          "public": true,
+          "roles": [],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-CAT-015",
+          "name": "ValidateProductsAndPrices",
+          "endpoint": "POST /internal/products/price-snapshot",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER",
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        }
+      ],
+      "operationsMatrix": [
+        {
+          "id": "UC-CAT-001",
+          "name": "CreateCategory",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /categories",
+          "idempotency": {
+            "header": "Idempotency-Key",
+            "ttl": "PT24H"
+          },
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 1,
+            "lookups": 0,
+            "detail": [
+              "fk Category"
+            ]
+          }
+        },
+        {
+          "id": "UC-CAT-002",
+          "name": "UpdateCategory",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /categories/{id}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 1,
+            "lookups": 0,
+            "detail": [
+              "fk Category"
+            ]
+          }
+        },
+        {
+          "id": "UC-CAT-003",
+          "name": "DeactivateCategory",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /categories/{id}/deactivate",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-004",
+          "name": "ReactivateCategory",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /categories/{id}/reactivate",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-005",
+          "name": "GetCategory",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /categories/{id}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-006",
+          "name": "ListCategories",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /categories",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": {
+            "defaultSize": 20,
+            "maxSize": 100,
+            "sort": "name ASC"
+          },
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-007",
+          "name": "CreateProduct",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /products",
+          "idempotency": {
+            "header": "Idempotency-Key",
+            "ttl": "PT24H"
+          },
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 1,
+            "lookups": 0,
+            "detail": [
+              "fk Category"
+            ]
+          }
+        },
+        {
+          "id": "UC-CAT-008",
+          "name": "UpdateProduct",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /products/{id}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 1,
+            "lookups": 0,
+            "detail": [
+              "fk Category"
+            ]
+          }
+        },
+        {
+          "id": "UC-CAT-009",
+          "name": "ActivateProduct",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /products/{id}/activate",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-010",
+          "name": "DiscontinueProduct",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /products/{id}/discontinue",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-011",
+          "name": "AddProductImage",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /products/{id}/images",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-012",
+          "name": "RemoveProductImage",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "DELETE /products/{id}/images/{imageId}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-013",
+          "name": "GetProduct",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /products/{id}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-014",
+          "name": "ListProducts",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /products",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": {
+            "defaultSize": 20,
+            "maxSize": 100,
+            "sort": "createdAt DESC"
+          },
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-CAT-015",
+          "name": "ValidateProductsAndPrices",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "POST /internal/products/price-snapshot",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        }
+      ],
+      "events": {
+        "published": [
+          {
+            "name": "ProductActivated",
+            "channel": "",
+            "scope": "integration",
+            "payload": [
+              "productId: Uuid",
+              "sku: String(100)",
+              "name: String(200)",
+              "categoryId: Uuid"
+            ]
+          },
+          {
+            "name": "ProductDiscontinued",
+            "channel": "",
+            "scope": "integration",
+            "payload": [
+              "productId: Uuid",
+              "sku: String(100)"
+            ]
+          }
+        ],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [
+        {
+          "store": "product-media",
+          "visibility": "public",
+          "urlAccess": "public-url",
+          "ownedBy": "catalog",
+          "signedUrlTtl": null,
+          "notes": "Product gallery images. Served publicly via CDN; the catalog BC uploads binaries and persists the returned public URL on each ProductImage.\n",
+          "usages": [
+            {
+              "ucId": "UC-CAT-011",
+              "ucName": "AddProductImage",
+              "operation": "put",
+              "input": "image",
+              "bindsTo": "image"
+            },
+            {
+              "ucId": "UC-CAT-012",
+              "ucName": "RemoveProductImage",
+              "operation": "delete",
+              "input": null,
+              "bindsTo": null
+            }
+          ]
+        }
+      ],
+      "integrations": {
+        "outbound": [
+          {
+            "direction": "outbound",
+            "partner": "inventory",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "ProductActivated",
+              "ProductDiscontinued"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Inventory creates a StockItem when a product is activated and permanently closes it when the product is discontinued. These are implicit lifecycle dependencies not visible in the checkout flow.",
+            "missingRationale": false
+          }
+        ],
+        "inbound": [
+          {
+            "direction": "inbound",
+            "partner": "orders",
+            "partnerType": "internalBc",
+            "patternLabel": "customer-supplier",
+            "badge": "primary",
+            "channel": "http",
+            "contracts": [
+              "validateProductsAndPrices"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Orders BC queries catalog at checkout to obtain the authoritative price snapshot for each product in the cart. Mandatory HTTP synchronous call for monetary integrity — prevents OWASP A04 fraud via stale or manipulated prices.\nMandatory HTTP for monetary snapshot (OrderLine.unitPrice reads Product.price). Designer evaluated LRM trade-offs including OWASP A04 fraud risk and chose HTTP. Price is always read from catalog in real time at checkout — no inconsistency window. The customer sends only productId + quantity; the backend reads the authoritative price.",
+            "missingRationale": false
+          }
+        ],
+        "contextMap": "flowchart LR\n  n_catalog[\"catalog\"]:::center\n  n_inventory[\"inventory\"]\n  n_catalog -->|event / message-broker| n_inventory\n  n_orders[\"orders\"]\n  n_orders -->|customer-supplier / http| n_catalog\n  classDef center fill:#111827,color:#fff,stroke:#111827;\n  classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12;"
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [],
+      "links": {
+        "reviewFile": "catalog-review.html",
+        "designFile": "catalog-design.html",
+        "openApiFile": "catalog-openapi.html",
+        "internalApiFile": "catalog-internal-openapi.html",
+        "asyncApiFile": "catalog-asyncapi.html"
+      }
+    },
+    {
+      "name": "orders",
+      "type": "core",
+      "purpose": "Manages the full order lifecycle from cart creation through checkout, payment confirmation, delivery tracking and order completion. Validates prices against catalog via HTTP at checkout (monetary snapshot — OWASP A04). Maintains a local read model of customer delivery addresses fed by CustomerAddressUpdated events from the customers BC. Coordinator of the CheckoutSaga.\n",
+      "hasDesign": true,
+      "metrics": [
+        {
+          "label": "Aggregates",
+          "value": 3,
+          "detail": "2 entities"
+        },
+        {
+          "label": "Use cases",
+          "value": 17,
+          "detail": "14 commands, 3 queries"
+        },
+        {
+          "label": "Events",
+          "value": 11,
+          "detail": "3 published, 8 consumed"
+        },
+        {
+          "label": "Integrations",
+          "value": 1,
+          "detail": "1 outbound, 0 inbound"
+        },
+        {
+          "label": "Read models",
+          "value": 1,
+          "detail": "readModel aggregates + persistent projections"
+        },
+        {
+          "label": "Storage",
+          "value": 0,
+          "detail": "no buckets"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 0,
+          "detail": "0 errors, 0 warnings"
+        }
+      ],
+      "decisions": [
+        {
+          "id": "orders-DM-001",
+          "scope": "orders",
+          "title": "Domain model shape",
+          "category": "domain-model",
+          "current": "3 aggregate(s), 2 entity/entities, 3 value object(s)",
+          "options": [
+            "aggregate",
+            "entity composition",
+            "entity aggregation",
+            "value object",
+            "projection"
+          ],
+          "rationale": "Confirms whether concepts are modeled with identity, ownership or value semantics.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Domain model shape\". Context: 3 aggregate(s), 2 entity/entities, 3 value object(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (aggregate | entity composition | entity aggregation | value object | projection) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-DM-002",
+          "scope": "orders",
+          "title": "State management",
+          "category": "domain-model",
+          "current": "3 enum(s), 2 lifecycle enum(s) with transitions",
+          "options": [
+            "lifecycle enum with transitions",
+            "classification enum",
+            "boolean flag",
+            "domain rule gate"
+          ],
+          "rationale": "Lifecycle states define allowed transitions and event emission points.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"State management\". Context: 3 enum(s), 2 lifecycle enum(s) with transitions Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (lifecycle enum with transitions | classification enum | boolean flag | domain rule gate) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-UC-001",
+          "scope": "orders",
+          "title": "Use case topology",
+          "category": "behavior",
+          "current": "17 use case(s), command: 14, query: 3; triggers: http=9, event=8",
+          "options": [
+            "command",
+            "query",
+            "http trigger",
+            "event trigger",
+            "bulk",
+            "async",
+            "cacheable",
+            "idempotent"
+          ],
+          "rationale": "Use case shape determines whether behavior mutates state, exposes reads, or reacts to events.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Use case topology\". Context: 17 use case(s), command: 14, query: 3; triggers: http=9, event=8 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (command | query | http trigger | event trigger | bulk | async | cacheable | idempotent) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-UC-002",
+          "scope": "orders",
+          "title": "Authorization strategy",
+          "category": "security",
+          "current": "9 authorized use case(s), 0 public use case(s)",
+          "options": [
+            "public",
+            "rolesAnyOf",
+            "permissionsAnyOf",
+            "scopesAnyOf",
+            "ownership"
+          ],
+          "rationale": "Security choices should be visible to the designer before implementation.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Authorization strategy\". Context: 9 authorized use case(s), 0 public use case(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public | rolesAnyOf | permissionsAnyOf | scopesAnyOf | ownership) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-UC-003",
+          "scope": "orders",
+          "title": "Lookup and FK validation routes",
+          "category": "consistency",
+          "current": "1 FK validation(s), 0 use case(s) with lookups",
+          "options": [
+            "notFoundError",
+            "lookups[]",
+            "same-BC fkValidation",
+            "Local Read Model lookup",
+            "external ServicePort"
+          ],
+          "rationale": "These choices decide where referential integrity is checked and which dependencies appear.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Lookup and FK validation routes\". Context: 1 FK validation(s), 0 use case(s) with lookups Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-EV-001",
+          "scope": "orders",
+          "title": "Events and Local Read Models",
+          "category": "events",
+          "current": "3 published event(s), 8 consumed event(s), 1 local read model(s)",
+          "options": [
+            "publish event",
+            "consume event",
+            "listenerRequired false",
+            "persistent projection",
+            "readModel aggregate",
+            "HTTP sync instead of LRM"
+          ],
+          "rationale": "Event and LRM decisions control coupling, availability and eventual consistency trade-offs.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Events and Local Read Models\". Context: 3 published event(s), 8 consumed event(s), 1 local read model(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-INT-001",
+          "scope": "orders",
+          "title": "Integration points",
+          "category": "integration",
+          "current": "outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4)",
+          "options": [
+            "outbound HTTP",
+            "inbound HTTP",
+            "event subscription",
+            "external ACL",
+            "resilience override",
+            "auth override"
+          ],
+          "rationale": "Integration declarations must align with system.yaml and contract artifacts.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Integration points\". Context: outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-API-001",
+          "scope": "orders",
+          "title": "API contracts",
+          "category": "contracts",
+          "current": "public REST operations=9, internal REST operations=0, async channels=11",
+          "options": [
+            "public OpenAPI",
+            "internal OpenAPI",
+            "AsyncAPI publish",
+            "AsyncAPI subscribe",
+            "no external contract"
+          ],
+          "rationale": "Contract files are how the tactical design becomes reviewable by clients and other BCs.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"API contracts\". Context: public REST operations=9, internal REST operations=0, async channels=11 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public OpenAPI | internal OpenAPI | AsyncAPI publish | AsyncAPI subscribe | no external contract) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        },
+        {
+          "id": "orders-ERR-001",
+          "scope": "orders",
+          "title": "Error catalog",
+          "category": "errors",
+          "current": "17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1",
+          "options": [
+            "domain error",
+            "not found",
+            "conflict",
+            "validation error",
+            "manual-only error"
+          ],
+          "rationale": "Error catalog completeness affects generated exception contracts and API responses.",
+          "files": [
+            "arch/orders/orders.yaml"
+          ],
+          "severity": "review",
+          "prompt": "Review the DSL design decision \"Error catalog\". Context: 17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (domain error | not found | conflict | validation error | manual-only error) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+        }
+      ],
+      "useCaseCatalog": [
+        {
+          "id": "UC-ORD-001",
+          "name": "CreateCart",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /carts",
+          "target": "Cart.create",
+          "rules": [
+            "ORD-RULE-004"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-004",
+              "description": "A customer can only have one OPEN cart at a time. Before creating a new cart, the handler must verify that no OPEN cart already exists for this customer using cartRepository.findOpenByCustomerId(customerId).",
+              "type": "statePrecondition",
+              "errorCode": "CUSTOMER_ALREADY_HAS_OPEN_CART",
+              "aggregate": "Cart"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": true,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-002",
+          "name": "AddItemToCart",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /carts/{cartId}/items",
+          "target": "Cart.addItem",
+          "rules": [
+            "ORD-RULE-002"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-002",
+              "description": "A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.",
+              "type": "statePrecondition",
+              "errorCode": "CART_NOT_OPEN",
+              "aggregate": "Cart"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-003",
+          "name": "UpdateCartItem",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /carts/{cartId}/items/{itemId}",
+          "target": "Cart.updateItem",
+          "rules": [
+            "ORD-RULE-002"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-002",
+              "description": "A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.",
+              "type": "statePrecondition",
+              "errorCode": "CART_NOT_OPEN",
+              "aggregate": "Cart"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-004",
+          "name": "RemoveCartItem",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "DELETE /carts/{cartId}/items/{itemId}",
+          "target": "Cart.removeItem",
+          "rules": [
+            "ORD-RULE-002"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-002",
+              "description": "A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.",
+              "type": "statePrecondition",
+              "errorCode": "CART_NOT_OPEN",
+              "aggregate": "Cart"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-005",
+          "name": "Checkout",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "POST /carts/{cartId}/checkout",
+          "target": "Cart.checkout",
+          "rules": [
+            "ORD-RULE-001",
+            "ORD-RULE-002"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-001",
+              "description": "The cart must have at least one CartItem before it can be checked out. An empty cart cannot proceed to checkout.",
+              "type": "statePrecondition",
+              "errorCode": "CART_IS_EMPTY",
+              "aggregate": "Cart"
+            },
+            {
+              "id": "ORD-RULE-002",
+              "description": "A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.",
+              "type": "statePrecondition",
+              "errorCode": "CART_NOT_OPEN",
+              "aggregate": "Cart"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-006",
+          "name": "GetCart",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /carts/{cartId}",
+          "target": "Cart",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "CartResponse",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-010",
+          "name": "GetOrder",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /orders/{orderId}",
+          "target": "Order",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "OrderDetail",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-011",
+          "name": "ListOrders",
+          "actor": "customer",
+          "type": "query",
+          "triggerKind": "http",
+          "triggerLabel": "GET /orders",
+          "target": "Order",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "Page[OrderSummary]",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-012",
+          "name": "CancelOrder",
+          "actor": "customer",
+          "type": "command",
+          "triggerKind": "http",
+          "triggerLabel": "PATCH /orders/{orderId}/cancel",
+          "target": "Order.cancel",
+          "rules": [
+            "ORD-RULE-005",
+            "ORD-RULE-006",
+            "ORD-RULE-007"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-005",
+              "description": "An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_CANNOT_BE_CANCELLED",
+              "aggregate": "Order"
+            },
+            {
+              "id": "ORD-RULE-006",
+              "description": "A DELIVERED order is in a terminal state and cannot be transitioned or modified in any way.",
+              "type": "terminalState",
+              "errorCode": "ORDER_ALREADY_DELIVERED",
+              "aggregate": "Order"
+            },
+            {
+              "id": "ORD-RULE-007",
+              "description": "A CANCELLED order is in a terminal state and cannot be transitioned or modified in any way.",
+              "type": "terminalState",
+              "errorCode": "ORDER_ALREADY_CANCELLED",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-020",
+          "name": "ConfirmOrder",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ PaymentApproved (payments · payments.payment.approved)",
+          "target": "Order.confirm",
+          "rules": [
+            "ORD-RULE-008"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-008",
+              "description": "An order can only be confirmed when its status is PENDING_PAYMENT. This guard ensures PaymentApproved events are idempotently processed.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_NOT_PENDING_PAYMENT",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": {
+            "saga": "CheckoutSaga",
+            "order": 3,
+            "role": "step"
+          },
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-021",
+          "name": "CancelOrderOnStockFailed",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ StockReservationFailed (inventory · inventory.stock.reservation.failed)",
+          "target": "Order.cancel",
+          "rules": [
+            "ORD-RULE-005"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-005",
+              "description": "An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_CANNOT_BE_CANCELLED",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-022",
+          "name": "CancelOrderOnPaymentFailed",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ PaymentFailed (payments · payments.payment.failed)",
+          "target": "Order.cancel",
+          "rules": [
+            "ORD-RULE-005"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-005",
+              "description": "An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_CANNOT_BE_CANCELLED",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-023",
+          "name": "SetOrderInDelivery",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ DeliveryOrderCreated (delivery · delivery.delivery.order.created)",
+          "target": "Order.setInDelivery",
+          "rules": [
+            "ORD-RULE-009"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-009",
+              "description": "An order can only be set to IN_DELIVERY when its status is CONFIRMED. This guard ensures DeliveryOrderCreated events are idempotently processed.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_NOT_CONFIRMED",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-024",
+          "name": "CompleteDelivery",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ DeliveryCompleted (delivery · delivery.delivery.completed)",
+          "target": "Order.complete",
+          "rules": [
+            "ORD-RULE-010"
+          ],
+          "ruleDetails": [
+            {
+              "id": "ORD-RULE-010",
+              "description": "An order can only be completed (DELIVERED) when its status is IN_DELIVERY. This guard ensures DeliveryCompleted events are idempotently processed.",
+              "type": "statePrecondition",
+              "errorCode": "ORDER_NOT_IN_DELIVERY",
+              "aggregate": "Order"
+            }
+          ],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-025",
+          "name": "AcknowledgeStockReleased",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ StockReleased (inventory · inventory.stock.released)",
+          "target": "Order",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-026",
+          "name": "AcknowledgePaymentRefunded",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ PaymentRefunded (payments · payments.payment.refunded)",
+          "target": "Order",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "",
+          "saga": null,
+          "implementation": "scaffold",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        },
+        {
+          "id": "UC-ORD-030",
+          "name": "SyncCustomerAddress",
+          "actor": "system",
+          "type": "command",
+          "triggerKind": "event",
+          "triggerLabel": "⇠ CustomerAddressUpdated (customers · customers.customer.address.updated)",
+          "target": "CustomerAddress.upsert",
+          "rules": [],
+          "ruleDetails": [],
+          "returns": "",
+          "saga": null,
+          "implementation": "full",
+          "idempotent": false,
+          "cacheable": false,
+          "async": false,
+          "bulk": false,
+          "storageCalls": []
+        }
+      ],
+      "securityMatrix": [
+        {
+          "id": "UC-ORD-001",
+          "name": "CreateCart",
+          "endpoint": "POST /carts",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-002",
+          "name": "AddItemToCart",
+          "endpoint": "POST /carts/{cartId}/items",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-003",
+          "name": "UpdateCartItem",
+          "endpoint": "PATCH /carts/{cartId}/items/{itemId}",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-004",
+          "name": "RemoveCartItem",
+          "endpoint": "DELETE /carts/{cartId}/items/{itemId}",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-005",
+          "name": "Checkout",
+          "endpoint": "POST /carts/{cartId}/checkout",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-006",
+          "name": "GetCart",
+          "endpoint": "GET /carts/{cartId}",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-010",
+          "name": "GetOrder",
+          "endpoint": "GET /orders/{orderId}",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER",
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-011",
+          "name": "ListOrders",
+          "endpoint": "GET /orders",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER",
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": null,
+          "unprotected": false
+        },
+        {
+          "id": "UC-ORD-012",
+          "name": "CancelOrder",
+          "endpoint": "PATCH /orders/{orderId}/cancel",
+          "public": false,
+          "roles": [
+            "ROLE_CUSTOMER",
+            "ROLE_ADMIN"
+          ],
+          "permissions": [],
+          "scopes": [],
+          "ownership": {
+            "field": "customerId",
+            "claim": "sub"
+          },
+          "unprotected": false
+        }
+      ],
+      "operationsMatrix": [
+        {
+          "id": "UC-ORD-001",
+          "name": "CreateCart",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /carts",
+          "idempotency": {
+            "header": "Idempotency-Key",
+            "ttl": "PT24H"
+          },
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-002",
+          "name": "AddItemToCart",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /carts/{cartId}/items",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-003",
+          "name": "UpdateCartItem",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /carts/{cartId}/items/{itemId}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-004",
+          "name": "RemoveCartItem",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "DELETE /carts/{cartId}/items/{itemId}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-005",
+          "name": "Checkout",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "POST /carts/{cartId}/checkout",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 1,
+            "lookups": 0,
+            "detail": [
+              "fk CustomerAddress"
+            ]
+          }
+        },
+        {
+          "id": "UC-ORD-006",
+          "name": "GetCart",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /carts/{cartId}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-010",
+          "name": "GetOrder",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /orders/{orderId}",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-011",
+          "name": "ListOrders",
+          "type": "query",
+          "triggerKind": "http",
+          "endpoint": "GET /orders",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": {
+            "defaultSize": 20,
+            "maxSize": 100,
+            "sort": "createdAt DESC"
+          },
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-012",
+          "name": "CancelOrder",
+          "type": "command",
+          "triggerKind": "http",
+          "endpoint": "PATCH /orders/{orderId}/cancel",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-020",
+          "name": "ConfirmOrder",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ PaymentApproved (payments · payments.payment.approved)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-021",
+          "name": "CancelOrderOnStockFailed",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ StockReservationFailed (inventory · inventory.stock.reservation.failed)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-022",
+          "name": "CancelOrderOnPaymentFailed",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ PaymentFailed (payments · payments.payment.failed)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-023",
+          "name": "SetOrderInDelivery",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ DeliveryOrderCreated (delivery · delivery.delivery.order.created)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-024",
+          "name": "CompleteDelivery",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ DeliveryCompleted (delivery · delivery.delivery.completed)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-025",
+          "name": "AcknowledgeStockReleased",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ StockReleased (inventory · inventory.stock.released)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-026",
+          "name": "AcknowledgePaymentRefunded",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ PaymentRefunded (payments · payments.payment.refunded)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "scaffold",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        },
+        {
+          "id": "UC-ORD-030",
+          "name": "SyncCustomerAddress",
+          "type": "command",
+          "triggerKind": "event",
+          "endpoint": "⇠ CustomerAddressUpdated (customers · customers.customer.address.updated)",
+          "idempotency": null,
+          "cache": null,
+          "async": null,
+          "bulk": null,
+          "pagination": null,
+          "implementation": "full",
+          "deps": {
+            "outgoing": 0,
+            "fk": 0,
+            "lookups": 0,
+            "detail": []
+          }
+        }
+      ],
+      "events": {
+        "published": [
+          {
+            "name": "OrderPlaced",
+            "channel": "orders.order.placed",
+            "scope": "integration",
+            "payload": [
+              "orderId: Uuid",
+              "customerId: Uuid",
+              "paymentMethod: String(20)",
+              "total: Money",
+              "deliveryAddressId: Uuid",
+              "lines: List[OrderLineSnapshot]"
+            ]
+          },
+          {
+            "name": "OrderConfirmed",
+            "channel": "orders.order.confirmed",
+            "scope": "integration",
+            "payload": [
+              "orderId: Uuid",
+              "customerId: Uuid",
+              "paymentMethod: String(20)",
+              "total: Money",
+              "deliveryAddressId: Uuid",
+              "deliveryAddress: DeliveryAddressSnapshot"
+            ]
+          },
+          {
+            "name": "OrderCancelled",
+            "channel": "orders.order.cancelled",
+            "scope": "integration",
+            "payload": [
+              "orderId: Uuid",
+              "customerId: Uuid",
+              "paymentMethod: String(20)"
+            ]
+          }
+        ],
+        "consumed": [
+          {
+            "name": "PaymentApproved",
+            "sourceBc": "",
+            "channel": "payments.payment.approved"
+          },
+          {
+            "name": "PaymentFailed",
+            "sourceBc": "",
+            "channel": "payments.payment.failed"
+          },
+          {
+            "name": "PaymentRefunded",
+            "sourceBc": "",
+            "channel": "payments.payment.refunded"
+          },
+          {
+            "name": "StockReservationFailed",
+            "sourceBc": "",
+            "channel": "inventory.stock.reservation.failed"
+          },
+          {
+            "name": "StockReleased",
+            "sourceBc": "",
+            "channel": "inventory.stock.released"
+          },
+          {
+            "name": "DeliveryOrderCreated",
+            "sourceBc": "",
+            "channel": "delivery.delivery.order.created"
+          },
+          {
+            "name": "DeliveryCompleted",
+            "sourceBc": "",
+            "channel": "delivery.delivery.completed"
+          },
+          {
+            "name": "CustomerAddressUpdated",
+            "sourceBc": "",
+            "channel": "customers.customer.address.updated"
+          }
+        ],
+        "readModels": [
+          {
+            "name": "CustomerAddress",
+            "event": "",
+            "from": "",
+            "keyBy": "",
+            "upsertStrategy": ""
+          }
+        ]
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [
+          {
+            "direction": "outbound",
+            "partner": "catalog",
+            "partnerType": "internalBc",
+            "patternLabel": "customer-supplier",
+            "badge": "primary",
+            "channel": "http",
+            "contracts": [
+              "validateProductsAndPrices"
+            ],
+            "triggers": [
+              "UC-ORD-005 Checkout"
+            ],
+            "auth": "internal-jwt",
+            "resilience": "",
+            "rationale": "Mandatory synchronous HTTP call to catalog at checkout time to obtain the authoritative price for each product in the cart. Mandatory HTTP for monetary integrity — prevents OWASP A04 fraud via stale or client-manipulated prices. The customer never sends prices; prices are always fetched from the catalog.\nMandatory HTTP for monetary snapshot (OrderLine.unitPrice reads Product.price). Designer evaluated LRM trade-offs including OWASP A04 fraud risk and chose HTTP. Price is always read from catalog in real time at checkout — no inconsistency window. The customer sends only productId + quantity; the backend reads the authoritative price.",
+            "missingRationale": false
+          },
+          {
+            "direction": "outbound",
+            "partner": "delivery",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "OrderConfirmed",
+              "OrderCancelled"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "OrderConfirmed triggers DeliveryOrder creation (step 4). OrderCancelled triggers delivery cancellation if the delivery was already created.",
+            "missingRationale": false
+          },
+          {
+            "direction": "outbound",
+            "partner": "inventory",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "OrderPlaced"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Triggers stock reservation. Saga trigger event (step 1).",
+            "missingRationale": false
+          },
+          {
+            "direction": "outbound",
+            "partner": "notifications",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "OrderConfirmed",
+              "OrderCancelled"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Notifications BC sends an order confirmation message when the order is confirmed and a cancellation notice when the order is cancelled.",
+            "missingRationale": false
+          },
+          {
+            "direction": "outbound",
+            "partner": "payments",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "OrderCancelled"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Payments BC consumes OrderCancelled to check if a card payment was already captured. If so, it initiates a refund via payment-gateway and emits PaymentRefunded. This closes the compensation chain for post-confirmation cancellations that occur outside the CheckoutSaga (e.g., admin cancellation, customer cancellation request).",
+            "missingRationale": false
+          }
+        ],
+        "inbound": [
+          {
+            "direction": "inbound",
+            "partner": "customers",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "CustomerAddressUpdated"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "Orders maintains a local read model of customer addresses fed by this event. Designer chose LRM for delivery address (non-monetary identity data). Eventual consistency accepted (typical lag < 1-2s). Step 2 must define the initial snapshot strategy (e.g., one-time HTTP call at first order placement before the LRM is warmed up).",
+            "missingRationale": false
+          },
+          {
+            "direction": "inbound",
+            "partner": "delivery",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "DeliveryOrderCreated",
+              "DeliveryCompleted"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "DeliveryOrderCreated confirms to orders that the delivery is being arranged. DeliveryCompleted transitions the order to DELIVERED status.",
+            "missingRationale": false
+          },
+          {
+            "direction": "inbound",
+            "partner": "inventory",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "StockReservationFailed",
+              "StockReleased"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "StockReservationFailed triggers order cancellation (OrderCancelled) in orders. StockReleased is the compensation confirmation emitted by inventory after releasing reserved stock; orders receives it for saga state tracking.",
+            "missingRationale": false
+          },
+          {
+            "direction": "inbound",
+            "partner": "payments",
+            "partnerType": "",
+            "patternLabel": "event",
+            "badge": "info text-dark",
+            "channel": "message-broker",
+            "contracts": [
+              "PaymentApproved",
+              "PaymentFailed",
+              "PaymentRefunded"
+            ],
+            "triggers": [],
+            "auth": "",
+            "resilience": "",
+            "rationale": "PaymentApproved triggers order confirmation (step 3). PaymentFailed triggers order cancellation (compensation path). PaymentRefunded confirms the refund saga step for card payments.",
+            "missingRationale": false
+          }
+        ],
+        "contextMap": "flowchart LR\n  n_orders[\"orders\"]:::center\n  n_catalog[\"catalog\"]\n  n_orders -->|customer-supplier / http| n_catalog\n  n_delivery[\"delivery\"]\n  n_orders -->|event / message-broker| n_delivery\n  n_inventory[\"inventory\"]\n  n_orders -->|event / message-broker| n_inventory\n  n_notifications[\"notifications\"]\n  n_orders -->|event / message-broker| n_notifications\n  n_payments[\"payments\"]\n  n_orders -->|event / message-broker| n_payments\n  n_customers[\"customers\"]\n  n_customers -->|event / message-broker| n_orders\n  n_delivery -->|event / message-broker| n_orders\n  n_inventory -->|event / message-broker| n_orders\n  n_payments -->|event / message-broker| n_orders\n  classDef center fill:#111827,color:#fff,stroke:#111827;\n  classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12;"
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [],
+      "links": {
+        "reviewFile": "orders-review.html",
+        "designFile": "orders-design.html",
+        "openApiFile": "orders-openapi.html",
+        "internalApiFile": null,
+        "asyncApiFile": "orders-asyncapi.html"
+      }
+    },
+    {
+      "name": "payments",
+      "type": "supporting",
+      "purpose": "Processes and records payments for orders. Supports card payments via an external payment gateway and cash-on-delivery payments recorded when the courier collects the cash. Handles refunds for cancelled confirmed orders charged by card.\n",
+      "hasDesign": false,
+      "metrics": [
+        {
+          "label": "Status",
+          "value": "Pending",
+          "detail": "no tactical design"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 3,
+          "detail": "0 errors, 3 warnings"
+        }
+      ],
+      "decisions": [],
+      "useCaseCatalog": [],
+      "securityMatrix": [],
+      "operationsMatrix": [],
+      "events": {
+        "published": [],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [],
+        "inbound": [],
+        "contextMap": ""
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"PaymentApproved\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[0]"
+        },
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"PaymentFailed\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[1]"
+        },
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"PaymentRefunded\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[2]"
+        }
+      ],
+      "links": {
+        "reviewFile": null,
+        "designFile": null,
+        "openApiFile": null,
+        "internalApiFile": null,
+        "asyncApiFile": null
+      }
+    },
+    {
+      "name": "inventory",
+      "type": "supporting",
+      "purpose": "Tracks real-time stock levels for each active product. Creates a StockItem when a product is activated and permanently closes it when the product is discontinued. Reserves stock during the CheckoutSaga and releases it as compensation if payment fails.\n",
+      "hasDesign": false,
+      "metrics": [
+        {
+          "label": "Status",
+          "value": "Pending",
+          "detail": "no tactical design"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 2,
+          "detail": "0 errors, 2 warnings"
+        }
+      ],
+      "decisions": [],
+      "useCaseCatalog": [],
+      "securityMatrix": [],
+      "operationsMatrix": [],
+      "events": {
+        "published": [],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [],
+        "inbound": [],
+        "contextMap": ""
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"StockReservationFailed\" from \"inventory\" which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[3]"
+        },
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"StockReleased\" from \"inventory\" which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[4]"
+        }
+      ],
+      "links": {
+        "reviewFile": null,
+        "designFile": null,
+        "openApiFile": null,
+        "internalApiFile": null,
+        "asyncApiFile": null
+      }
+    },
+    {
+      "name": "delivery",
+      "type": "supporting",
+      "purpose": "Manages home delivery orders using the company's own courier fleet. Handles the full delivery lifecycle from assignment to completion. Records cash-on-delivery events for the payments BC.\n",
+      "hasDesign": false,
+      "metrics": [
+        {
+          "label": "Status",
+          "value": "Pending",
+          "detail": "no tactical design"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 2,
+          "detail": "0 errors, 2 warnings"
+        }
+      ],
+      "decisions": [],
+      "useCaseCatalog": [],
+      "securityMatrix": [],
+      "operationsMatrix": [],
+      "events": {
+        "published": [],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [],
+        "inbound": [],
+        "contextMap": ""
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"DeliveryOrderCreated\" from \"delivery\" which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[5]"
+        },
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"DeliveryCompleted\" from \"delivery\" which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[6]"
+        }
+      ],
+      "links": {
+        "reviewFile": null,
+        "designFile": null,
+        "openApiFile": null,
+        "internalApiFile": null,
+        "asyncApiFile": null
+      }
+    },
+    {
+      "name": "customers",
+      "type": "supporting",
+      "purpose": "Manages customer accounts and their delivery addresses. Publishes CustomerAddressUpdated events consumed by orders to maintain a local read model of delivery addresses for order snapshots.\n",
+      "hasDesign": false,
+      "metrics": [
+        {
+          "label": "Status",
+          "value": "Pending",
+          "detail": "no tactical design"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 1,
+          "detail": "0 errors, 1 warnings"
+        }
+      ],
+      "decisions": [],
+      "useCaseCatalog": [],
+      "securityMatrix": [],
+      "operationsMatrix": [],
+      "events": {
+        "published": [],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [],
+        "inbound": [],
+        "contextMap": ""
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "INT-007",
+          "level": "warn",
+          "message": "orders consumes event \"CustomerAddressUpdated\" from \"customers\" which is declared in system.yaml but not yet designed (no customers.yaml in arch/).",
+          "location": "orders.yaml#/domainEvents/consumed[7]"
+        }
+      ],
+      "links": {
+        "reviewFile": null,
+        "designFile": null,
+        "openApiFile": null,
+        "internalApiFile": null,
+        "asyncApiFile": null
+      }
+    },
+    {
+      "name": "notifications",
+      "type": "generic",
+      "purpose": "Delivers transactional notifications to customers (email, SMS, push) for key order lifecycle events: order confirmed, order cancelled, delivery completed. Fully delegates sending to an external notification provider. Generic domain — no competitive advantage; no business logic beyond template selection and dispatch.\n",
+      "hasDesign": false,
+      "metrics": [
+        {
+          "label": "Status",
+          "value": "Pending",
+          "detail": "no tactical design"
+        },
+        {
+          "label": "Diagnostics",
+          "value": 0,
+          "detail": "0 errors, 0 warnings"
+        }
+      ],
+      "decisions": [],
+      "useCaseCatalog": [],
+      "securityMatrix": [],
+      "operationsMatrix": [],
+      "events": {
+        "published": [],
+        "consumed": [],
+        "readModels": []
+      },
+      "storage": [],
+      "integrations": {
+        "outbound": [],
+        "inbound": [],
+        "contextMap": ""
+      },
+      "sagas": [
+        {
+          "name": "CheckoutSaga",
+          "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+          "trigger": {
+            "event": "OrderPlaced",
+            "bc": "orders"
+          },
+          "steps": [
+            {
+              "order": 1,
+              "bc": "inventory",
+              "triggeredBy": "OrderPlaced",
+              "onSuccess": "StockReserved",
+              "onFailure": "StockReservationFailed",
+              "compensation": "StockReleased",
+              "implementedBy": null
+            },
+            {
+              "order": 2,
+              "bc": "payments",
+              "triggeredBy": "StockReserved",
+              "onSuccess": "PaymentApproved",
+              "onFailure": "PaymentFailed",
+              "compensation": "PaymentRefunded",
+              "implementedBy": null
+            },
+            {
+              "order": 3,
+              "bc": "orders",
+              "triggeredBy": "PaymentApproved",
+              "onSuccess": "OrderConfirmed",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": {
+                "bc": "orders",
+                "id": "UC-ORD-020",
+                "name": "ConfirmOrder"
+              }
+            },
+            {
+              "order": 4,
+              "bc": "delivery",
+              "triggeredBy": "OrderConfirmed",
+              "onSuccess": "DeliveryOrderCreated",
+              "onFailure": "",
+              "compensation": "",
+              "implementedBy": null
+            }
+          ],
+          "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+        }
+      ],
+      "diagnostics": [],
+      "links": {
+        "reviewFile": null,
+        "designFile": null,
+        "openApiFile": null,
+        "internalApiFile": null,
+        "asyncApiFile": null
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "id": "SYS-001",
+      "scope": "system",
+      "title": "System profile",
+      "category": "strategic",
+      "current": "canasta-familiar (unclassified)",
+      "options": [
+        "core",
+        "supporting",
+        "generic"
+      ],
+      "rationale": "Confirms how much domain design investment the system deserves.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"System profile\". Context: canasta-familiar (unclassified) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (core | supporting | generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-002",
+      "scope": "system",
+      "title": "Bounded context boundaries",
+      "category": "strategic",
+      "current": "7 BC(s), type split: core: 2, supporting: 4, generic: 1",
+      "options": [
+        "keep current BCs",
+        "split oversized BCs",
+        "merge thin BCs",
+        "reclassify core/supporting/generic"
+      ],
+      "rationale": "BC boundaries drive ownership, language and downstream generation modules.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Bounded context boundaries\". Context: 7 BC(s), type split: core: 2, supporting: 4, generic: 1 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (keep current BCs | split oversized BCs | merge thin BCs | reclassify core/supporting/generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-003",
+      "scope": "system",
+      "title": "Integration style",
+      "category": "strategic",
+      "current": "16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3",
+      "options": [
+        "customer-supplier http",
+        "event message-broker",
+        "acl",
+        "open-host",
+        "shared-kernel"
+      ],
+      "rationale": "This is the main coupling and availability map of the system.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Integration style\". Context: 16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (customer-supplier http | event message-broker | acl | open-host | shared-kernel) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-004",
+      "scope": "system",
+      "title": "Infrastructure constraints",
+      "category": "strategic",
+      "current": "deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url)",
+      "options": [
+        "modular-monolith",
+        "microservices",
+        "schema-per-bc",
+        "db-per-bc",
+        "auth server on/off",
+        "message broker on/off",
+        "object storage on/off"
+      ],
+      "rationale": "Infrastructure flags explain why generated projects need shared auth, broker, or object storage capabilities.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Infrastructure constraints\". Context: deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (modular-monolith | microservices | schema-per-bc | db-per-bc | auth server on/off | message broker on/off | object storage on/off) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-005",
+      "scope": "system",
+      "title": "External systems and sagas",
+      "category": "strategic",
+      "current": "2 external system(s), 1 saga(s), 3 actor type(s)",
+      "options": [
+        "declare external ACL",
+        "model saga",
+        "keep process inside one BC",
+        "declare actors for validation"
+      ],
+      "rationale": "External dependencies and cross-BC processes are high-value review points before generation.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"External systems and sagas\". Context: 2 external system(s), 1 saga(s), 3 actor type(s) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (declare external ACL | model saga | keep process inside one BC | declare actors for validation) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "SYS-006",
+      "scope": "system",
+      "title": "Reliability patterns",
+      "category": "strategic",
+      "current": "outbox=true (retention 7d), consumerIdempotency=true (retention 14d)",
+      "options": [
+        "outbox on/off",
+        "consumerIdempotency on/off",
+        "set retention days"
+      ],
+      "rationale": "Event reliability flags control at-least-once publication and consumer deduplication; recommended on whenever sagas exist.",
+      "files": [
+        "arch/system/system.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Reliability patterns\". Context: outbox=true (retention 7d), consumerIdempotency=true (retention 14d) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (outbox on/off | consumerIdempotency on/off | set retention days) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-DM-001",
+      "scope": "catalog",
+      "title": "Domain model shape",
+      "category": "domain-model",
+      "current": "2 aggregate(s), 1 entity/entities, 1 value object(s)",
+      "options": [
+        "aggregate",
+        "entity composition",
+        "entity aggregation",
+        "value object",
+        "projection"
+      ],
+      "rationale": "Confirms whether concepts are modeled with identity, ownership or value semantics.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Domain model shape\". Context: 2 aggregate(s), 1 entity/entities, 1 value object(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (aggregate | entity composition | entity aggregation | value object | projection) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-DM-002",
+      "scope": "catalog",
+      "title": "State management",
+      "category": "domain-model",
+      "current": "3 enum(s), 2 lifecycle enum(s) with transitions",
+      "options": [
+        "lifecycle enum with transitions",
+        "classification enum",
+        "boolean flag",
+        "domain rule gate"
+      ],
+      "rationale": "Lifecycle states define allowed transitions and event emission points.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"State management\". Context: 3 enum(s), 2 lifecycle enum(s) with transitions Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (lifecycle enum with transitions | classification enum | boolean flag | domain rule gate) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-UC-001",
+      "scope": "catalog",
+      "title": "Use case topology",
+      "category": "behavior",
+      "current": "15 use case(s), command: 10, query: 5; triggers: http=15, event=0",
+      "options": [
+        "command",
+        "query",
+        "http trigger",
+        "event trigger",
+        "bulk",
+        "async",
+        "cacheable",
+        "idempotent"
+      ],
+      "rationale": "Use case shape determines whether behavior mutates state, exposes reads, or reacts to events.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Use case topology\". Context: 15 use case(s), command: 10, query: 5; triggers: http=15, event=0 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (command | query | http trigger | event trigger | bulk | async | cacheable | idempotent) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-UC-002",
+      "scope": "catalog",
+      "title": "Authorization strategy",
+      "category": "security",
+      "current": "11 authorized use case(s), 4 public use case(s)",
+      "options": [
+        "public",
+        "rolesAnyOf",
+        "permissionsAnyOf",
+        "scopesAnyOf",
+        "ownership"
+      ],
+      "rationale": "Security choices should be visible to the designer before implementation.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Authorization strategy\". Context: 11 authorized use case(s), 4 public use case(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (public | rolesAnyOf | permissionsAnyOf | scopesAnyOf | ownership) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-UC-003",
+      "scope": "catalog",
+      "title": "Lookup and FK validation routes",
+      "category": "consistency",
+      "current": "4 FK validation(s), 0 use case(s) with lookups",
+      "options": [
+        "notFoundError",
+        "lookups[]",
+        "same-BC fkValidation",
+        "Local Read Model lookup",
+        "external ServicePort"
+      ],
+      "rationale": "These choices decide where referential integrity is checked and which dependencies appear.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Lookup and FK validation routes\". Context: 4 FK validation(s), 0 use case(s) with lookups Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-EV-001",
+      "scope": "catalog",
+      "title": "Events and Local Read Models",
+      "category": "events",
+      "current": "2 published event(s), 0 consumed event(s), 0 local read model(s)",
+      "options": [
+        "publish event",
+        "consume event",
+        "listenerRequired false",
+        "persistent projection",
+        "readModel aggregate",
+        "HTTP sync instead of LRM"
+      ],
+      "rationale": "Event and LRM decisions control coupling, availability and eventual consistency trade-offs.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Events and Local Read Models\". Context: 2 published event(s), 0 consumed event(s), 0 local read model(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-INT-001",
+      "scope": "catalog",
+      "title": "Integration points",
+      "category": "integration",
+      "current": "outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1)",
+      "options": [
+        "outbound HTTP",
+        "inbound HTTP",
+        "event subscription",
+        "external ACL",
+        "resilience override",
+        "auth override"
+      ],
+      "rationale": "Integration declarations must align with system.yaml and contract artifacts.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Integration points\". Context: outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-API-001",
+      "scope": "catalog",
+      "title": "API contracts",
+      "category": "contracts",
+      "current": "public REST operations=14, internal REST operations=1, async channels=2",
+      "options": [
+        "public OpenAPI",
+        "internal OpenAPI",
+        "AsyncAPI publish",
+        "AsyncAPI subscribe",
+        "no external contract"
+      ],
+      "rationale": "Contract files are how the tactical design becomes reviewable by clients and other BCs.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"API contracts\". Context: public REST operations=14, internal REST operations=1, async channels=2 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (public OpenAPI | internal OpenAPI | AsyncAPI publish | AsyncAPI subscribe | no external contract) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "catalog-ERR-001",
+      "scope": "catalog",
+      "title": "Error catalog",
+      "category": "errors",
+      "current": "9 declared error(s), HTTP status split: 404: 3, 409: 3, 422: 3",
+      "options": [
+        "domain error",
+        "not found",
+        "conflict",
+        "validation error",
+        "manual-only error"
+      ],
+      "rationale": "Error catalog completeness affects generated exception contracts and API responses.",
+      "files": [
+        "arch/catalog/catalog.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Error catalog\". Context: 9 declared error(s), HTTP status split: 404: 3, 409: 3, 422: 3 Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (domain error | not found | conflict | validation error | manual-only error) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-DM-001",
+      "scope": "orders",
+      "title": "Domain model shape",
+      "category": "domain-model",
+      "current": "3 aggregate(s), 2 entity/entities, 3 value object(s)",
+      "options": [
+        "aggregate",
+        "entity composition",
+        "entity aggregation",
+        "value object",
+        "projection"
+      ],
+      "rationale": "Confirms whether concepts are modeled with identity, ownership or value semantics.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Domain model shape\". Context: 3 aggregate(s), 2 entity/entities, 3 value object(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (aggregate | entity composition | entity aggregation | value object | projection) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-DM-002",
+      "scope": "orders",
+      "title": "State management",
+      "category": "domain-model",
+      "current": "3 enum(s), 2 lifecycle enum(s) with transitions",
+      "options": [
+        "lifecycle enum with transitions",
+        "classification enum",
+        "boolean flag",
+        "domain rule gate"
+      ],
+      "rationale": "Lifecycle states define allowed transitions and event emission points.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"State management\". Context: 3 enum(s), 2 lifecycle enum(s) with transitions Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (lifecycle enum with transitions | classification enum | boolean flag | domain rule gate) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-UC-001",
+      "scope": "orders",
+      "title": "Use case topology",
+      "category": "behavior",
+      "current": "17 use case(s), command: 14, query: 3; triggers: http=9, event=8",
+      "options": [
+        "command",
+        "query",
+        "http trigger",
+        "event trigger",
+        "bulk",
+        "async",
+        "cacheable",
+        "idempotent"
+      ],
+      "rationale": "Use case shape determines whether behavior mutates state, exposes reads, or reacts to events.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Use case topology\". Context: 17 use case(s), command: 14, query: 3; triggers: http=9, event=8 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (command | query | http trigger | event trigger | bulk | async | cacheable | idempotent) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-UC-002",
+      "scope": "orders",
+      "title": "Authorization strategy",
+      "category": "security",
+      "current": "9 authorized use case(s), 0 public use case(s)",
+      "options": [
+        "public",
+        "rolesAnyOf",
+        "permissionsAnyOf",
+        "scopesAnyOf",
+        "ownership"
+      ],
+      "rationale": "Security choices should be visible to the designer before implementation.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Authorization strategy\". Context: 9 authorized use case(s), 0 public use case(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public | rolesAnyOf | permissionsAnyOf | scopesAnyOf | ownership) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-UC-003",
+      "scope": "orders",
+      "title": "Lookup and FK validation routes",
+      "category": "consistency",
+      "current": "1 FK validation(s), 0 use case(s) with lookups",
+      "options": [
+        "notFoundError",
+        "lookups[]",
+        "same-BC fkValidation",
+        "Local Read Model lookup",
+        "external ServicePort"
+      ],
+      "rationale": "These choices decide where referential integrity is checked and which dependencies appear.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Lookup and FK validation routes\". Context: 1 FK validation(s), 0 use case(s) with lookups Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-EV-001",
+      "scope": "orders",
+      "title": "Events and Local Read Models",
+      "category": "events",
+      "current": "3 published event(s), 8 consumed event(s), 1 local read model(s)",
+      "options": [
+        "publish event",
+        "consume event",
+        "listenerRequired false",
+        "persistent projection",
+        "readModel aggregate",
+        "HTTP sync instead of LRM"
+      ],
+      "rationale": "Event and LRM decisions control coupling, availability and eventual consistency trade-offs.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Events and Local Read Models\". Context: 3 published event(s), 8 consumed event(s), 1 local read model(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-INT-001",
+      "scope": "orders",
+      "title": "Integration points",
+      "category": "integration",
+      "current": "outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4)",
+      "options": [
+        "outbound HTTP",
+        "inbound HTTP",
+        "event subscription",
+        "external ACL",
+        "resilience override",
+        "auth override"
+      ],
+      "rationale": "Integration declarations must align with system.yaml and contract artifacts.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Integration points\". Context: outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-API-001",
+      "scope": "orders",
+      "title": "API contracts",
+      "category": "contracts",
+      "current": "public REST operations=9, internal REST operations=0, async channels=11",
+      "options": [
+        "public OpenAPI",
+        "internal OpenAPI",
+        "AsyncAPI publish",
+        "AsyncAPI subscribe",
+        "no external contract"
+      ],
+      "rationale": "Contract files are how the tactical design becomes reviewable by clients and other BCs.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"API contracts\". Context: public REST operations=9, internal REST operations=0, async channels=11 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public OpenAPI | internal OpenAPI | AsyncAPI publish | AsyncAPI subscribe | no external contract) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    },
+    {
+      "id": "orders-ERR-001",
+      "scope": "orders",
+      "title": "Error catalog",
+      "category": "errors",
+      "current": "17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1",
+      "options": [
+        "domain error",
+        "not found",
+        "conflict",
+        "validation error",
+        "manual-only error"
+      ],
+      "rationale": "Error catalog completeness affects generated exception contracts and API responses.",
+      "files": [
+        "arch/orders/orders.yaml"
+      ],
+      "severity": "review",
+      "prompt": "Review the DSL design decision \"Error catalog\". Context: 17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (domain error | not found | conflict | validation error | manual-only error) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes."
+    }
+  ],
+  "sagas": [
+    {
+      "name": "CheckoutSaga",
+      "description": "Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.\n",
+      "trigger": {
+        "event": "OrderPlaced",
+        "bc": "orders"
+      },
+      "steps": [
+        {
+          "order": 1,
+          "bc": "inventory",
+          "triggeredBy": "OrderPlaced",
+          "onSuccess": "StockReserved",
+          "onFailure": "StockReservationFailed",
+          "compensation": "StockReleased",
+          "implementedBy": null
+        },
+        {
+          "order": 2,
+          "bc": "payments",
+          "triggeredBy": "StockReserved",
+          "onSuccess": "PaymentApproved",
+          "onFailure": "PaymentFailed",
+          "compensation": "PaymentRefunded",
+          "implementedBy": null
+        },
+        {
+          "order": 3,
+          "bc": "orders",
+          "triggeredBy": "PaymentApproved",
+          "onSuccess": "OrderConfirmed",
+          "onFailure": "",
+          "compensation": "",
+          "implementedBy": {
+            "bc": "orders",
+            "id": "UC-ORD-020",
+            "name": "ConfirmOrder"
+          }
+        },
+        {
+          "order": 4,
+          "bc": "delivery",
+          "triggeredBy": "OrderConfirmed",
+          "onSuccess": "DeliveryOrderCreated",
+          "onFailure": "",
+          "compensation": "",
+          "implementedBy": null
+        }
+      ],
+      "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"PaymentApproved\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[0]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"PaymentFailed\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[1]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"PaymentRefunded\" from \"payments\" which is declared in system.yaml but not yet designed (no payments.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[2]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"StockReservationFailed\" from \"inventory\" which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[3]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"StockReleased\" from \"inventory\" which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[4]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"DeliveryOrderCreated\" from \"delivery\" which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[5]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"DeliveryCompleted\" from \"delivery\" which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[6]"
+    },
+    {
+      "code": "INT-007",
+      "level": "warn",
+      "message": "orders consumes event \"CustomerAddressUpdated\" from \"customers\" which is declared in system.yaml but not yet designed (no customers.yaml in arch/).",
+      "location": "orders.yaml#/domainEvents/consumed[7]"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 1: onSuccess \"StockReserved\" is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[0]/onSuccess"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 1: onFailure \"StockReservationFailed\" is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[0]/onFailure"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 1: compensation \"StockReleased\" is not published by any designed BC yet (producer BC not yet in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[0]/compensation"
+    },
+    {
+      "code": "INT-012",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 2: triggeredBy \"StockReserved\" would be published by an undesigned BC (not yet in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[1]/triggeredBy"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 2: onSuccess \"PaymentApproved\" is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[1]/onSuccess"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 2: onFailure \"PaymentFailed\" is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[1]/onFailure"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 2: compensation \"PaymentRefunded\" is not published by any designed BC yet (producer BC not yet in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[1]/compensation"
+    },
+    {
+      "code": "INT-012",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 3: triggeredBy \"PaymentApproved\" would be published by an undesigned BC (not yet in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[2]/triggeredBy"
+    },
+    {
+      "code": "INT-014",
+      "level": "warn",
+      "message": "Saga \"CheckoutSaga\" step 4: onSuccess \"DeliveryOrderCreated\" is not published by delivery.yaml (BC not yet designed — no delivery.yaml in arch/).",
+      "location": "system.yaml#/sagas[0]/steps[3]/onSuccess"
+    }
+  ]
+}

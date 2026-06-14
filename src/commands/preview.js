@@ -153,9 +153,15 @@ function extractSystemDecisions(systemData) {
       'system',
       'Infrastructure constraints',
       'strategic',
-      `deployment=${infrastructure.deployment?.strategy || infrastructure.deploymentStrategy || 'default'}, database=${infrastructure.database?.type || infrastructure.databaseType || 'default'}, authServer=${String(Boolean(infrastructure.authServer))}, messageBroker=${String(Boolean(infrastructure.messageBroker))}`,
-      ['modular-monolith', 'microservices', 'schema-per-bc', 'db-per-bc', 'auth server on/off', 'message broker on/off'],
-      'Infrastructure flags explain why generated projects need shared auth or broker capabilities.',
+      (() => {
+        const buckets = asArray(infrastructure.objectStorage);
+        const bucketSummary = buckets.length
+          ? `, objectStorage=${buckets.length} bucket(s) (${buckets.map((b) => `${b.name}: ${b.visibility || '?'}/${b.urlAccess || '?'}`).join(', ')})`
+          : ', objectStorage=none';
+        return `deployment=${infrastructure.deployment?.strategy || infrastructure.deploymentStrategy || 'default'}, database=${infrastructure.database?.type || infrastructure.databaseType || 'default'}, authServer=${String(Boolean(infrastructure.authServer))}, messageBroker=${String(Boolean(infrastructure.messageBroker))}${bucketSummary}`;
+      })(),
+      ['modular-monolith', 'microservices', 'schema-per-bc', 'db-per-bc', 'auth server on/off', 'message broker on/off', 'object storage on/off'],
+      'Infrastructure flags explain why generated projects need shared auth, broker, or object storage capabilities.',
       files
     ),
     decision(
@@ -394,6 +400,7 @@ function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
       cacheable: Boolean(uc.cacheable),
       async: Boolean(uc.async),
       bulk: Boolean(uc.bulk),
+      storageCalls: asArray(uc.storageCalls).map((c) => `${c.store}:${c.operation}`),
     };
   });
 }
@@ -580,6 +587,40 @@ function extractEvents(bcYaml) {
     })),
   ];
   return { published, consumed, readModels };
+}
+
+function extractStorageUsage(bcYaml, systemData) {
+  if (!bcYaml) return [];
+  const storageIndex = Object.fromEntries(
+    asArray(systemData && systemData.infrastructure && systemData.infrastructure.objectStorage)
+      .map((s) => [s.name, s])
+  );
+  const byStore = {};
+  for (const uc of asArray(bcYaml.useCases)) {
+    for (const call of asArray(uc.storageCalls)) {
+      if (!call || !call.store) continue;
+      if (!byStore[call.store]) {
+        const decl = storageIndex[call.store] || {};
+        byStore[call.store] = {
+          store: call.store,
+          visibility: decl.visibility || '—',
+          urlAccess: decl.urlAccess || '—',
+          ownedBy: decl.ownedBy || '—',
+          signedUrlTtl: decl.signedUrlTtl || null,
+          notes: decl.notes || '',
+          usages: [],
+        };
+      }
+      byStore[call.store].usages.push({
+        ucId: uc.id || '—',
+        ucName: uc.name || '—',
+        operation: call.operation || '—',
+        input: call.input || null,
+        bindsTo: call.bindsTo || null,
+      });
+    }
+  }
+  return Object.values(byStore);
 }
 
 // ─── Integrations (direct bounded-context relationships) ──────────────────────
@@ -824,6 +865,9 @@ function buildBcMetrics(bcDoc, diagnostics) {
   const useCaseTypes = countBy(useCases, (uc) => uc.type);
   const outbound = asArray(bcDoc.integrations && bcDoc.integrations.outbound);
   const inbound = asArray(bcDoc.integrations && bcDoc.integrations.inbound);
+  const storageStores = new Set(
+    useCases.flatMap((uc) => asArray(uc.storageCalls).map((c) => c && c.store).filter(Boolean))
+  );
 
   return [
     { label: 'Aggregates', value: aggregates.length, detail: `${aggregates.reduce((sum, aggregate) => sum + asArray(aggregate && aggregate.entities).length, 0)} entities` },
@@ -831,6 +875,7 @@ function buildBcMetrics(bcDoc, diagnostics) {
     { label: 'Events', value: published.length + consumed.length, detail: `${published.length} published, ${consumed.length} consumed` },
     { label: 'Integrations', value: outbound.length + inbound.length, detail: `${outbound.length} outbound, ${inbound.length} inbound` },
     { label: 'Read models', value: readModels, detail: 'readModel aggregates + persistent projections' },
+    { label: 'Storage', value: storageStores.size, detail: storageStores.size ? [...storageStores].join(', ') : 'no buckets' },
     { label: 'Diagnostics', value: diagnostics.length, detail: `${countDiagnostics(diagnostics).errors} errors, ${countDiagnostics(diagnostics).warnings} warnings` },
   ];
 }
@@ -1503,6 +1548,9 @@ function behaviorBadges(uc, locale = 'es') {
   if (uc.implementation === 'scaffold') {
     badges.push(`<span class="badge bg-warning text-dark ms-1" title="${i18nText('ops.scaffoldHint', locale)}">scaffold</span>`);
   }
+  for (const call of asArray(uc.storageCalls)) {
+    badges.push(`<span class="badge bg-secondary ms-1" title="${escapeHtml(call)}">&#128190; ${escapeHtml(call)}</span>`);
+  }
   return badges.join('');
 }
 
@@ -1553,6 +1601,47 @@ function renderUseCaseRows(rows, locale = 'es') {
         <td>${sagaBadge}</td>
       </tr>`;
   }).join('');
+}
+
+function renderStorageSummary(storageUsage, locale = 'es') {
+  if (!asArray(storageUsage).length) {
+    return `<p class="text-muted small" data-i18n="ui.noStorageBuckets">${i18nText('ui.noStorageBuckets', locale)}</p>`;
+  }
+  const rows = storageUsage.map((entry) => {
+    const visibilityBadge = entry.visibility === 'public'
+      ? `<span class="badge bg-info text-dark">${escapeHtml(entry.visibility)}</span>`
+      : `<span class="badge bg-secondary">${escapeHtml(entry.visibility)}</span>`;
+    const urlBadge = entry.urlAccess === 'public-url'
+      ? `<span class="badge bg-success">${escapeHtml(entry.urlAccess)}</span>`
+      : `<span class="badge bg-warning text-dark">${escapeHtml(entry.urlAccess)}</span>`;
+    const ownedByBadge = entry.ownedBy !== '—'
+      ? `<span class="badge bg-dark">${escapeHtml(entry.ownedBy)}</span>`
+      : '<span class="text-muted">—</span>';
+    const ops = entry.usages.map((u) =>
+      `<span class="badge bg-light text-dark border me-1 font-monospace" title="${escapeHtml(u.ucName)}">${escapeHtml(u.ucId)} <em>${escapeHtml(u.operation)}</em></span>`
+    ).join('');
+    const notes = entry.notes
+      ? `<div class="text-muted small mt-1">${escapeHtml(entry.notes)}</div>`
+      : '';
+    return `
+      <tr>
+        <td><span class="font-monospace">${escapeHtml(entry.store)}</span>${notes}</td>
+        <td>${visibilityBadge}</td>
+        <td>${urlBadge}${entry.signedUrlTtl ? `<span class="ms-1 text-muted small">${escapeHtml(entry.signedUrlTtl)}</span>` : ''}</td>
+        <td>${ownedByBadge}</td>
+        <td>${ops}</td>
+      </tr>`;
+  }).join('');
+  return `
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="storage.store">${i18nText('storage.store', locale)}</th>
+        <th data-i18n="storage.visibility">${i18nText('storage.visibility', locale)}</th>
+        <th data-i18n="storage.urlAccess">${i18nText('storage.urlAccess', locale)}</th>
+        <th data-i18n="storage.ownedBy">${i18nText('storage.ownedBy', locale)}</th>
+        <th data-i18n="storage.operations">${i18nText('storage.operations', locale)}</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 function renderUseCaseCatalog(catalog, locale = 'es') {
@@ -1902,6 +1991,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     </section>
 
     <section class="mb-4">
+      <h2 class="h5 mb-3" data-i18n="ui.storageBuckets">${i18nText('ui.storageBuckets', locale)}</h2>
+      <div class="detail-card">${renderStorageSummary(bcReview.storage, locale)}</div>
+    </section>
+
+    <section class="mb-4">
       <h2 class="h5 mb-3" data-i18n="ui.directIntegrations">${i18nText('ui.directIntegrations', locale)}</h2>
       <div class="detail-card">${renderIntegrations(bcReview.integrations, locale)}</div>
     </section>
@@ -1939,6 +2033,7 @@ function renderDecisionsExplorer(reviewModel, locale = 'es') {
     ['operations', 'ui.operationalBehavior'],
     ['sagas', 'ui.systemSagas'],
     ['events', 'ui.eventsReadModels'],
+    ['storage', 'ui.storageBuckets'],
     ['integrations', 'ui.directIntegrations'],
   ].map(([value, key]) => `<option value="${value}" data-i18n="${key}">${i18nText(key, locale)}</option>`).join('');
 
@@ -1958,6 +2053,7 @@ function renderDecisionsExplorer(reviewModel, locale = 'es') {
     block(bc.name, 'security', 'ui.endpointSecurity', renderSecurityMatrix(bc.securityMatrix, locale)),
     block(bc.name, 'operations', 'ui.operationalBehavior', renderOperationsMatrix(bc.operationsMatrix, locale)),
     block(bc.name, 'events', 'ui.eventsReadModels', renderEvents(bc.events, locale)),
+    block(bc.name, 'storage', 'ui.storageBuckets', renderStorageSummary(bc.storage, locale)),
     block(bc.name, 'integrations', 'ui.directIntegrations', renderIntegrations(bc.integrations, locale)),
   ].join('')).join('');
 
@@ -2621,6 +2717,7 @@ function registerPreview(program) {
           securityMatrix: extractSecurityMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           operationsMatrix: extractOperationsMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           events: extractEvents(artifact.bcDoc),
+          storage: extractStorageUsage(artifact.bcDoc, systemData),
           integrations: bcIntegrations,
           sagas,
           diagnostics: bcDiagnostics,
