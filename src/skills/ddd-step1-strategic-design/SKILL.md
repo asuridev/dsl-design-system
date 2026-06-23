@@ -648,6 +648,22 @@ Genera los tres artefactos en orden. Lee las referencias antes de escribir:
 → Lee `references/system-yaml-schema.md` para el schema completo de system.yaml
 → Lee `references/system-yaml-guide.md` para ejemplos anotados, señales de diseño (sobre/sub-diseño), patrones de integración con árbol de decisión y checklist de validación
 
+### Pre-vuelo: Verificación de Estructura — Object Storage
+
+Gate no omitible — ejecutar antes del check de agnosticismo.
+
+Recorre la lista de `externalSystems` candidatos. Si alguno tiene nombre o propósito que
+coincida con almacenamiento de binarios (`storage`, `images`, `files`, `documents`,
+`uploads`, `attachments`, `media`, `assets`) o sus operaciones son `upload`/`download`/
+`delete`/`put`/`get` sobre objetos binarios:
+
+→ **No lo declares como `externalSystem`.** Usa `infrastructure.objectStorage` en su lugar.
+→ Elimina cualquier entrada `externalSystems` + `integrations[]` que hayas generado para ese recurso.
+→ Declara el store en `infrastructure.objectStorage` con los campos correctos (`name`, `visibility`, `urlAccess`, `ownedBy`, `notes`).
+→ Los use cases que interactúen con ese store usarán `storageCalls[]` en el diseño táctico (Paso 2).
+
+Ver guía completa en `references/system-yaml-guide.md` → sección `externalSystems` → "Qué NO es un sistema externo".
+
 ### Pre-vuelo: Verificación de Agnosticismo Tecnológico
 
 Gate no omitible — ejecutar antes de escribir cualquier archivo. Si detectas referencias
@@ -661,9 +677,15 @@ de BCs, agregados, entidades, contratos, actores):
 | Frameworks / librerías | `Spring`, `JPA`, `Hibernate`, `Django`, `FastAPI`, `NestJS`, `TypeORM`, `Rails`, `Laravel`, `Express` |
 | Bases de datos concretas | `PostgreSQL`, `MySQL`, `MongoDB`, `DynamoDB`, `Redis`, `Cassandra`, `ElasticSearch` |
 | Message brokers concretos | `Kafka`, `RabbitMQ`, `SQS`, `PubSub`, `ServiceBus`, `NATS` |
-| Proveedores cloud | `AWS`, `GCP`, `Azure`, `S3`, `ECR`, `Lambda`, `Cloud Run` |
+| Proveedores cloud / storage | `AWS`, `GCP`, `Azure`, `S3`, `S3-compatible`, `GCS`, `MinIO`, `Azure Blob`, `ECR`, `Lambda`, `Cloud Run` |
+| Patrones de implementación en notes | `proxif`, `CDN`, `presign`, `signed URL algorithm`, `IAM`, `bucket policy`, `multipart upload` |
 | Anotaciones / tipos de lenguaje | `@Entity`, `@Column`, `BigDecimal`, `LocalDateTime`, `UUID` (Java), `List<T>`, `Dict`, `async def` |
 | SQL físico | Nombres de tablas, columnas, `SELECT`, `JOIN`, `INDEX ON`, secuencias, triggers |
+
+**Caso frecuente — `objectStorage[].notes`:** el campo `notes` de un store describe propósito de negocio.
+Si contiene referencias al proveedor (`S3`, `GCS`, `MinIO`), al patrón de acceso (`proxify`, `CDN`,
+`presigned URL`) o a la infraestructura (`bucket policy`, `IAM role`), reemplazar por lenguaje de dominio:
+qué almacena, quién lo usa y qué produce para el agregado. Ver ejemplos en `references/system-yaml-guide.md`.
 
 **Primitivas DSL válidas** que sí pueden aparecer (no son referencias tecnológicas):
 `message-broker`, `http`, `grpc`, `websocket`, `oauth2-cc`, `mTLS`, `internal-jwt`,

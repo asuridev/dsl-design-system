@@ -403,7 +403,7 @@ aggregates:
 
 | Campo | Descripción |
 |---|---|
-| `name` | camelCase. |
+| `name` | camelCase. **No usar palabras reservadas de Java/SQL/JPQL** como nombre de propiedad (`default`, `class`, `case`, `new`, `order`, `group`, `user`, `key`, `value`, `level`, `desc`, `asc`…): el generador las emite como identificadores Java y rutas JPQL/columnas, y romperían la compilación o la query. Para **banderas booleanas** usar el prefijo `is`/`has`: `isDefault`, `isActive`, `isVerified` (nunca `default`, `active`, `verified`). |
 | `type` | Tipo canónico, enum propio, o Value Object. |
 | `required` | `true` \| `false`. |
 | `unique` | `true` → índice UNIQUE en DB y método `findBy{Campo}` en el repositorio. |
@@ -901,6 +901,8 @@ repositories:
 
 `find{Qualifier}By{Field}` es válido cuando `{Qualifier}` resuelve a un literal del enum de estado del agregado (`status` o `*Status`) o a soft delete (`Deleted`, `NonDeleted`, `NotDeleted`). Ejemplo: `findActiveByCustomerId` sobre `CartStatus.ACTIVE` genera `status = 'ACTIVE' AND customerId = :customerId`. `{Field}` debe existir en el agregado raíz. Retornos válidos: `T?`, `List[T]`, `Page[T]`.
 
+`{Qualifier}` también resuelve a una **bandera booleana** del agregado: si existe una propiedad `Boolean` llamada `is{Qualifier}` (p. ej. `isDefault`), el generador deriva `is{Qualifier} = true AND {field} = :{field}`. Aplica a `find/count/exists/search{Qualifier}By{Field}`; los prefijos `Non`/`Not` niegan la bandera (`= false`). Ejemplo: `findDefaultByCustomerId` sobre la propiedad `isDefault` → `isDefault = true AND customerId = :customerId`. **La propiedad debe llamarse `isDefault`, nunca `default`** (palabra reservada de Java/JPQL). Los calificadores de estado y soft-delete tienen prioridad sobre el booleano.
+
 ---
 
 ### `methods` — métodos point-lookup, escritura y conteo
@@ -1017,6 +1019,7 @@ explícitos adicionales necesarios.
 | `list` | Query con filtros opcionales y paginación. Siempre en `queryMethods`. |
 | `listBy{Param}` | Query filtrada por un único parámetro **obligatorio** (ej: `listByCustomerId`). Siempre en `queryMethods`. |
 | `search{Aggregates}` | Búsqueda semántica con múltiples filtros opcionales y texto libre. Siempre en `queryMethods`. |
+| `find{Flag}By{Campo}` | Lookup puntual por bandera booleana + campo. `{Flag}` ↔ propiedad `Boolean` `is{Flag}` del agregado (ej: `findDefaultByCustomerId` sobre `isDefault` → `isDefault = true AND customerId = :customerId`). `Non`/`Not` niegan. La propiedad debe ser `isDefault`, **nunca `default`**. |
 | `countBy{Campo}` | Cuenta instancias que referencian otro agregado. Para reglas `crossAggregateConstraint`. |
 | `countNonDeletedBy{Campo}` | Igual que `countBy{Campo}` pero agrega `deleted_at IS NULL`. **Usar en vez de `countActiveBy{Campo}`** — el calificador `Active` es ambiguo sin campo `status` explícito. |
 | `count{Qualifier}{Aggregates}By{Campo}` | Cuenta instancias filtradas por un literal del enum de status. **Solo un calificador simple** (`Active`, `Draft`, `Non{Literal}`…). Calificadores compuestos (`ActiveDraft`) no son válidos — el build falla. Para "todos excepto X" usar `Non{X}`: `countNonDiscontinuedProductsByCategoryId` → `WHERE status <> 'DISCONTINUED' AND categoryId = :categoryId`. |

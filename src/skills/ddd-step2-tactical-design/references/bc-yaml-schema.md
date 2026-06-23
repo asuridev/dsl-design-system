@@ -280,7 +280,7 @@ aggregates:
         description: Unique identifier of the {aggregate}.
 
       # ─ Propiedades del dominio
-      - name: {field}
+      - name: {field}                 # camelCase; NO palabra reservada Java/SQL (default, order, user, key, value…); booleanos con prefijo is/has → isDefault
         type: {canonical-type}
         required: true | false
         unique: true | false          # omitir si false; genera índice UNIQUE en DB

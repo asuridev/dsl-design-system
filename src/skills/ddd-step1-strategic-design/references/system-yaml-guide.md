@@ -111,6 +111,55 @@ boundedContexts:
 Solo se declaran los sistemas que aparecen referenciados en `integrations`. No declarar
 sistemas externos que no tienen ninguna integración definida.
 
+### Qué es y qué NO es un sistema externo
+
+Un `externalSystem` es un **servicio de dominio externo** (Stripe, Twilio, SendGrid, un ERP)
+cuya API tiene contratos de negocio propios y requiere un ACL adapter.
+
+**El almacenamiento de objetos binarios NO es un sistema externo.** Aunque en producción
+sea un servicio cloud (S3, GCS, Azure Blob, MinIO), su uso es infraestructura pura:
+ningún BC tiene un contrato de dominio con él. Modelarlo como `externalSystem` obliga al
+generador a crear un ACL adapter innecesario y mezcla decisiones de Fase 2 en el diseño.
+
+| Tipo de recurso | Dónde declararlo |
+|---|---|
+| Pasarela de pago (Stripe, PayU, Conekta…) | `externalSystems` + ACL adapter |
+| Proveedor de notificaciones (Twilio, SendGrid…) | `externalSystems` + ACL adapter |
+| ERP, sistema de facturación, CRM | `externalSystems` + ACL adapter |
+| Almacenamiento de binarios (imágenes, documentos, adjuntos) | `infrastructure.objectStorage` |
+
+**Anti-patrón a evitar:**
+
+```yaml
+# ❌ Incorrecto — object storage no es un externalSystem
+externalSystems:
+  - name: image-storage
+    type: external
+    description: S3-compatible object storage for product images...
+    operations:
+      - name: uploadFile
+        ...
+      - name: deleteFile
+        ...
+
+# ✅ Correcto — object storage va en infrastructure
+infrastructure:
+  objectStorage:
+    - name: product-images
+      visibility: public
+      urlAccess: public-url
+      ownedBy: catalog
+      notes: >
+        Stores product gallery images. Owned exclusively by the catalog BC,
+        which uploads and removes binary files. Each stored object produces
+        a public URL persisted on the ProductImage aggregate.
+```
+
+La señal de detección: si un `externalSystem` candidato tiene en su nombre o propósito
+palabras como `storage`, `images`, `files`, `documents`, `uploads`, `attachments`,
+o si sus operaciones son `upload`/`download`/`delete` sobre objetos binarios →
+usar `infrastructure.objectStorage` en su lugar.
+
 ```yaml
 externalSystems:
 
@@ -685,9 +734,35 @@ infrastructure:
 | `urlAccess` | `public-url` (enlace estable) \| `signed-url` (enlace firmado/temporal generado en lectura). |
 | `ownedBy` | BC que posee el store. Debe existir en `boundedContexts`. |
 | `signedUrlTtl` | Opcional, ISO-8601 Duration. Solo con `urlAccess: signed-url`. |
+| `notes` | Opcional. Propósito del store en lenguaje de negocio. **Nunca mencionar proveedor, protocolo ni patrón de implementación.** |
 
 **Lo que NO se declara** (decisión del generador): proveedor, región, nombre real del bucket,
 endpoint, credenciales, política IAM, CDN, algoritmo de firma.
+
+**Regla para `notes`:** describe **qué** almacena el store, **quién** lo usa y **qué produce**
+para el dominio. Nunca menciona cómo se implementa.
+
+```yaml
+# ✅ Correcto — propósito de negocio, sin referencias tecnológicas
+- name: product-media
+  visibility: public
+  urlAccess: public-url
+  ownedBy: catalog
+  notes: >
+    Stores product gallery images. Owned exclusively by the catalog BC,
+    which uploads and removes binary files. Each stored object produces
+    a public URL persisted on the ProductImage aggregate.
+
+# ❌ Incorrecto — menciona tecnología (S3) e implementación (proxy)
+- name: product-media
+  visibility: public
+  urlAccess: public-url
+  ownedBy: catalog
+  notes: >
+    S3-compatible object storage for product images. Admin uploads go
+    through the Catalog API, which proxifies the file to this service
+    and stores the resulting public URL.
+```
 
 En el diseño táctico (Paso 2), un use case sube/lee/borra binarios mediante el bloque
 `storageCalls[]` referenciando `store: <name>`. Ver la guía de `{bc-name}.yaml`.

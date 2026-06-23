@@ -458,6 +458,7 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
   - Si el agregado tiene `softDelete: true` **y** tiene campo `status`: 🟡 ALERTA. El calificador es ambiguo — clarificar si el predicado filtra por `status = 'ACTIVE'`, por `deleted_at IS NULL`, o por ambos. Elegir un nombre que exprese sin ambigüedad la intención.
   - Si el qualifier no existe en el enum de estado y tampoco es soft delete válido → 🔴 ERROR: el validador falla antes de generación.
   - En `find{Qualifier}By{Field}`, verificar además que `{Field}` exista en el agregado raíz y que el retorno sea `T?`, `List[T]` o `Page[T]`.
+  - **Calificador de bandera booleana:** si `{Qualifier}` no es de estado ni soft-delete, el generador lo resuelve contra una propiedad `Boolean` `is{Qualifier}` del agregado (ej: `findDefaultByCustomerId` → `isDefault`). Verificar que esa propiedad booleana exista. ⚠️ La propiedad **debe** llamarse `isDefault`, nunca `default` (palabra reservada — ver B24). `Non`/`Not` niegan la bandera.
 
 **B22 — `fkValidations` sobre campos con `source: authContext`**
 - Para cada UC con `fkValidations[]` no vacío:
@@ -470,6 +471,11 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
   - Para cada entrada, ¿el valor de `aggregate` corresponde a un agregado local del BC actual o a un agregado de un BC externo con entrada en `integrations.outbound[]`?
   - Si `fkValidations[].aggregate` es de un BC externo pero no hay entrada en `integrations.outbound` para ese BC: el generador produce el puerto de salida hacia ese BC pero ningún componente lo implementa → fallo en el arranque del servicio porque la dependencia queda sin proveedor. → 🔴 ERROR. Opciones: (a) declarar la integración outbound hacia ese BC si la comunicación HTTP real existe, o (b) eliminar la `fkValidation` si la validación es innecesaria.
   - **Excepción:** si el `aggregate` es un agregado local del mismo BC — no se necesita `integrations.outbound`.
+
+**B24 — Nombres de propiedad: palabras reservadas y banderas booleanas**
+- Revisar el `name` de toda propiedad/param: `aggregates[].properties[]`, `aggregates[].entities[].properties[]`, `valueObjects[].properties[]` y `repositories[].*.params[]`.
+- Nombre que coincide con una **palabra reservada de Java/SQL/JPQL** (`default`, `class`, `case`, `new`, `enum`, `package`, `order`, `group`, `user`, `key`, `value`, `level`, `desc`, `asc`, `from`, `select`, `where`…) → 🔴 ERROR: el generador lo emite como identificador Java y ruta JPQL/columna; no compila o la query falla. Renombrar.
+- Propiedad `Boolean` cuyo nombre **no** empieza por `is`/`has` (ej: `default`, `active`, `verified`) → 🔵 SUGERENCIA: usar el prefijo `is`/`has` (`isDefault`, `isActive`, `isVerified`). Además de la convención, habilita el calificador de repositorio `find{Flag}By…` (ver B21). El caso `default` es 🔴 ERROR por ser palabra reservada.
 
 ---
 

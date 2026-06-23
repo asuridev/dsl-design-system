@@ -224,7 +224,10 @@ infrastructure:
       ownedBy: ""       # nombre de un boundedContexts[] — BC responsable del store.
       signedUrlTtl: ""  # OPCIONAL — ISO-8601 Duration (ej: PT15M). Vigencia del enlace
                         # firmado. Solo aplica con urlAccess: signed-url.
-      notes: >          # OPCIONAL — propósito del store.
+      notes: >          # OPCIONAL — propósito del store en lenguaje de negocio.
+                        # PROHIBIDO: proveedor (S3, GCS, MinIO), CDN, proxy,
+                        # protocolo de firma, región o nombre real del bucket.
+                        # Solo: qué almacena, quién lo usa, qué produce para el dominio.
         ...
 
   integrations:         # NO IMPLEMENTADO EN EL GENERADOR (reservado para uso futuro)
