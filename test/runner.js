@@ -564,6 +564,225 @@ domainEvents:
 `, 'BC-008');
 });
 
+test('copied dsl-validate rejects enum values that are not valid Java identifiers', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - name: DRAFT
+      - name: pending-approval
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-006');
+});
+
+test('copied dsl-validate rejects a non-canonical Money value object shape', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+valueObjects:
+  - name: Money
+    properties:
+      - name: value
+        type: Decimal
+        precision: 19
+        scale: 4
+      - name: currencyCode
+        type: String(3)
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-073');
+});
+
+test('copied dsl-validate rejects circular value object references', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+valueObjects:
+  - name: Foo
+    properties:
+      - name: bar
+        type: Bar
+  - name: Bar
+    properties:
+      - name: foo
+        type: Foo
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-074');
+});
+
+test('copied dsl-validate rejects multipart contentTypes that are not valid MIME types', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: image
+        type: File
+        required: true
+        source: multipart
+        partName: image
+        contentTypes:
+          - 'image/png" , "*/*'
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, 'BC-024');
+});
+
+test('copied dsl-validate rejects cacheable keyFields missing from useCase input', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    aggregate: Product
+    trigger:
+      kind: http
+      operationId: getProduct
+    input:
+      - name: productId
+        type: Uuid
+        source: path
+    returns: Product?
+    cacheable:
+      ttl: PT5M
+      keyFields: [missingField]
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: getProduct
+        params:
+          - name: productId
+            type: Uuid
+        returns: Product?
+        derivedFrom: openapi:getProduct
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-035');
+});
+
+test('copied dsl-validate rejects ownership.field missing from the aggregate', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+useCases:
+  - id: UC-CAT-001
+    name: GetProduct
+    type: query
+    aggregate: Product
+    trigger:
+      kind: http
+      operationId: getProduct
+    input:
+      - name: productId
+        type: Uuid
+        source: path
+    returns: Product?
+    authorization:
+      ownership:
+        field: ownerId
+        claim: sub
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: getProduct
+        params:
+          - name: productId
+            type: Uuid
+        returns: Product?
+        derivedFrom: openapi:getProduct
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-033');
+});
+
+test('copied dsl-validate rejects Range[T] over a non-comparable inner type', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+useCases:
+  - id: UC-CAT-001
+    name: SearchProducts
+    type: query
+    aggregate: Product
+    trigger:
+      kind: http
+      operationId: searchProducts
+    input:
+      - name: activeRange
+        type: Range[Boolean]
+        source: query
+    returns: Page[ProductResponse]
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: search
+        params:
+          - name: page
+            type: PageRequest
+        returns: Page[Product]
+        derivedFrom: openapi:searchProducts
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-090');
+});
+
 test('copied dsl-validate rejects repository query params missing from useCase input', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

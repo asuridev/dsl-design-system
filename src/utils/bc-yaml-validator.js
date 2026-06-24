@@ -7,6 +7,7 @@ const {
   typeHead,
   unwrapCollection,
   unwrapEnum,
+  unwrapRange,
 } = require('./canonical-types');
 
 function validateBcYamlAnatomy(doc, options = {}) {
@@ -99,6 +100,7 @@ class BcYamlValidator {
           this.error('BC-006', `Enum "${enumDef.name}" has a value entry without string value/name.`, valueLoc);
           continue;
         }
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) this.error('BC-006', `Enum "${enumDef.name}" value "${label}" must be a valid Java identifier (letters, digits and underscore only, not starting with a digit). UPPER_SNAKE_CASE is recommended.`, valueLoc);
         if (declaredValues.has(label)) this.error('BC-006', `Enum "${enumDef.name}" declares duplicate value "${label}".`, valueLoc);
         declaredValues.add(label);
       }
@@ -263,6 +265,21 @@ class BcYamlValidator {
       for (const key of ['maxSize', 'contentTypes']) {
         if (input[key] != null && input.type !== 'File') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but type is not File.`, `${loc}/${key}`);
       }
+      // partName and contentTypes are interpolated into generated Java string literals
+      // downstream; constrain them to safe shapes so they cannot break the literal.
+      if (typeof input.partName === 'string' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(input.partName)) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" partName "${input.partName}" must be a safe identifier (letters, digits, underscore and hyphen; not starting with a digit or hyphen).`, `${loc}/partName`);
+      if (Array.isArray(input.contentTypes)) {
+        for (const c of input.contentTypes) {
+          if (typeof c === 'string' && !/^[\w.+-]+\/[\w.+-]+$/.test(c)) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" contentTypes entry "${c}" is not a valid MIME type (expected "type/subtype", e.g. "image/png").`, `${loc}/contentTypes`);
+        }
+      }
+      // Range[T] builds a between() filter downstream and requires an order-comparable scalar.
+      const rangeInner = unwrapRange(input.type);
+      if (rangeInner != null) {
+        const orderable = new Set(['Integer', 'Long', 'Decimal', 'Date', 'DateTime', 'Duration', 'String', 'Uuid']);
+        const head = stripTypeParameters(rangeInner);
+        if (!orderable.has(head)) this.error('BC-090', `Use case "${uc.id}" input "${input.name}" declares "${input.type}", but Range filters require an order-comparable scalar inner type (Integer, Long, Decimal, Date, DateTime, Duration, String, Uuid). "${rangeInner}" is not orderable.`, `${loc}/type`);
+      }
       if (input.max != null) {
         if (!Number.isInteger(input.max)) this.error('BC-025', `Use case "${uc.id}" input "${input.name}" max must be an integer.`, `${loc}/max`);
         if (!/^(Integer|Long|int|long|BigDecimal|Decimal)$/.test(String(input.type))) this.error('BC-025', `Use case "${uc.id}" input "${input.name}" declares max but type is not numeric.`, `${loc}/max`);
@@ -345,6 +362,13 @@ class BcYamlValidator {
         this.checkAllowedKeys(uc.authorization.ownership, allowedOwnershipKeys, 'BC-012', `Use case "${uc.id}" authorization.ownership`, `${baseLoc}/authorization/ownership`);
         if (!uc.authorization.ownership.field || typeof uc.authorization.ownership.field !== 'string') this.error('BC-033', `Use case "${uc.id}" authorization.ownership.field is required.`, `${baseLoc}/authorization/ownership/field`);
         if (!uc.authorization.ownership.claim || typeof uc.authorization.ownership.claim !== 'string') this.error('BC-033', `Use case "${uc.id}" authorization.ownership.claim is required.`, `${baseLoc}/authorization/ownership/claim`);
+        // ownership.field must reference a real aggregate property; the generated guard
+        // compares it against a JWT claim and an unknown name does not compile.
+        if (typeof uc.authorization.ownership.field === 'string') {
+          const aggName = uc.aggregate || (Array.isArray(uc.aggregates) ? uc.aggregates[0] : null);
+          const agg = aggName ? this.aggregateByName().get(aggName) : null;
+          if (agg && !this.aggregateFieldNames(agg).has(uc.authorization.ownership.field)) this.error('BC-033', `Use case "${uc.id}" authorization.ownership.field "${uc.authorization.ownership.field}" does not match any property of aggregate "${aggName}".`, `${baseLoc}/authorization/ownership/field`);
+        }
       }
     }
   }
@@ -373,9 +397,14 @@ class BcYamlValidator {
     }
     this.checkAllowedKeys(uc.cacheable, allowedKeys, 'BC-012', `Use case "${uc.id}" cacheable`, `${baseLoc}/cacheable`);
     if (!uc.cacheable.ttl || typeof uc.cacheable.ttl !== 'string' || !/^P/.test(uc.cacheable.ttl)) this.error('BC-035', `Use case "${uc.id}" cacheable.ttl must be an ISO-8601 duration.`, `${baseLoc}/cacheable/ttl`);
+    const inputNames = new Set(asArray(uc.input).map((i) => isMapping(i) && i.name).filter(Boolean));
     for (const key of ['keyFields', 'cacheWhen']) {
       if (uc.cacheable[key] != null && (!Array.isArray(uc.cacheable[key]) || uc.cacheable[key].length === 0 || uc.cacheable[key].some((f) => typeof f !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(f)))) {
         this.error('BC-035', `Use case "${uc.id}" cacheable.${key} must be a non-empty array of camelCase field names.`, `${baseLoc}/cacheable/${key}`);
+      } else if (Array.isArray(uc.cacheable[key])) {
+        for (const f of uc.cacheable[key]) {
+          if (typeof f === 'string' && !inputNames.has(f)) this.error('BC-035', `Use case "${uc.id}" cacheable.${key} entry "${f}" does not match any input[] field name. The cache key is built from declared inputs.`, `${baseLoc}/cacheable/${key}`);
+        }
       }
     }
     if (uc.type !== 'query') this.error('BC-035', `Use case "${uc.id}" declares cacheable but is not a query.`, `${baseLoc}/cacheable`);
@@ -631,6 +660,66 @@ class BcYamlValidator {
         if (result.aggregate && aggregateNames.has(result.aggregate)) this.error('BC-071', `Value object "${vo.name}" property "${prop.name}" references aggregate "${result.aggregate}". Use a Uuid reference or another VO.`, `${loc}/properties/${j}/type`);
         if (!result.resolved) this.error('BC-071', `Value object "${vo.name}" property "${prop.name}" has unresolved type "${prop.type}".`, `${loc}/properties/${j}/type`);
       }
+
+      // Money is a canonical shared VO: a user-declared Money must keep the canonical
+      // shape (amount + currency), or the downstream generator's JPA expansion and
+      // mappers emit getAmount()/getCurrency() against a VO that lacks them.
+      if (vo.name === 'Money') {
+        const props = asArray(vo.properties);
+        const amount = props.find((p) => isMapping(p) && p.name === 'amount');
+        const currency = props.find((p) => isMapping(p) && p.name === 'currency');
+        const amountOk = amount && /^(Decimal|String(\(\d+\))?)$/.test(String(amount.type || '').trim());
+        const currencyOk = currency && /^String(\(\d+\))?$/.test(String(currency.type || '').trim());
+        if (!amountOk || !currencyOk) this.error('BC-073', `Value object "Money" must declare an "amount" property (Decimal or String) and a "currency" property (String). The downstream generator's JPA expansion and mappers assume this canonical shape.`, `${loc}/properties`);
+      }
+    }
+
+    this.validateValueObjectCycles(voNames);
+  }
+
+  // Circular VO references (A embeds B embeds A) produce mutually recursive
+  // equals/hashCode/toString and infinite @Embeddable nesting downstream.
+  validateValueObjectCycles(voNames) {
+    const vos = asArray(this.doc.valueObjects).filter((v) => isMapping(v) && v.name);
+    if (vos.length === 0) return;
+    const edges = new Map();
+    for (const vo of vos) {
+      const targets = new Set();
+      for (const prop of asArray(vo.properties)) {
+        if (!isMapping(prop) || !prop.type) continue;
+        const head = typeHead(prop.type);
+        if (head && head !== vo.name && voNames.has(head)) targets.add(head);
+        else if (head === vo.name) targets.add(head);
+      }
+      edges.set(vo.name, targets);
+    }
+    const WHITE = 0, GRAY = 1, BLACK = 2;
+    const color = new Map(vos.map((v) => [v.name, WHITE]));
+    const stack = [];
+    let reported = false;
+    const visit = (node) => {
+      color.set(node, GRAY);
+      stack.push(node);
+      for (const next of edges.get(node) || []) {
+        if (reported) break;
+        if (color.get(next) === GRAY) {
+          const idx = stack.indexOf(next);
+          const cyclePath = stack.slice(idx).concat(next).join(' -> ');
+          this.error('BC-074', `Circular value object reference detected: ${cyclePath}. Break the cycle (e.g. reference a Uuid instead of embedding the value object).`, this.loc('#/valueObjects'));
+          reported = true;
+          return;
+        }
+        if (color.get(next) === WHITE) {
+          visit(next);
+          if (reported) return;
+        }
+      }
+      stack.pop();
+      color.set(node, BLACK);
+    };
+    for (const vo of vos) {
+      if (reported) break;
+      if (color.get(vo.name) === WHITE) visit(vo.name);
     }
   }
 
