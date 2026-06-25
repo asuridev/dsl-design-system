@@ -6,16 +6,21 @@ const chalk = require('chalk');
 const ora = require('ora');
 const inquirer = require('inquirer');
 
-// Source files (relative to this repo) that are assembled into tools/dsl-validate/
+// Source files assembled into tools/dsl-validate/. By default `src` is relative to
+// this repo's src/. Entries with `fromContract: true` are sourced from the shared
+// @dsl/contract package instead (GAP-1: single source of truth for the contract
+// validators). The deployed tool stays self-contained: these files are still
+// copied (not linked) into tools/dsl-validate/src/utils/, where their relative
+// requires (./naming, ./openapi-contract) resolve.
 const DSL_VALIDATE_SOURCES = [
   { src: ['commands', 'validate.js'],             dest: ['src', 'commands', 'validate.js'] },
   { src: ['utils', 'arch-readers.js'],            dest: ['src', 'utils', 'arch-readers.js'] },
   { src: ['utils', 'canonical-types.js'],         dest: ['src', 'utils', 'canonical-types.js'] },
   { src: ['utils', 'bc-yaml-validator.js'],       dest: ['src', 'utils', 'bc-yaml-validator.js'] },
-  { src: ['utils', 'integration-validator.js'],   dest: ['src', 'utils', 'integration-validator.js'] },
+  { src: ['integration-validator.js'],            dest: ['src', 'utils', 'integration-validator.js'], fromContract: true },
   { src: ['utils', 'naming.js'],                  dest: ['src', 'utils', 'naming.js'] },
-  { src: ['utils', 'openapi-contract.js'],        dest: ['src', 'utils', 'openapi-contract.js'] },
-  { src: ['utils', 'openapi-usecase-validator.js'], dest: ['src', 'utils', 'openapi-usecase-validator.js'] },
+  { src: ['openapi-contract.js'],                 dest: ['src', 'utils', 'openapi-contract.js'], fromContract: true },
+  { src: ['openapi-usecase-validator.js'],        dest: ['src', 'utils', 'openapi-usecase-validator.js'], fromContract: true },
 ];
 
 /**
@@ -346,14 +351,28 @@ async function scaffoldDslValidate(cwd) {
   const templateDir = path.join(__dirname, '../templates/dsl-validate');
   await fs.copy(templateDir, destRoot, { overwrite: true });
 
-  // 2. Copy validate logic files from src/
+  // 2. Copy validate logic files. Repo files come from src/; contract validators
+  //    come from the @dsl/contract package (single source of truth).
   const srcRoot = path.join(__dirname, '..');
-  for (const { src, dest } of DSL_VALIDATE_SOURCES) {
-    const srcFile  = path.join(srcRoot, ...src);
+  const contractSrc = path.dirname(require.resolve('@dsl/contract')); // .../dsl-contract/src
+  for (const { src, dest, fromContract } of DSL_VALIDATE_SOURCES) {
+    const srcFile  = fromContract ? path.join(contractSrc, ...src) : path.join(srcRoot, ...src);
     const destFile = path.join(destRoot, ...dest);
     await fs.ensureDir(path.dirname(destFile));
     await fs.copy(srcFile, destFile, { overwrite: true });
   }
+
+  // 2b. The repo's validate.js imports the validators from '@dsl/contract', which
+  //     does not exist inside the deployed, self-contained tool. Rewrite that import
+  //     to the local relative requires (the files were copied into ../utils/ above).
+  const deployedValidate = path.join(destRoot, 'src', 'commands', 'validate.js');
+  let validateSrc = await fs.readFile(deployedValidate, 'utf8');
+  validateSrc = validateSrc.replace(
+    /const \{ validateIntegrationCoherence, reportDiagnostics, validateOpenApiUseCases \} = require\('@dsl\/contract'\);/,
+    "const { validateIntegrationCoherence, reportDiagnostics } = require('../utils/integration-validator');\n"
+    + "const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');"
+  );
+  await fs.writeFile(deployedValidate, validateSrc);
 
   spinner.succeed(chalk.green('  OK    tools/dsl-validate/'));
 

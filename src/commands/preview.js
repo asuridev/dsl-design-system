@@ -7,8 +7,7 @@ const ora = require('ora');
 const yaml = require('js-yaml');
 const open = require('open');
 const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
-const { validateIntegrationCoherence } = require('../utils/integration-validator');
-const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
+const { validateIntegrationCoherence, validateOpenApiUseCases } = require('@dsl/contract');
 const { clientI18nScript, localeSwitcher, normalizeLocale, t, themeBootScript, themeSwitcher, clientThemeScript } = require('../utils/i18n');
 const { parseBcNarrative } = require('../utils/narrative');
 

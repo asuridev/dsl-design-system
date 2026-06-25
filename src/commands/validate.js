@@ -11,8 +11,7 @@ const {
   readInternalApiYaml,
   discoverBcNames,
 } = require('../utils/arch-readers');
-const { validateIntegrationCoherence, reportDiagnostics } = require('../utils/integration-validator');
-const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
+const { validateIntegrationCoherence, reportDiagnostics, validateOpenApiUseCases } = require('@dsl/contract');
 const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
 
 /**
