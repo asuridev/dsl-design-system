@@ -782,10 +782,14 @@ class BcYamlValidator {
     const aggregateNames = this.aggregateNames();
     const projectionNames = new Set();
     const allowedPropKeys = new Set(['name', 'type', 'required', 'description', 'example', 'serializedName', 'derivedFrom', 'precision', 'scale']);
+    // Projection-level key whitelist: a typo at the projection root (e.g. "persistant")
+    // would otherwise be silently ignored and produce wrong (non-persistent) generation.
+    const allowedProjectionKeys = new Set(['name', 'description', 'properties', 'persistent', 'source', 'keyBy', 'upsertStrategy', 'eventVersionField', 'additionalSources', 'tableName']);
     for (let i = 0; i < asArray(this.doc.projections).length; i++) {
       const projection = this.doc.projections[i];
       const loc = this.loc(`#/projections/${i}`);
       if (!isMapping(projection)) continue;
+      this.checkAllowedKeys(projection, allowedProjectionKeys, 'BC-012', `Projection "${projection.name || '<unnamed>'}"`, loc);
       if (!projection.name) this.error('BC-080', 'A projection entry is missing name.', `${loc}/name`);
       if (projection.name && projectionNames.has(projection.name)) this.error('BC-080', `Duplicate projection name "${projection.name}".`, `${loc}/name`);
       projectionNames.add(projection.name);
@@ -1192,9 +1196,10 @@ class BcYamlValidator {
       if (qualifiedFind) {
         const [, qualifier, fieldRaw] = qualifiedFind;
         const field = fieldRaw.charAt(0).toLowerCase() + fieldRaw.slice(1);
-        if (this.repositoryQualifierMatchesStatus(aggregate, qualifier)) {
+        if (this.repositoryQualifierMatchesStatus(aggregate, qualifier) || this.repositoryQualifierMatchesBoolean(aggregate, qualifier)) {
           if (!/\?$/.test(ret) && !/^List\[/.test(ret) && !/^Page\[/.test(ret)) this.error('BC-161', `find{Qualifier}By* repository methods must return T?, List[T] or Page[T].`, `${loc}/returns`);
-          this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+          // Boolean-flag qualifiers map directly to a Boolean property; only status qualifiers need enum/soft-delete resolution.
+          if (!this.repositoryQualifierMatchesBoolean(aggregate, qualifier)) this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
           if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
         } else if (aggregate && this.repositoryHasStatusQualifierSource(aggregate) && !this.repositoryQualifierMatchesEntity(aggregate, qualifier) && qualifier !== aggregate.name && this.aggregateFieldNames(aggregate).has(field)) {
           this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
@@ -1205,7 +1210,7 @@ class BcYamlValidator {
       if (qualifiedCount && !method.name.startsWith('countBy')) {
         if (ret !== 'Int' && ret !== 'Long') this.error('BC-161', `count{Qualifier}By* repository methods must return Int or Long.`, `${loc}/returns`);
         const [, qualifier, fieldRaw] = qualifiedCount;
-        this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+        if (!this.repositoryQualifierMatchesBoolean(aggregate, qualifier)) this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
         const field = fieldRaw.charAt(0).toLowerCase() + fieldRaw.slice(1);
         if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
       }
@@ -1247,6 +1252,19 @@ class BcYamlValidator {
     if (aggregate.softDelete === true) return true;
     const statusProp = asArray(aggregate.properties).find((p) => p && (p.name === 'status' || (p.type && String(p.type).endsWith('Status'))));
     return !!statusProp;
+  }
+
+  // Mirror of Phase 2 bc-yaml-reader.js `booleanQualifierMatches` (and
+  // repository-generator.resolveBooleanQualifier): a qualifier that maps to a Boolean
+  // property on the aggregate (e.g. "Active" → isActive/active). Non{Flag}/Not{Flag}
+  // accepted. Without this, Phase 1 wrongly flagged BC-161 on boolean-flag finders that
+  // the generator accepts, blocking valid designs.
+  repositoryQualifierMatchesBoolean(aggregate, qualifier) {
+    if (!aggregate || !qualifier) return false;
+    const core = (qualifier.startsWith('Non') || qualifier.startsWith('Not')) ? qualifier.slice(3) : qualifier;
+    if (!core) return false;
+    const candidates = new Set([core.charAt(0).toLowerCase() + core.slice(1), `is${core}`]);
+    return asArray(aggregate.properties).some((p) => p && candidates.has(p.name) && p.type === 'Boolean');
   }
 
   repositoryQualifierMatchesEntity(aggregate, qualifier) {

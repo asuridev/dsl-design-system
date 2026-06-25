@@ -381,6 +381,20 @@ async function assertTacticalValidationFails(bcYaml, expectedCode) {
   });
 }
 
+// Positive-direction assertion: the validator output must NOT contain the given
+// pattern (used to prove a former false positive no longer fires).
+async function assertTacticalValidationOmits(bcYaml, pattern) {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeTacticalInvalidArch(projectDir, bcYaml);
+
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.doesNotMatch(output, pattern, output);
+  });
+}
+
 // Writes a system.yaml with a parameterised infrastructure.objectStorage block (plus catalog
 // and orders BCs) and a catalog.yaml, then runs the copied validator. Returns { status, output }.
 async function runStorageValidation(projectDir, objectStorageYaml, bcYaml) {
@@ -839,6 +853,58 @@ domainEvents:
   published: []
   consumed: []
 `, 'BC-097');
+});
+
+test('copied dsl-validate rejects an unknown projection-level key', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+projections:
+  - name: ProductSummary
+    source: aggregate:Product
+    persistant: true
+    properties:
+      - name: id
+        type: Uuid
+        required: true
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-012');
+});
+
+test('copied dsl-validate accepts a boolean-flag repository qualifier (no false BC-161)', async () => {
+  await assertTacticalValidationOmits(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: ownerId
+        type: Uuid
+      - name: isActive
+        type: Boolean
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: countActiveByOwnerId
+        params:
+          - name: ownerId
+            type: Uuid
+        returns: Long
+domainEvents:
+  published: []
+  consumed: []
+`, /no status enum field/);
 });
 
 test('copied dsl-validate rejects repository query params missing from useCase input', async () => {
