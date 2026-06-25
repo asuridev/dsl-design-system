@@ -36,12 +36,15 @@ npm test                                          # suite de tests (test/runner.
 ## Contrato compartido con Fase 2 (`@dsl/contract`)
 
 Los validadores de contrato cruzado (`integration-validator`, `openapi-usecase-validator`,
-`openapi-contract`) **no se duplican**: viven en el paquete **`@dsl/contract`** (`../dsl-contract`,
-dependencia `file:`), fuente única de verdad compartida con `dsl-springboot-generator` (Fase 2). Importar
-desde `@dsl/contract` (ver `src/commands/{validate,preview}.js`). El comando `dsl init` ensambla el tool
-`tools/dsl-validate/` autocontenido **copiando** estos validadores desde el paquete (no por `file:` link).
+`openapi-contract`) **no se duplican**: viven en el paquete **`@dsl/contract`**, fuente única de verdad
+compartida con `dsl-springboot-generator` (Fase 2). Se consume como **dependencia git URL** pineada a tag
+(`"@dsl/contract": "git+https://github.com/asuridev/dsl-contract.git#v0.1.0"`), así un `git clone` + `npm
+install` fresco lo resuelve desde GitHub (repo público). Importar desde `@dsl/contract` (ver
+`src/commands/{validate,preview}.js`). El comando `dsl init` ensambla el tool `tools/dsl-validate/`
+autocontenido **copiando** estos validadores desde el paquete (vía `require.resolve`), no por dependencia.
 
-- Tras editar el paquete: `npm install` en este repo (o `npm link`).
+- Dev local del paquete: `npm link`. Release: bump versión + tag `vX.Y.Z` en `dsl-contract`, luego actualizar
+  el `#vX.Y.Z` aquí y `npm install`.
 - Las reglas de anatomía por BC siguen en `src/utils/bc-yaml-validator.js` (BC-001..170). Su paridad con el
   reader de Fase 2 se rastrea en `../dsl-contract/docs/contract-rule-parity.md`.
 
