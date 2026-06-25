@@ -1017,6 +1017,70 @@ domainEvents:
 `, 'BC-161');
 });
 
+test('copied dsl-validate rejects unsupported search qualifier repository methods', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - value: DRAFT
+      - value: ACTIVE
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: status
+        type: ProductStatus
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: searchArchived
+        params:
+          - name: page
+            type: PageRequest
+        returns: Page[Product]
+        derivedFrom: implicit
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-161');
+});
+
+test('copied dsl-validate rejects exists qualifier methods that do not return Boolean', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - value: DRAFT
+      - value: ACTIVE
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: status
+        type: ProductStatus
+repositories:
+  - aggregate: Product
+    methods:
+      - name: existsActiveById
+        params:
+          - name: id
+            type: Uuid
+        returns: Product?
+        derivedFrom: implicit
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-161');
+});
+
 test('copied dsl-validate rejects useCase inputs without source', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

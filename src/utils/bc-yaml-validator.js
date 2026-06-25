@@ -1215,6 +1215,22 @@ class BcYamlValidator {
         if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
       }
       if (/^existsBy[A-Z]/.test(method.name) && ret !== 'Boolean') this.error('BC-161', `existsBy* repository methods must return Boolean.`, `${loc}/returns`);
+      // exists{Qualifier}By* — mirrors Phase 2 bc-yaml-reader.js qualifiedExists.
+      const qualifiedExists = method.name.match(/^exists(.+)By([A-Z][A-Za-z0-9]*)$/);
+      if (qualifiedExists && !method.name.startsWith('existsBy')) {
+        if (ret !== 'Boolean') this.error('BC-161', `exists{Qualifier}By* repository methods must return Boolean.`, `${loc}/returns`);
+        const [, qualifier, fieldRaw] = qualifiedExists;
+        if (!this.repositoryQualifierMatchesBoolean(aggregate, qualifier)) this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+        const field = fieldRaw.charAt(0).toLowerCase() + fieldRaw.slice(1);
+        if (aggregate && !this.aggregateFieldNames(aggregate).has(field)) this.error('BC-161', `Repository method "${method.name}" references unknown aggregate field "${field}".`, `${loc}/name`);
+      }
+      // search{Qualifier}* — mirrors Phase 2 bc-yaml-reader.js qualifiedSearch.
+      const qualifiedSearch = method.name.match(/^search(?!By)([A-Z][A-Za-z0-9]*)$/);
+      if (qualifiedSearch) {
+        if (!/^Page\[/.test(ret) && !/^Slice\[/.test(ret) && !/^Stream\[/.test(ret)) this.error('BC-161', `search* repository methods must return Page[T], Slice[T] or Stream[T].`, `${loc}/returns`);
+        const qualifier = qualifiedSearch[1];
+        if (qualifier !== 'All' && !this.repositoryQualifierMatchesBoolean(aggregate, qualifier)) this.validateRepositoryStatusQualifier(repo, aggregate, qualifier, method.name, loc);
+      }
     }
     if (method.returns && /^Page\[/.test(String(method.returns).trim()) && Array.isArray(method.params)) {
       const hasPageable = method.params.some((p) => p && (p.type === 'PageRequest' || p.name === 'pageable'));
