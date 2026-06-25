@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>catalog — Internal API — REST API</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <style>
+    .topbar { display: none; }
+    .back-bar { background: #1b1b1b; color: #ccc; padding: 8px 20px; font-size: 13px; display: flex; align-items: center; gap: 12px; }
+    .back-bar a { color: #90caf9; text-decoration: none; }
+    .back-bar a:hover { text-decoration: underline; }
+    /* Basic dark theme for Swagger UI (no Bootstrap on this page). */
+    [data-bs-theme="dark"] body { background: #1a1a1a; }
+    [data-bs-theme="dark"] .swagger-ui,
+    [data-bs-theme="dark"] .swagger-ui .info .title,
+    [data-bs-theme="dark"] .swagger-ui .info li,
+    [data-bs-theme="dark"] .swagger-ui .info p,
+    [data-bs-theme="dark"] .swagger-ui .info a,
+    [data-bs-theme="dark"] .swagger-ui .opblock-tag,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-description,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-path,
+    [data-bs-theme="dark"] .swagger-ui table thead tr td,
+    [data-bs-theme="dark"] .swagger-ui table thead tr th,
+    [data-bs-theme="dark"] .swagger-ui .parameter__name,
+    [data-bs-theme="dark"] .swagger-ui .parameter__type,
+    [data-bs-theme="dark"] .swagger-ui .response-col_status,
+    [data-bs-theme="dark"] .swagger-ui .response-col_description,
+    [data-bs-theme="dark"] .swagger-ui .model,
+    [data-bs-theme="dark"] .swagger-ui .model-title,
+    [data-bs-theme="dark"] .swagger-ui label { color: #e0e0e0; }
+    [data-bs-theme="dark"] .swagger-ui .scheme-container,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-section-header { background: #2a2a2a; box-shadow: none; }
+    [data-bs-theme="dark"] .swagger-ui section.models,
+    [data-bs-theme="dark"] .swagger-ui .opblock { background: #232323; border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary { border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .model-box { background: rgba(255,255,255,.05); }
+    [data-bs-theme="dark"] .swagger-ui svg:not(:root) { fill: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="back-bar">
+    <a href="index.html">&#8592; <span data-i18n="nav.dashboard">Panel</span></a> &nbsp;/&nbsp; catalog — Internal API — <span data-i18n="nav.restApi">API REST</span> 
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    SwaggerUIBundle({
+      spec: {
+  "openapi": "3.1.0",
+  "x-internal": true,
+  "info": {
+    "title": "Catalog BC — Internal API",
+    "version": "1.0.0",
+    "description": "API interna del BC catalog, exclusiva para comunicación BC-a-BC. No expuesta al exterior. Usada por el BC orders durante el checkout para obtener un snapshot autoritativo de precios y disponibilidad de productos. Requiere JWT válido propagado por el BC caller (internal-jwt).\n"
+  },
+  "servers": [
+    {
+      "url": "/api/catalog/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "internal-products",
+      "description": "Operaciones internas sobre productos para consumo de otros BCs"
+    }
+  ],
+  "paths": {
+    "/internal/products/price-snapshot": {
+      "post": {
+        "operationId": "validateProductsAndPrices",
+        "summary": "Obtener snapshot de precios y disponibilidad",
+        "description": "Retorna el precio actual y el estado de cada producto en la lista proporcionada. Usado por el BC orders para crear la snapshot monetaria (OrderLine.unitPrice) durante el checkout, previniendo manipulación de precios (OWASP A04).\nLa respuesta puede contener menos elementos que la lista de entrada si algún productId no existe. El BC orders es responsable de detectar IDs faltantes y rechazar el checkout.\n",
+        "tags": [
+          "internal-products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_CUSTOMER",
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productIds"
+                ],
+                "properties": {
+                  "productIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "description": "Lista de IDs de productos para los cuales se requiere snapshot de precio"
+                  }
+                }
+              },
+              "example": {
+                "productIds": [
+                  "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                  "4cb96a75-6828-5673-c4gd-3d074g77bgb7"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lista de snapshots de precios por producto encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "productId",
+                      "name",
+                      "price",
+                      "status"
+                    ],
+                    "description": "Snapshot autoritativo del precio y estado de un producto al momento del checkout. Usado por orders para congelar el precio en OrderLine.unitPrice.\n",
+                    "properties": {
+                      "productId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "ID del producto"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Nombre comercial del producto al momento del snapshot"
+                      },
+                      "price": {
+                        "type": "object",
+                        "required": [
+                          "amount",
+                          "currency"
+                        ],
+                        "properties": {
+                          "amount": {
+                            "type": "string",
+                            "description": "Monto exacto como string decimal con 4 decimales. Nunca número flotante.",
+                            "example": "3500.0000",
+                            "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+                          },
+                          "currency": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 3,
+                            "pattern": "^[A-Z]{3}$",
+                            "example": "COP"
+                          }
+                        }
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "DRAFT",
+                          "ACTIVE",
+                          "DISCONTINUED"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "example": [
+                  {
+                    "productId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "name": "Leche Entera 1L",
+                    "price": {
+                      "amount": "3500.0000",
+                      "currency": "COP"
+                    },
+                    "status": "ACTIVE"
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El caller no tiene permiso para invocar este endpoint interno",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La lista de productIds es inválida (vacía o supera el máximo)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "VALIDATION_ERROR",
+                  "message": "productIds must have between 1 and 100 elements"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT propagado por el BC caller con los claims del usuario que inició la operación (e.g. el cliente que está haciendo checkout).\n"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "La solicitud contiene parámetros inválidos o mal formados",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Token de autenticación ausente o inválido",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "El caller no tiene permiso para invocar este endpoint interno",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "La lista de productIds es inválida (vacía o supera el máximo)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "VALIDATION_ERROR",
+              "message": "productIds must have between 1 and 100 elements"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "PriceSnapshotRequest": {
+        "type": "object",
+        "required": [
+          "productIds"
+        ],
+        "properties": {
+          "productIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Lista de IDs de productos para los cuales se requiere snapshot de precio"
+          }
+        }
+      },
+      "ProductPriceSnapshot": {
+        "type": "object",
+        "required": [
+          "productId",
+          "name",
+          "price",
+          "status"
+        ],
+        "description": "Snapshot autoritativo del precio y estado de un producto al momento del checkout. Usado por orders para congelar el precio en OrderLine.unitPrice.\n",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID del producto"
+          },
+          "name": {
+            "type": "string",
+            "description": "Nombre comercial del producto al momento del snapshot"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus",
+            "description": "Estado actual del producto. orders debe rechazar el checkout si status != ACTIVE.\n"
+          }
+        }
+      },
+      "Money": {
+        "type": "object",
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Monto exacto como string decimal con 4 decimales. Nunca número flotante.",
+            "example": "3500.0000",
+            "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3,
+            "pattern": "^[A-Z]{3}$",
+            "example": "COP"
+          }
+        }
+      },
+      "ProductStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "DISCONTINUED"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+},
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+      deepLinking: true,
+      tryItOutEnabled: false,
+      validatorUrl: null,
+    });
+  </script>
+</body>
+</html>

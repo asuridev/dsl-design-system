@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>orders — Diagramas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    body { background: var(--bs-secondary-bg); }
+    .diagram-wrap {
+      background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color);
+      border-radius: .5rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      overflow: auto;
+      min-height: 280px;
+      position: relative;
+    }
+    .seq-wrap { text-align: left; }
+    .diag-target { display: inline-block; max-width: none; transform-origin: 0 0; cursor: grab; }
+    .diag-target.dragging { cursor: grabbing; }
+    .seq-wrap .diag-target { display: block; min-width: 600px; }
+    .diagram-toolbar { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; margin-bottom: .5rem; position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); padding-bottom: .25rem; }
+    .diagram-hint { text-align: right; margin-bottom: .75rem; }
+    .diag-error pre {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: .4rem;
+      padding: 1rem; font-size: .78rem; text-align: left; white-space: pre-wrap; margin: 0;
+    }
+    .diag-error .error-message { background: #fff3cd; border: 1px solid #ffecb5; border-radius: .4rem; padding: .75rem; text-align: left; margin-bottom: .75rem; }
+    .line-no { color: var(--bs-secondary-color); user-select: none; display: inline-block; width: 3.5rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; text-align: left; }
+    .diagram-title { color: var(--bs-secondary-color); font-size: .85rem; font-weight: 600; margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
+    .nav-tabs .nav-link { font-size: .9rem; }
+    .loading-spinner { color: #adb5bd; font-size: .85rem; padding: 2rem; }
+    .diag-target svg { display: block; max-width: none; height: auto; }
+    [data-bs-theme="dark"] .diag-error pre { background: #2a2410; border-color: #5c4d12; color: #e8dca6; }
+    [data-bs-theme="dark"] .diag-error .error-message { background: #322a0c; border-color: #5c4d12; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">Panel</span></a>
+        <span class="navbar-brand fw-bold mb-0">orders — <span data-i18n="nav.diagrams">Diagramas</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><a href="orders-openapi.html" class="btn btn-sm btn-outline-success" data-i18n="nav.restApi">API REST</a><a href="orders-asyncapi.html" class="btn btn-sm btn-outline-primary" data-i18n="nav.events">Eventos</a>
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div></div>
+    </div>
+  </nav>
+
+  <div class="container-xl pb-5">
+    <ul class="nav nav-tabs mb-4" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-overview" data-bs-toggle="tab"
+          data-bs-target="#pane-overview" type="button" role="tab">Vista general</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-domain" data-bs-toggle="tab"
+          data-bs-target="#pane-domain" type="button" role="tab">Modelo de dominio</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-states" data-bs-toggle="tab"
+          data-bs-target="#pane-states" type="button" role="tab">Estados <span class="badge bg-secondary ms-1">2</span></button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-seq" data-bs-toggle="tab"
+          data-bs-target="#pane-seq" type="button" role="tab">Secuencias <span class="badge bg-secondary ms-1">2</span></button>
+      </li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="pane-overview" role="tabpanel">
+        <div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-0">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-0" class="diag-target"><pre class="mermaid" data-diagram-id="diag-0">flowchart LR
+    subgraph customer[&quot;Actor: customer&quot;]
+        UC001[&quot;UC-ORD-001 CreateCart&quot;]
+        UC002[&quot;UC-ORD-002 AddItemToCart&quot;]
+        UC003[&quot;UC-ORD-003 UpdateCartItem&quot;]
+        UC004[&quot;UC-ORD-004 RemoveCartItem&quot;]
+        UC005[&quot;UC-ORD-005 Checkout&quot;]
+        UC006[&quot;UC-ORD-006 GetCart&quot;]
+        UC010[&quot;UC-ORD-010 GetOrder&quot;]
+        UC011[&quot;UC-ORD-011 ListOrders&quot;]
+        UC012[&quot;UC-ORD-012 CancelOrder&quot;]
+    end
+
+    subgraph admin[&quot;Actor: admin&quot;]
+        UC010_a[&quot;UC-ORD-010 GetOrder&quot;]
+        UC011_a[&quot;UC-ORD-011 ListOrders&quot;]
+        UC012_a[&quot;UC-ORD-012 CancelOrder&quot;]
+    end
+
+    subgraph system[&quot;Actor: system (events)&quot;]
+        UC020[&quot;UC-ORD-020 ConfirmOrder&quot;]
+        UC021[&quot;UC-ORD-021 CancelOnStockFailed&quot;]
+        UC022[&quot;UC-ORD-022 CancelOnPaymentFailed&quot;]
+        UC023[&quot;UC-ORD-023 SetInDelivery&quot;]
+        UC024[&quot;UC-ORD-024 CompleteDelivery&quot;]
+        UC025[&quot;UC-ORD-025 AckStockReleased&quot;]
+        UC026[&quot;UC-ORD-026 AckPaymentRefunded&quot;]
+        UC030[&quot;UC-ORD-030 SyncCustomerAddress&quot;]
+    end
+
+    subgraph aggregates[&quot;Aggregates&quot;]
+        Cart[&quot;Cart&quot;]
+        Order[&quot;Order&quot;]
+        CustAddr[&quot;CustomerAddress (readModel)&quot;]
+    end
+
+    UC001 --&gt; Cart
+    UC002 --&gt; Cart
+    UC003 --&gt; Cart
+    UC004 --&gt; Cart
+    UC005 --&gt; Cart
+    UC005 --&gt; Order
+    UC006 --&gt; Cart
+    UC010 --&gt; Order
+    UC011 --&gt; Order
+    UC012 --&gt; Order
+    UC010_a --&gt; Order
+    UC011_a --&gt; Order
+    UC012_a --&gt; Order
+    UC020 --&gt; Order
+    UC021 --&gt; Order
+    UC022 --&gt; Order
+    UC023 --&gt; Order
+    UC024 --&gt; Order
+    UC025 --&gt; Order
+    UC026 --&gt; Order
+    UC030 --&gt; CustAddr
+
+    subgraph external[&quot;External Integrations&quot;]
+        Catalog[&quot;catalog BC (HTTP outbound)&quot;]
+        Events[&quot;Event Bus (published)&quot;]
+    end
+
+    UC005 --&gt;|validateProductsAndPrices| Catalog
+    Order --&gt;|OrderPlaced| Events
+    Order --&gt;|OrderConfirmed| Events
+    Order --&gt;|OrderCancelled| Events</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-domain" role="tabpanel">
+        <div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-1">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-1" class="diag-target"><pre class="mermaid" data-diagram-id="diag-1">classDiagram
+    class Cart {
+        +Uuid id
+        +Uuid customerId
+        +CartStatus status
+        +PaymentMethod paymentMethod
+        +DateTime createdAt
+        +DateTime updatedAt
+        +Long version
+        +create(paymentMethod) Cart
+        +addItem(productId, quantity) void
+        +updateItem(cartItemId, quantity) void
+        +removeItem(cartItemId) void
+        +checkout() void
+    }
+
+    class CartItem {
+        +Uuid id
+        +Uuid productId
+        +Integer quantity
+    }
+
+    class Order {
+        +Uuid id
+        +Uuid customerId
+        +OrderStatus status
+        +PaymentMethod paymentMethod
+        +Uuid deliveryAddressId
+        +DeliveryAddressSnapshot deliveryAddress
+        +Money total
+        +DateTime createdAt
+        +DateTime updatedAt
+        +Long version
+        +create(paymentMethod, deliveryAddressId, deliveryAddress, total, lines) Order
+        +confirm() void
+        +cancel() void
+        +setInDelivery() void
+        +complete() void
+    }
+
+    class OrderLine {
+        +Uuid id
+        +Uuid productId
+        +String productName
+        +Money unitPrice
+        +Integer quantity
+        +Money subtotal
+    }
+
+    class CustomerAddress {
+        +Uuid id
+        +Uuid addressId
+        +Uuid customerId
+        +String street
+        +String city
+        +String postalCode
+        +String reference
+        +Boolean deleted
+        +DateTime createdAt
+        +DateTime updatedAt
+    }
+
+    class Money {
+        &lt;&lt;ValueObject&gt;&gt;
+        +Decimal amount
+        +String currency
+    }
+
+    class DeliveryAddressSnapshot {
+        &lt;&lt;ValueObject, immutable&gt;&gt;
+        +String street
+        +String city
+        +String postalCode
+        +String reference
+    }
+
+    class OrderLineSnapshot {
+        &lt;&lt;ValueObject, immutable&gt;&gt;
+        +Uuid productId
+        +String productName
+        +Money unitPrice
+        +Integer quantity
+        +Money subtotal
+    }
+
+    class CartStatus {
+        &lt;&lt;Enum&gt;&gt;
+        OPEN
+        CHECKED_OUT
+    }
+
+    class OrderStatus {
+        &lt;&lt;Enum&gt;&gt;
+        PENDING_PAYMENT
+        CONFIRMED
+        IN_DELIVERY
+        DELIVERED
+        CANCELLED
+    }
+
+    class PaymentMethod {
+        &lt;&lt;Enum&gt;&gt;
+        CARD
+        CASH_ON_DELIVERY
+    }
+
+    Cart &quot;1&quot; *-- &quot;0..*&quot; CartItem : contains
+    Order &quot;1&quot; *-- &quot;1..*&quot; OrderLine : contains
+    Order --&gt; DeliveryAddressSnapshot : snapshot
+    Order --&gt; Money : total
+    OrderLine --&gt; Money : unitPrice
+    OrderLine --&gt; Money : subtotal
+    Cart --&gt; CartStatus : status
+    Cart --&gt; PaymentMethod : paymentMethod
+    Order --&gt; OrderStatus : status
+    Order --&gt; PaymentMethod : paymentMethod</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-states" role="tabpanel">
+        <h6 class="diagram-title">Cart States</h6><div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-2">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-2" class="diag-target"><pre class="mermaid" data-diagram-id="diag-2">stateDiagram-v2
+    [*] --&gt; OPEN : Cart.create() [UC-ORD-001 CreateCart]
+
+    OPEN --&gt; CHECKED_OUT : Cart.checkout() [UC-ORD-005 Checkout]
+
+    CHECKED_OUT --&gt; [*] : Terminal state
+
+    note right of OPEN
+        ORD-RULE-001: at least one item (checkout guard)
+        ORD-RULE-002: must be OPEN to modify items
+        ORD-RULE-004: one OPEN cart per customer (create guard)
+    end note
+
+    note right of CHECKED_OUT
+        ORD-RULE-003: terminal - no modifications allowed
+        Order created → OrderPlaced emitted
+    end note</pre></div>
+    </div><h6 class="diagram-title">Order States</h6><div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-3">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-3" class="diag-target"><pre class="mermaid" data-diagram-id="diag-3">stateDiagram-v2
+    [*] --&gt; PENDING_PAYMENT : Order.create() [UC-ORD-005 Checkout] emits OrderPlaced
+
+    PENDING_PAYMENT --&gt; CONFIRMED : Order.confirm() [UC-ORD-020 ConfirmOrder] PaymentApproved event emits OrderConfirmed
+
+    PENDING_PAYMENT --&gt; CANCELLED : Order.cancel() [UC-ORD-012 CancelOrder] [UC-ORD-021 CancelOnStockFailed] [UC-ORD-022 CancelOnPaymentFailed] emits OrderCancelled
+
+    CONFIRMED --&gt; IN_DELIVERY : Order.setInDelivery() [UC-ORD-023 SetOrderInDelivery] DeliveryOrderCreated event
+
+    CONFIRMED --&gt; CANCELLED : Order.cancel() [UC-ORD-012 CancelOrder] emits OrderCancelled
+
+    IN_DELIVERY --&gt; DELIVERED : Order.complete() [UC-ORD-024 CompleteDelivery] DeliveryCompleted event
+
+    DELIVERED --&gt; [*] : Terminal state
+    CANCELLED --&gt; [*] : Terminal state
+
+    note right of PENDING_PAYMENT
+        ORD-RULE-008: guard for confirm()
+        ORD-RULE-005: guard for cancel()
+    end note
+
+    note right of CONFIRMED
+        ORD-RULE-009: guard for setInDelivery()
+        ORD-RULE-005: guard for cancel()
+    end note
+
+    note right of IN_DELIVERY
+        ORD-RULE-010: guard for complete()
+    end note</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-seq" role="tabpanel">
+        <h6 class="diagram-title">Customer Address Sync</h6><div class="diagram-wrap seq-wrap" tabindex="0" data-diagram-wrap="diag-4">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-4" class="diag-target"><pre class="mermaid" data-diagram-id="diag-4">sequenceDiagram
+    autonumber
+    participant CustomersBroker as Message Broker (customers topic)
+    participant EventConsumer as orders CustomerAddressUpdatedConsumer
+    participant IdempotencyStore as Idempotency Store (processedEvents)
+    participant AddressRepo as CustomerAddressRepository
+
+    CustomersBroker-&gt;&gt;EventConsumer: CustomerAddressUpdated { addressId, customerId, street, city,   postalCode, reference, deleted }
+
+    EventConsumer-&gt;&gt;IdempotencyStore: isAlreadyProcessed(eventId)?
+    IdempotencyStore--&gt;&gt;EventConsumer: false (new event)
+
+    alt address exists in LRM
+        EventConsumer-&gt;&gt;AddressRepo: findByAddressId(addressId)
+        AddressRepo--&gt;&gt;EventConsumer: CustomerAddress (existing record)
+        EventConsumer-&gt;&gt;AddressRepo: upsert(updatedAddress)
+        Note over AddressRepo: UPDATE - apply new field values including deleted flag
+    else new address
+        EventConsumer-&gt;&gt;AddressRepo: findByAddressId(addressId)
+        AddressRepo--&gt;&gt;EventConsumer: null
+        EventConsumer-&gt;&gt;AddressRepo: upsert(newAddress)
+        Note over AddressRepo: INSERT - new CustomerAddress record
+    end
+
+    AddressRepo--&gt;&gt;EventConsumer: ✓ upserted
+    EventConsumer-&gt;&gt;IdempotencyStore: markProcessed(eventId, TTL=14d)
+    EventConsumer--&gt;&gt;CustomersBroker: ACK
+
+    Note over EventConsumer: Redelivery scenario: IdempotencyStore returns true → skip processing → ACK
+    Note over AddressRepo: deleted=true → address hidden at checkout (DELIVERY_ADDRESS_NOT_FOUND guard in UC-ORD-005)</pre></div>
+    </div><h6 class="diagram-title">Validate Products And Prices</h6><div class="diagram-wrap seq-wrap" tabindex="0" data-diagram-wrap="diag-5">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-5" class="diag-target"><pre class="mermaid" data-diagram-id="diag-5">sequenceDiagram
+    autonumber
+    actor Customer
+    participant OrdersHandler as orders CheckoutHandler
+    participant CartRepo as CartRepository
+    participant AddrRepo as CustomerAddressRepository
+    participant CatalogACL as CatalogACL (anti-corruption layer)
+    participant CatalogAPI as catalog BC (internal API)
+    participant OrderRepo as OrderRepository
+    participant Outbox as Outbox (orders)
+
+    Customer-&gt;&gt;OrdersHandler: POST /carts/{cartId}/checkout { deliveryAddressId }
+
+    OrdersHandler-&gt;&gt;CartRepo: findById(cartId)
+    CartRepo--&gt;&gt;OrdersHandler: Cart (OPEN, items=[p1×2, p2×1])
+
+    Note over OrdersHandler: ownership check: cart.customerId == JWT.sub
+
+    OrdersHandler-&gt;&gt;AddrRepo: findByAddressId(deliveryAddressId)
+    AddrRepo--&gt;&gt;OrdersHandler: CustomerAddress (deleted=false)
+
+    Note over OrdersHandler: enforce ORD-RULE-002 (cart OPEN) enforce ORD-RULE-001 (not empty)
+
+    OrdersHandler-&gt;&gt;CatalogACL: validateProductsAndPrices([p1, p2])
+    CatalogACL-&gt;&gt;CatalogAPI: POST /internal/products/price-snapshot { productIds: [p1, p2] }
+    CatalogAPI--&gt;&gt;CatalogACL: [{ productId:p1, name:.., price:15000 COP, status:ACTIVE },  { productId:p2, name:.., price:8500 COP, status:ACTIVE }]
+    CatalogACL--&gt;&gt;OrdersHandler: List[PriceSnapshot]
+
+    Note over OrdersHandler: All products ACTIVE ✓ Build OrderLineSnapshots Compute total = 38500 COP
+
+    OrdersHandler-&gt;&gt;OrdersHandler: cart.checkout() → status=CHECKED_OUT
+    OrdersHandler-&gt;&gt;OrdersHandler: Order.create(paymentMethod, addressId, addressSnapshot, total, lines) → emits OrderPlaced (in-memory)
+
+    OrdersHandler-&gt;&gt;CartRepo: save(cart CHECKED_OUT)
+    OrdersHandler-&gt;&gt;OrderRepo: save(order PENDING_PAYMENT)
+    OrderRepo-&gt;&gt;Outbox: INSERT OrderPlaced event
+
+    OrdersHandler--&gt;&gt;Customer: 201 Created Location: /orders/{orderId}
+
+    Note over Outbox: Outbox relay delivers OrderPlaced to message broker → inventory consumes</pre></div>
+    </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    const DIAGRAMS = [{"id":"diag-0","title":"Overview","fileName":"orders-diagram.mmd","kind":"overview","source":"flowchart LR\n    subgraph customer[\"Actor: customer\"]\n        UC001[\"UC-ORD-001 CreateCart\"]\n        UC002[\"UC-ORD-002 AddItemToCart\"]\n        UC003[\"UC-ORD-003 UpdateCartItem\"]\n        UC004[\"UC-ORD-004 RemoveCartItem\"]\n        UC005[\"UC-ORD-005 Checkout\"]\n        UC006[\"UC-ORD-006 GetCart\"]\n        UC010[\"UC-ORD-010 GetOrder\"]\n        UC011[\"UC-ORD-011 ListOrders\"]\n        UC012[\"UC-ORD-012 CancelOrder\"]\n    end\n\n    subgraph admin[\"Actor: admin\"]\n        UC010_a[\"UC-ORD-010 GetOrder\"]\n        UC011_a[\"UC-ORD-011 ListOrders\"]\n        UC012_a[\"UC-ORD-012 CancelOrder\"]\n    end\n\n    subgraph system[\"Actor: system (events)\"]\n        UC020[\"UC-ORD-020 ConfirmOrder\"]\n        UC021[\"UC-ORD-021 CancelOnStockFailed\"]\n        UC022[\"UC-ORD-022 CancelOnPaymentFailed\"]\n        UC023[\"UC-ORD-023 SetInDelivery\"]\n        UC024[\"UC-ORD-024 CompleteDelivery\"]\n        UC025[\"UC-ORD-025 AckStockReleased\"]\n        UC026[\"UC-ORD-026 AckPaymentRefunded\"]\n        UC030[\"UC-ORD-030 SyncCustomerAddress\"]\n    end\n\n    subgraph aggregates[\"Aggregates\"]\n        Cart[\"Cart\"]\n        Order[\"Order\"]\n        CustAddr[\"CustomerAddress (readModel)\"]\n    end\n\n    UC001 --> Cart\n    UC002 --> Cart\n    UC003 --> Cart\n    UC004 --> Cart\n    UC005 --> Cart\n    UC005 --> Order\n    UC006 --> Cart\n    UC010 --> Order\n    UC011 --> Order\n    UC012 --> Order\n    UC010_a --> Order\n    UC011_a --> Order\n    UC012_a --> Order\n    UC020 --> Order\n    UC021 --> Order\n    UC022 --> Order\n    UC023 --> Order\n    UC024 --> Order\n    UC025 --> Order\n    UC026 --> Order\n    UC030 --> CustAddr\n\n    subgraph external[\"External Integrations\"]\n        Catalog[\"catalog BC (HTTP outbound)\"]\n        Events[\"Event Bus (published)\"]\n    end\n\n    UC005 -->|validateProductsAndPrices| Catalog\n    Order -->|OrderPlaced| Events\n    Order -->|OrderConfirmed| Events\n    Order -->|OrderCancelled| Events","isSeq":false},{"id":"diag-1","title":"Domain Model","fileName":"orders-diagram-domain-model.mmd","kind":"domain-model","source":"classDiagram\n    class Cart {\n        +Uuid id\n        +Uuid customerId\n        +CartStatus status\n        +PaymentMethod paymentMethod\n        +DateTime createdAt\n        +DateTime updatedAt\n        +Long version\n        +create(paymentMethod) Cart\n        +addItem(productId, quantity) void\n        +updateItem(cartItemId, quantity) void\n        +removeItem(cartItemId) void\n        +checkout() void\n    }\n\n    class CartItem {\n        +Uuid id\n        +Uuid productId\n        +Integer quantity\n    }\n\n    class Order {\n        +Uuid id\n        +Uuid customerId\n        +OrderStatus status\n        +PaymentMethod paymentMethod\n        +Uuid deliveryAddressId\n        +DeliveryAddressSnapshot deliveryAddress\n        +Money total\n        +DateTime createdAt\n        +DateTime updatedAt\n        +Long version\n        +create(paymentMethod, deliveryAddressId, deliveryAddress, total, lines) Order\n        +confirm() void\n        +cancel() void\n        +setInDelivery() void\n        +complete() void\n    }\n\n    class OrderLine {\n        +Uuid id\n        +Uuid productId\n        +String productName\n        +Money unitPrice\n        +Integer quantity\n        +Money subtotal\n    }\n\n    class CustomerAddress {\n        +Uuid id\n        +Uuid addressId\n        +Uuid customerId\n        +String street\n        +String city\n        +String postalCode\n        +String reference\n        +Boolean deleted\n        +DateTime createdAt\n        +DateTime updatedAt\n    }\n\n    class Money {\n        <<ValueObject>>\n        +Decimal amount\n        +String currency\n    }\n\n    class DeliveryAddressSnapshot {\n        <<ValueObject, immutable>>\n        +String street\n        +String city\n        +String postalCode\n        +String reference\n    }\n\n    class OrderLineSnapshot {\n        <<ValueObject, immutable>>\n        +Uuid productId\n        +String productName\n        +Money unitPrice\n        +Integer quantity\n        +Money subtotal\n    }\n\n    class CartStatus {\n        <<Enum>>\n        OPEN\n        CHECKED_OUT\n    }\n\n    class OrderStatus {\n        <<Enum>>\n        PENDING_PAYMENT\n        CONFIRMED\n        IN_DELIVERY\n        DELIVERED\n        CANCELLED\n    }\n\n    class PaymentMethod {\n        <<Enum>>\n        CARD\n        CASH_ON_DELIVERY\n    }\n\n    Cart \"1\" *-- \"0..*\" CartItem : contains\n    Order \"1\" *-- \"1..*\" OrderLine : contains\n    Order --> DeliveryAddressSnapshot : snapshot\n    Order --> Money : total\n    OrderLine --> Money : unitPrice\n    OrderLine --> Money : subtotal\n    Cart --> CartStatus : status\n    Cart --> PaymentMethod : paymentMethod\n    Order --> OrderStatus : status\n    Order --> PaymentMethod : paymentMethod","isSeq":false},{"id":"diag-2","title":"Cart States","fileName":"orders-diagram-cart-states.mmd","kind":"states","source":"stateDiagram-v2\n    [*] --> OPEN : Cart.create() [UC-ORD-001 CreateCart]\n\n    OPEN --> CHECKED_OUT : Cart.checkout() [UC-ORD-005 Checkout]\n\n    CHECKED_OUT --> [*] : Terminal state\n\n    note right of OPEN\n        ORD-RULE-001: at least one item (checkout guard)\n        ORD-RULE-002: must be OPEN to modify items\n        ORD-RULE-004: one OPEN cart per customer (create guard)\n    end note\n\n    note right of CHECKED_OUT\n        ORD-RULE-003: terminal - no modifications allowed\n        Order created → OrderPlaced emitted\n    end note","isSeq":false},{"id":"diag-3","title":"Order States","fileName":"orders-diagram-order-states.mmd","kind":"states","source":"stateDiagram-v2\n    [*] --> PENDING_PAYMENT : Order.create() [UC-ORD-005 Checkout] emits OrderPlaced\n\n    PENDING_PAYMENT --> CONFIRMED : Order.confirm() [UC-ORD-020 ConfirmOrder] PaymentApproved event emits OrderConfirmed\n\n    PENDING_PAYMENT --> CANCELLED : Order.cancel() [UC-ORD-012 CancelOrder] [UC-ORD-021 CancelOnStockFailed] [UC-ORD-022 CancelOnPaymentFailed] emits OrderCancelled\n\n    CONFIRMED --> IN_DELIVERY : Order.setInDelivery() [UC-ORD-023 SetOrderInDelivery] DeliveryOrderCreated event\n\n    CONFIRMED --> CANCELLED : Order.cancel() [UC-ORD-012 CancelOrder] emits OrderCancelled\n\n    IN_DELIVERY --> DELIVERED : Order.complete() [UC-ORD-024 CompleteDelivery] DeliveryCompleted event\n\n    DELIVERED --> [*] : Terminal state\n    CANCELLED --> [*] : Terminal state\n\n    note right of PENDING_PAYMENT\n        ORD-RULE-008: guard for confirm()\n        ORD-RULE-005: guard for cancel()\n    end note\n\n    note right of CONFIRMED\n        ORD-RULE-009: guard for setInDelivery()\n        ORD-RULE-005: guard for cancel()\n    end note\n\n    note right of IN_DELIVERY\n        ORD-RULE-010: guard for complete()\n    end note","isSeq":false},{"id":"diag-4","title":"Customer Address Sync","fileName":"orders-diagram-customer-address-sync-seq.mmd","kind":"sequence","source":"sequenceDiagram\n    autonumber\n    participant CustomersBroker as Message Broker (customers topic)\n    participant EventConsumer as orders CustomerAddressUpdatedConsumer\n    participant IdempotencyStore as Idempotency Store (processedEvents)\n    participant AddressRepo as CustomerAddressRepository\n\n    CustomersBroker->>EventConsumer: CustomerAddressUpdated { addressId, customerId, street, city,   postalCode, reference, deleted }\n\n    EventConsumer->>IdempotencyStore: isAlreadyProcessed(eventId)?\n    IdempotencyStore-->>EventConsumer: false (new event)\n\n    alt address exists in LRM\n        EventConsumer->>AddressRepo: findByAddressId(addressId)\n        AddressRepo-->>EventConsumer: CustomerAddress (existing record)\n        EventConsumer->>AddressRepo: upsert(updatedAddress)\n        Note over AddressRepo: UPDATE - apply new field values including deleted flag\n    else new address\n        EventConsumer->>AddressRepo: findByAddressId(addressId)\n        AddressRepo-->>EventConsumer: null\n        EventConsumer->>AddressRepo: upsert(newAddress)\n        Note over AddressRepo: INSERT - new CustomerAddress record\n    end\n\n    AddressRepo-->>EventConsumer: ✓ upserted\n    EventConsumer->>IdempotencyStore: markProcessed(eventId, TTL=14d)\n    EventConsumer-->>CustomersBroker: ACK\n\n    Note over EventConsumer: Redelivery scenario: IdempotencyStore returns true → skip processing → ACK\n    Note over AddressRepo: deleted=true → address hidden at checkout (DELIVERY_ADDRESS_NOT_FOUND guard in UC-ORD-005)","isSeq":true},{"id":"diag-5","title":"Validate Products And Prices","fileName":"orders-diagram-validate-products-and-prices-seq.mmd","kind":"sequence","source":"sequenceDiagram\n    autonumber\n    actor Customer\n    participant OrdersHandler as orders CheckoutHandler\n    participant CartRepo as CartRepository\n    participant AddrRepo as CustomerAddressRepository\n    participant CatalogACL as CatalogACL (anti-corruption layer)\n    participant CatalogAPI as catalog BC (internal API)\n    participant OrderRepo as OrderRepository\n    participant Outbox as Outbox (orders)\n\n    Customer->>OrdersHandler: POST /carts/{cartId}/checkout { deliveryAddressId }\n\n    OrdersHandler->>CartRepo: findById(cartId)\n    CartRepo-->>OrdersHandler: Cart (OPEN, items=[p1×2, p2×1])\n\n    Note over OrdersHandler: ownership check: cart.customerId == JWT.sub\n\n    OrdersHandler->>AddrRepo: findByAddressId(deliveryAddressId)\n    AddrRepo-->>OrdersHandler: CustomerAddress (deleted=false)\n\n    Note over OrdersHandler: enforce ORD-RULE-002 (cart OPEN) enforce ORD-RULE-001 (not empty)\n\n    OrdersHandler->>CatalogACL: validateProductsAndPrices([p1, p2])\n    CatalogACL->>CatalogAPI: POST /internal/products/price-snapshot { productIds: [p1, p2] }\n    CatalogAPI-->>CatalogACL: [{ productId:p1, name:.., price:15000 COP, status:ACTIVE },  { productId:p2, name:.., price:8500 COP, status:ACTIVE }]\n    CatalogACL-->>OrdersHandler: List[PriceSnapshot]\n\n    Note over OrdersHandler: All products ACTIVE ✓ Build OrderLineSnapshots Compute total = 38500 COP\n\n    OrdersHandler->>OrdersHandler: cart.checkout() → status=CHECKED_OUT\n    OrdersHandler->>OrdersHandler: Order.create(paymentMethod, addressId, addressSnapshot, total, lines) → emits OrderPlaced (in-memory)\n\n    OrdersHandler->>CartRepo: save(cart CHECKED_OUT)\n    OrdersHandler->>OrderRepo: save(order PENDING_PAYMENT)\n    OrderRepo->>Outbox: INSERT OrderPlaced event\n\n    OrdersHandler-->>Customer: 201 Created Location: /orders/{orderId}\n\n    Note over Outbox: Outbox relay delivers OrderPlaced to message broker → inventory consumes","isSeq":true}];
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
+
+    const rendered = new Set(); // ids successfully rendered
+    const failed  = new Set(); // ids that threw — no retry
+
+    function escapeText(value) {
+      return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function numberedSource(source) {
+      return String(source || '').split('\n').map((line, index) =>
+        '<span class="line-no">' + String(index + 1).padStart(3, ' ') + '</span>' + escapeText(line)
+      ).join('\n');
+    }
+
+    function setupPanZoom(target) {
+      const wrap = target.closest('.diagram-wrap');
+      const svg = target.querySelector('svg');
+      if (!wrap || !svg || target.dataset.panZoomReady) return;
+      target.dataset.panZoomReady = 'true';
+      let scale = 1;
+      let x = 0;
+      let y = 0;
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+
+      // Return the current SVG's natural width from its viewBox.
+      // This is evaluated lazily so it still works if Mermaid finishes its
+      // async render passes (and sets the viewBox) after setupPanZoom runs.
+      function getNatWidth() {
+        const cur = target.querySelector('svg');
+        if (cur && cur.viewBox && cur.viewBox.baseVal.width > 1) return cur.viewBox.baseVal.width;
+        // Fallback: captured value from setup time
+        return (svg.viewBox && svg.viewBox.baseVal.width > 1)
+          ? svg.viewBox.baseVal.width
+          : (svg.getBoundingClientRect().width || 300);
+      }
+
+      function apply() {
+        // Re-query the SVG each time — Mermaid may have replaced the original
+        // SVG element during its async rendering pipeline (stale-reference guard).
+        const currentSvg = target.querySelector('svg');
+        if (!currentSvg) return;
+        const natW = getNatWidth();
+        // Set an explicit pixel width on the SVG so the layout box reflects
+        // the scaled size (transforms don't affect layout, but width does).
+        currentSvg.style.width = Math.round(natW * scale) + 'px';
+        currentSvg.style.height = 'auto';
+        currentSvg.style.maxWidth = 'none';
+        target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+      }
+      function zoom(delta) {
+        scale = Math.min(4, Math.max(0.25, Math.round((scale + delta) * 100) / 100));
+        apply();
+      }
+      function reset() {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+      }
+      function fit() {
+        const available = Math.max(240, wrap.clientWidth - 48);
+        const natW = getNatWidth();
+        // No hard minimum so fit-to-width always fills the container exactly.
+        scale = Math.min(2.5, Math.max(0.05, available / natW));
+        x = 0;
+        y = 0;
+        apply();
+      }
+
+      wrap.querySelectorAll('[data-zoom]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const action = btn.getAttribute('data-zoom');
+          if (action === 'in') zoom(0.15);
+          if (action === 'out') zoom(-0.15);
+          if (action === 'reset') reset();
+          if (action === 'fit') fit();
+        });
+      });
+      wrap.addEventListener('keydown', (event) => {
+        if (event.key === '+') { event.preventDefault(); zoom(0.15); }
+        if (event.key === '-') { event.preventDefault(); zoom(-0.15); }
+        if (event.key === '0') { event.preventDefault(); reset(); }
+      });
+      target.addEventListener('pointerdown', (event) => {
+        dragging = true;
+        target.classList.add('dragging');
+        startX = event.clientX - x;
+        startY = event.clientY - y;
+        target.setPointerCapture(event.pointerId);
+      });
+      target.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        x = event.clientX - startX;
+        y = event.clientY - startY;
+        apply();
+      });
+      target.addEventListener('pointerup', (event) => {
+        dragging = false;
+        target.classList.remove('dragging');
+        target.releasePointerCapture(event.pointerId);
+      });
+      // Auto-fit after SVG is painted. Two RAF passes give Mermaid's async
+      // rendering pipeline time to complete before we read the viewBox and apply.
+      requestAnimationFrame(() => requestAnimationFrame(() => fit()));
+    }
+
+    function showError(el, d, errorMessage) {
+      el.className = 'diag-error';
+      const prompt = (window.dslT ? window.dslT('diagram.correctPrompt') : 'Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.') + '\n\nDiagram: ' + (d.fileName || d.title || d.id) + '\nKind: ' + (d.kind || 'unknown') + '\nError: ' + errorMessage;
+      el.innerHTML =
+        '<div class="error-message">' +
+        '<div class="text-warning small mb-2 fw-semibold">&#9888; <span data-i18n="diagram.syntaxError">' + (window.dslT ? window.dslT('diagram.syntaxError') : 'Error de sintaxis del diagrama') + '</span></div>' +
+        '<p class="small mb-1"><strong>' + escapeText(d.fileName || d.title || d.id) + '</strong></p>' +
+        '<p class="small mb-0"><span data-i18n="diagram.errorMessage">' + (window.dslT ? window.dslT('diagram.errorMessage') : 'Mensaje de Mermaid') + '</span>: ' + escapeText(errorMessage) + '</p>' +
+        '</div>' +
+        '<details class="mb-3"><summary class="small fw-semibold" data-i18n="diagram.promptTitle">' + (window.dslT ? window.dslT('diagram.promptTitle') : 'Prompt para el agente') + '</summary><pre class="prompt-box"><code>' + escapeText(prompt) + '</code></pre></details>' +
+        '<div class="text-muted small mb-2 fw-semibold" data-i18n="diagram.rawSource">' + (window.dslT ? window.dslT('diagram.rawSource') : 'Fuente original') + '</div>' +
+        '<pre>' + numberedSource(d.source) + '</pre>';
+    }
+
+    // Apply pan/zoom as soon as Mermaid marks an element as processed.
+    const panZoomObserver = new MutationObserver((mutations) => {
+      for (const mut of mutations) {
+        if (mut.attributeName === 'data-processed') {
+          const preEl = mut.target;
+          if (preEl.getAttribute('data-processed') === 'true') {
+            const diagTarget = preEl.closest('.diag-target');
+            if (diagTarget) setupPanZoom(diagTarget);
+          }
+        }
+      }
+    });
+    document.querySelectorAll('.mermaid').forEach((el) =>
+      panZoomObserver.observe(el, { attributes: true, attributeFilter: ['data-processed'] })
+    );
+    // Fallback: if Mermaid's startOnLoad already processed elements before the
+    // observer was attached, set up pan/zoom for them now.
+    document.querySelectorAll('.mermaid[data-processed="true"]').forEach((preEl) => {
+      const diagTarget = preEl.closest('.diag-target');
+      if (diagTarget) setupPanZoom(diagTarget);
+    });
+
+    // Render only diagrams inside the given Bootstrap tab pane.
+    // We call mermaid.parse() first — mermaid.run() with suppressErrors:true
+    // renders the bomb icon without throwing, so parse() is the only reliable
+    // way to detect syntax errors and show our own error panel.
+    async function renderDiagramsInPane(pane) {
+      for (const d of DIAGRAMS) {
+        if (rendered.has(d.id) || failed.has(d.id)) continue;
+        const el = document.getElementById(d.id);
+        if (!el || !pane.contains(el)) continue;
+        const preEl = el.querySelector('.mermaid');
+        if (!preEl) continue;
+        // If Mermaid already rendered this element (e.g. via startOnLoad default),
+        // just mark it rendered and set up pan/zoom without re-running mermaid.
+        if (preEl.getAttribute('data-processed') === 'true') {
+          rendered.add(d.id);
+          setupPanZoom(el);
+          continue;
+        }
+        // textContent gives decoded text (HTML entities resolved by the browser)
+        const source = preEl.textContent.trim();
+        try {
+          await mermaid.parse(source); // throws ParseError on invalid syntax
+        } catch (parseErr) {
+          failed.add(d.id);
+          showError(el, d, parseErr.message || String(parseErr));
+          continue;
+        }
+        try {
+          await mermaid.run({ nodes: [preEl], suppressErrors: true });
+          rendered.add(d.id);
+          // Call setupPanZoom directly — the SVG is guaranteed to be in the DOM
+          // now that mermaid.run() has resolved. The MutationObserver alone is
+          // unreliable because Mermaid may set data-processed before inserting
+          // the SVG, causing the observer to fire when querySelector('svg') is null.
+          setupPanZoom(el);
+        } catch (runErr) {
+          failed.add(d.id);
+          showError(el, d, runErr.message || String(runErr));
+        }
+      }
+    }
+
+    // On tab switch, render the newly visible pane.
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', () => {
+        const paneId = btn.getAttribute('data-bs-target');
+        const pane = document.querySelector(paneId);
+        if (pane) renderDiagramsInPane(pane);
+      });
+    });
+
+    // Initial render: only the active pane. Deferred one tick so Mermaid
+    // completes its internal async initialization first.
+    setTimeout(() => {
+      const activePane = document.querySelector('.tab-pane.show.active');
+      if (activePane) renderDiagramsInPane(activePane);
+    }, 0);
+  </script>
+</body>
+</html>

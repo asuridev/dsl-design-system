@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>orders — Revisión de decisiones</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
+    .bg-purple { background-color: #6f42c1 !important; }
+    .metric-tile, .decision-card, .detail-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
+    .detail-card { margin-bottom: 1.25rem; }
+    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
+    .decision-card { margin-bottom: 1rem; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
+    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
+    .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    /* Expandable use-case narrative */
+    .uc-row { cursor: pointer; }
+    .uc-toggle { color: var(--bs-secondary-color); text-decoration: none; }
+    .uc-caret { display: inline-block; transition: transform .15s; }
+    .uc-toggle[aria-expanded="true"] .uc-caret { transform: rotate(90deg); }
+    .uc-detail { padding: .5rem .25rem; font-size: .9rem; }
+    .uc-detail .narrative-quote { border-left: 3px solid var(--bs-border-color); padding-left: .75rem; color: var(--bs-secondary-color); margin: .5rem 0; }
+    .uc-detail .narrative-code { background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: .35rem; padding: .6rem; font-size: .8rem; overflow:auto; }
+    .uc-detail .narrative-table { font-size: .82rem; }
+    .uc-detail .narrative-flow > summary { cursor: pointer; }
+    .uc-detail .narrative-subheading { text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); margin-top: .75rem; }
+    /* Copy-to-clipboard control */
+    .copy-btn { font-size: .72rem; }
+    .copy-btn.copied { color: var(--bs-success); border-color: var(--bs-success); }
+    /* Sticky in-page navigation */
+    .review-nav { position: sticky; top: 1rem; font-size: .82rem; }
+    .review-nav a { display: block; padding: .2rem .5rem; border-left: 2px solid transparent; color: var(--bs-secondary-color); text-decoration: none; border-radius: 0 .25rem .25rem 0; }
+    .review-nav a:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+    .review-nav a.active { border-left-color: var(--bs-primary); color: var(--bs-body-color); font-weight: 600; }
+    /* Attention panel + cross-link target highlight */
+    .attention-card { border-left: 4px solid var(--bs-warning); }
+    .attention-card.is-error { border-left-color: var(--bs-danger); }
+    .attention-card.is-ok { border-left-color: var(--bs-success); }
+    :target { scroll-margin-top: 4.5rem; }
+    .xref-flash { animation: xrefFlash 1.4s ease-out; }
+    @keyframes xrefFlash { 0% { background: rgba(255,193,7,.45); } 100% { background: transparent; } }
+    .collapsible-section > .section-toggle { cursor: pointer; user-select: none; }
+    .collapsible-section > .section-toggle .uc-caret { transform: rotate(90deg); }
+    .collapsible-section.collapsed > .section-toggle .uc-caret { transform: rotate(0deg); }
+    .collapsible-section.collapsed > .section-body { display: none; }</style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">Panel</span></a>
+        <span class="navbar-brand fw-bold mb-0">orders — <span data-i18n="ui.decisionReview">Revisión de decisiones</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><a class="btn btn-sm btn-outline-dark" href="orders-design.html" data-i18n="nav.diagrams">Diagramas</a><a class="btn btn-sm btn-outline-success" href="orders-openapi.html" data-i18n="nav.restApi">API REST</a><a class="btn btn-sm btn-outline-primary" href="orders-asyncapi.html" data-i18n="nav.events">Eventos</a>
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div></div>
+    </div>
+  </nav>
+
+  <main class="container-xl pb-5">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+      <div>
+        <h1 class="h4 mb-1">orders <span class="badge bg-primary align-middle">core</span></h1>
+        <p class="text-muted mb-0">Manages the full order lifecycle from cart creation through checkout, payment confirmation, delivery tracking and order completion. Validates prices against catalog via HTTP at checkout (monetary snapshot — OWASP A04). Maintains a local read model of customer delivery addresses fed by CustomerAddressUpdated events from the customers BC. Coordinator of the CheckoutSaga.
+</p>
+      </div>
+      <div class="text-end small text-muted">
+        <div>24/6/2026, 6:48:44 p. m.</div>
+        <div><span class="badge bg-success">0 errores / 0 advertencias</span></div>
+      </div>
+    </div>
+
+    <div class="detail-card mb-3"><p class="mb-0 text-body-secondary">core · 17 casos de uso (14 comandos / 3 consultas) · 3 eventos publicados · 9 integraciones directas</p></div>
+    <div class="mb-4"><div class="attention-card  p-3 rounded bg-body">
+    <div class="text-uppercase small fw-semibold text-body-secondary mb-2" data-i18n="ui.attentionRequired">Requiere tu atención</div>
+    <div class="d-flex flex-wrap gap-2"><a href="#sec-usecases" class="text-decoration-none"><span class="badge bg-info text-dark">11 caso(s) de uso en scaffold</span></a> <a href="#sec-decisions" class="text-decoration-none"><span class="badge bg-secondary">9 decisión(es) por confirmar</span></a></div>
+  </div></div>
+
+    
+    <div class="row g-3 mb-4">
+      
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">3</div>
+            <div class="metric-label">Aggregates</div>
+            <div class="metric-detail">2 entities</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">17</div>
+            <div class="metric-label">Use cases</div>
+            <div class="metric-detail">14 commands, 3 queries</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">11</div>
+            <div class="metric-label">Events</div>
+            <div class="metric-detail">3 published, 8 consumed</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">1</div>
+            <div class="metric-label">Integrations</div>
+            <div class="metric-detail">1 outbound, 0 inbound</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">1</div>
+            <div class="metric-label">Read models</div>
+            <div class="metric-detail">readModel aggregates + persistent projections</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">0</div>
+            <div class="metric-label">Storage</div>
+            <div class="metric-detail">no buckets</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">0</div>
+            <div class="metric-label">Diagnostics</div>
+            <div class="metric-detail">0 errors, 0 warnings</div>
+          </div>
+        </div>
+    </div>
+
+    <div class="row">
+      <div class="col-lg-2"><nav class="review-nav d-none d-lg-block">
+    <div class="text-uppercase small fw-semibold text-body-secondary mb-2" data-i18n="ui.onThisPage">En esta página</div>
+    <a href="#sec-decisions"><span data-i18n="ui.designDecisions">Decisiones de diseño</span></a><a href="#sec-usecases"><span data-i18n="ui.useCaseCatalog">Catálogo de casos de uso</span></a><a href="#sec-events"><span data-i18n="ui.eventsReadModels">Eventos y read models</span></a><a href="#sec-sagas"><span data-i18n="ui.sagaParticipation">Participación en sagas</span></a><a href="#sec-security"><span data-i18n="ui.endpointSecurity">Seguridad de endpoints</span></a><a href="#sec-operations"><span data-i18n="ui.operationalBehavior">Comportamiento operacional</span></a><a href="#sec-integrations"><span data-i18n="ui.directIntegrations">Integraciones directas</span></a><a href="#sec-storage"><span data-i18n="ui.storageBuckets">Buckets de almacenamiento</span></a><a href="#sec-diagnostics"><span data-i18n="ui.validationHealth">Salud de validación</span></a>
+  </nav></div>
+      <div class="col-lg-10">
+        <section id="sec-decisions" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.designDecisions">Decisiones de diseño</span><span class="badge bg-light text-dark border ms-2">9</span></h2>
+    
+    <article class="decision-card" data-category="domain-model">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-DM-001</span>
+          <h6 class="mb-1">Domain model shape</h6>
+        </div>
+        <span class="badge bg-light text-dark border">domain-model</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 3 aggregate(s), 2 entity/entities, 3 value object(s)</p>
+      <p class="small text-muted mb-2">Confirms whether concepts are modeled with identity, ownership or value semantics.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-primary">aggregate · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">entity composition</span><span class="badge rounded-pill text-bg-secondary">entity aggregation</span><span class="badge rounded-pill text-bg-primary">value object · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">projection</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-dm-001-0" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-dm-001-0">Review the DSL design decision &quot;Domain model shape&quot;. Context: 3 aggregate(s), 2 entity/entities, 3 value object(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (aggregate | entity composition | entity aggregation | value object | projection) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="domain-model">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-DM-002</span>
+          <h6 class="mb-1">State management</h6>
+        </div>
+        <span class="badge bg-light text-dark border">domain-model</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 3 enum(s), 2 lifecycle enum(s) with transitions</p>
+      <p class="small text-muted mb-2">Lifecycle states define allowed transitions and event emission points.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">lifecycle enum with transitions</span><span class="badge rounded-pill text-bg-secondary">classification enum</span><span class="badge rounded-pill text-bg-secondary">boolean flag</span><span class="badge rounded-pill text-bg-secondary">domain rule gate</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-dm-002-1" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-dm-002-1">Review the DSL design decision &quot;State management&quot;. Context: 3 enum(s), 2 lifecycle enum(s) with transitions Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (lifecycle enum with transitions | classification enum | boolean flag | domain rule gate) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="behavior">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-UC-001</span>
+          <h6 class="mb-1">Use case topology</h6>
+        </div>
+        <span class="badge bg-light text-dark border">behavior</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 17 use case(s), command: 14, query: 3; triggers: http=9, event=8</p>
+      <p class="small text-muted mb-2">Use case shape determines whether behavior mutates state, exposes reads, or reacts to events.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-primary">command · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-primary">query · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">http trigger</span><span class="badge rounded-pill text-bg-secondary">event trigger</span><span class="badge rounded-pill text-bg-secondary">bulk</span><span class="badge rounded-pill text-bg-secondary">async</span><span class="badge rounded-pill text-bg-secondary">cacheable</span><span class="badge rounded-pill text-bg-secondary">idempotent</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-uc-001-2" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-uc-001-2">Review the DSL design decision &quot;Use case topology&quot;. Context: 17 use case(s), command: 14, query: 3; triggers: http=9, event=8 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (command | query | http trigger | event trigger | bulk | async | cacheable | idempotent) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="security">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-UC-002</span>
+          <h6 class="mb-1">Authorization strategy</h6>
+        </div>
+        <span class="badge bg-light text-dark border">security</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 9 authorized use case(s), 0 public use case(s)</p>
+      <p class="small text-muted mb-2">Security choices should be visible to the designer before implementation.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-primary">public · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">rolesAnyOf</span><span class="badge rounded-pill text-bg-secondary">permissionsAnyOf</span><span class="badge rounded-pill text-bg-secondary">scopesAnyOf</span><span class="badge rounded-pill text-bg-secondary">ownership</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-uc-002-3" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-uc-002-3">Review the DSL design decision &quot;Authorization strategy&quot;. Context: 9 authorized use case(s), 0 public use case(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public | rolesAnyOf | permissionsAnyOf | scopesAnyOf | ownership) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="consistency">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-UC-003</span>
+          <h6 class="mb-1">Lookup and FK validation routes</h6>
+        </div>
+        <span class="badge bg-light text-dark border">consistency</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 1 FK validation(s), 0 use case(s) with lookups</p>
+      <p class="small text-muted mb-2">These choices decide where referential integrity is checked and which dependencies appear.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">notFoundError</span><span class="badge rounded-pill text-bg-secondary">lookups[]</span><span class="badge rounded-pill text-bg-secondary">same-BC fkValidation</span><span class="badge rounded-pill text-bg-secondary">Local Read Model lookup</span><span class="badge rounded-pill text-bg-secondary">external ServicePort</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-uc-003-4" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-uc-003-4">Review the DSL design decision &quot;Lookup and FK validation routes&quot;. Context: 1 FK validation(s), 0 use case(s) with lookups Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="events">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-EV-001</span>
+          <h6 class="mb-1">Events and Local Read Models</h6>
+        </div>
+        <span class="badge bg-light text-dark border">events</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 3 published event(s), 8 consumed event(s), 1 local read model(s)</p>
+      <p class="small text-muted mb-2">Event and LRM decisions control coupling, availability and eventual consistency trade-offs.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">publish event</span><span class="badge rounded-pill text-bg-secondary">consume event</span><span class="badge rounded-pill text-bg-secondary">listenerRequired false</span><span class="badge rounded-pill text-bg-secondary">persistent projection</span><span class="badge rounded-pill text-bg-secondary">readModel aggregate</span><span class="badge rounded-pill text-bg-secondary">HTTP sync instead of LRM</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-ev-001-5" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-ev-001-5">Review the DSL design decision &quot;Events and Local Read Models&quot;. Context: 3 published event(s), 8 consumed event(s), 1 local read model(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="integration">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-INT-001</span>
+          <h6 class="mb-1">Integration points</h6>
+        </div>
+        <span class="badge bg-light text-dark border">integration</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4)</p>
+      <p class="small text-muted mb-2">Integration declarations must align with system.yaml and contract artifacts.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">outbound HTTP</span><span class="badge rounded-pill text-bg-secondary">inbound HTTP</span><span class="badge rounded-pill text-bg-secondary">event subscription</span><span class="badge rounded-pill text-bg-secondary">external ACL</span><span class="badge rounded-pill text-bg-secondary">resilience override</span><span class="badge rounded-pill text-bg-secondary">auth override</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-int-001-6" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-int-001-6">Review the DSL design decision &quot;Integration points&quot;. Context: outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="contracts">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-API-001</span>
+          <h6 class="mb-1">API contracts</h6>
+        </div>
+        <span class="badge bg-light text-dark border">contracts</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: public REST operations=9, internal REST operations=0, async channels=11</p>
+      <p class="small text-muted mb-2">Contract files are how the tactical design becomes reviewable by clients and other BCs.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">public OpenAPI</span><span class="badge rounded-pill text-bg-secondary">internal OpenAPI</span><span class="badge rounded-pill text-bg-secondary">AsyncAPI publish</span><span class="badge rounded-pill text-bg-secondary">AsyncAPI subscribe</span><span class="badge rounded-pill text-bg-secondary">no external contract</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-api-001-7" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-api-001-7">Review the DSL design decision &quot;API contracts&quot;. Context: public REST operations=9, internal REST operations=0, async channels=11 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (public OpenAPI | internal OpenAPI | AsyncAPI publish | AsyncAPI subscribe | no external contract) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="errors">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-ERR-001</span>
+          <h6 class="mb-1">Error catalog</h6>
+        </div>
+        <span class="badge bg-light text-dark border">errors</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1</p>
+      <p class="small text-muted mb-2">Error catalog completeness affects generated exception contracts and API responses.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">domain error</span><span class="badge rounded-pill text-bg-secondary">not found</span><span class="badge rounded-pill text-bg-secondary">conflict</span><span class="badge rounded-pill text-bg-secondary">validation error</span><span class="badge rounded-pill text-bg-secondary">manual-only error</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-orders-err-001-8" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-orders-err-001-8">Review the DSL design decision &quot;Error catalog&quot;. Context: 17 declared error(s), HTTP status split: 404: 4, 409: 5, 422: 7, 503: 1 Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (domain error | not found | conflict | validation error | manual-only error) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+  </section>
+<section id="sec-usecases" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.useCaseCatalog">Catálogo de casos de uso</span><span class="badge bg-light text-dark border ms-2">17</span></h2>
+    <div class="detail-card">
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.httpTriggered">Disparados por HTTP</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+    <th style="width:1.6rem"></th>
+    <th data-i18n="uc.id">ID</th>
+    <th data-i18n="uc.name">Nombre</th>
+    <th data-i18n="uc.actor">Actor</th>
+    <th data-i18n="uc.type">Tipo</th>
+    <th data-i18n="uc.trigger">Disparador</th>
+    <th data-i18n="uc.target">Agregado · método</th>
+    <th data-i18n="uc.rules">Reglas</th>
+    <th data-i18n="uc.saga">Saga</th>
+  </tr></thead><tbody>
+      <tr id="uc-uc-ord-001" class="uc-row" data-uc-toggle="uc-uc-ord-001-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-001-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-001</td>
+        <td>CreateCart<span class="badge bg-primary ms-1" title="Command idempotente (Idempotency-Key)">&#10227;</span></td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">POST /carts</td>
+        <td class="font-monospace small">Cart.create</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+A customer can only have one OPEN cart at a time. Before creating a new cart, the handler must verify that no OPEN cart already exists for this customer using cartRepository.findOpenByCustomerId(customerId).
+→ CUSTOMER_ALREADY_HAS_OPEN_CART" style="cursor:help">ORD-RULE-004</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-001-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Creates a new OPEN cart for the authenticated customer with the selected payment method. Enforces that the customer has no other OPEN cart (ORD-RULE-004).
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-001</span> · CreateCart — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>El cliente con <code>customerId = &quot;c1&quot;</code> no tiene ningún carrito OPEN.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts</code> con:</li></ul>
+<pre class="narrative-code"><code>  { &quot;paymentMethod&quot;: &quot;CARD&quot; }</code></pre>
+<p>Header <code>Authorization: Bearer {token con sub=c1}</code>.</p>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/carts/{newCartId}</code></li><li>El carrito existe en BD con <code>status = OPEN</code>, <code>customerId = c1</code>, <code>paymentMethod = CARD</code>.</li><li>El carrito no tiene ítems.</li><li><code>GET /carts/{newCartId}</code> retorna el carrito recién creado.</li></ul>
+<p><strong>Casos borde</strong>:</p>
+<ul><li><code>paymentMethod</code> con valor inválido → <code>400 Bad Request</code>.</li><li>Request duplicado con mismo <code>Idempotency-Key</code> → <code>201</code> con misma <code>Location</code> (no se crea duplicado).</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-002</span> · CreateCart — cliente ya tiene carrito OPEN</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>El cliente ya tiene un carrito <code>{existingCartId}</code> con <code>status = OPEN</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts</code> con <code>{ &quot;paymentMethod&quot;: &quot;CASH_ON_DELIVERY&quot; }</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CUSTOMER_ALREADY_HAS_OPEN_CART&quot; }</code></li><li>No se crea ningún carrito nuevo.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-002" class="uc-row" data-uc-toggle="uc-uc-ord-002-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-002-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-002</td>
+        <td>AddItemToCart<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">POST /carts/{cartId}/items</td>
+        <td class="font-monospace small">Cart.addItem</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.
+→ CART_NOT_OPEN" style="cursor:help">ORD-RULE-002</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-002-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Adds a product to the customer's OPEN cart. Blocked if the cart is not OPEN (ORD-RULE-002). If the product is already in the cart, the scaffold implementation should increment the existing item's quantity.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-003</span> · AddItemToCart — happy path (producto nuevo)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito <code>{cartId}</code> con <code>status = OPEN</code> para el cliente autenticado.</li><li>El carrito no tiene ítems con <code>productId = &quot;prod-123&quot;</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con:</li></ul>
+<pre class="narrative-code"><code>  { &quot;productId&quot;: &quot;prod-123&quot;, &quot;quantity&quot;: 2 }</code></pre>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/carts/{cartId}/items/{newItemId}</code></li><li>El carrito tiene un nuevo ítem con <code>productId = prod-123</code> y <code>quantity = 2</code>.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-004</span> · AddItemToCart — producto ya existe en carrito (incremento de cantidad)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito OPEN con un ítem <code>productId = &quot;prod-123&quot;</code>, <code>quantity = 2</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con:</li></ul>
+<pre class="narrative-code"><code>  { &quot;productId&quot;: &quot;prod-123&quot;, &quot;quantity&quot;: 3 }</code></pre>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>201 Created</code></li><li>El ítem existente tiene ahora <code>quantity = 5</code> (2 + 3).</li><li>No se crea un ítem duplicado para el mismo productId.</li></ul>
+<p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe verificar si ya existe un CartItem con el mismo <code>productId</code> en el carrito antes de llamar a <code>addItem()</code>. Si existe, incrementar la cantidad.</p></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-005</span> · AddItemToCart — carrito no OPEN (CHECKED_OUT)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito con <code>status = CHECKED_OUT</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con <code>{ &quot;productId&quot;: &quot;prod-456&quot;, &quot;quantity&quot;: 1 }</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_NOT_OPEN&quot; }</code></li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-003" class="uc-row" data-uc-toggle="uc-uc-ord-003-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-003-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-003</td>
+        <td>UpdateCartItem</td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">PATCH /carts/{cartId}/items/{itemId}</td>
+        <td class="font-monospace small">Cart.updateItem</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.
+→ CART_NOT_OPEN" style="cursor:help">ORD-RULE-002</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-003-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Updates the quantity of an existing cart item. Blocked if the cart is not OPEN (ORD-RULE-002). The cart item must belong to this cart.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-006</span> · UpdateCartItem — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito OPEN con ítem <code>{itemId}</code> con <code>quantity = 2</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>PATCH /api/orders/v1/carts/{cartId}/items/{itemId}</code> con:</li></ul>
+<pre class="narrative-code"><code>  { &quot;quantity&quot;: 5 }</code></pre>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>204 No Content</code></li><li>El ítem tiene ahora <code>quantity = 5</code>.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-007</span> · UpdateCartItem — ítem no existe en el carrito</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito OPEN, pero <code>{unknownItemId}</code> no pertenece a este carrito.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>PATCH /api/orders/v1/carts/{cartId}/items/{unknownItemId}</code> con <code>{ &quot;quantity&quot;: 3 }</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>404 Not Found</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_ITEM_NOT_FOUND&quot; }</code></li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-004" class="uc-row" data-uc-toggle="uc-uc-ord-004-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-004-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-004</td>
+        <td>RemoveCartItem</td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">DELETE /carts/{cartId}/items/{itemId}</td>
+        <td class="font-monospace small">Cart.removeItem</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.
+→ CART_NOT_OPEN" style="cursor:help">ORD-RULE-002</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-004-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Removes a product line from the customer's OPEN cart. Blocked if the cart is not OPEN (ORD-RULE-002).
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-008</span> · RemoveCartItem — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito OPEN con ítem <code>{itemId}</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>DELETE /api/orders/v1/carts/{cartId}/items/{itemId}</code></li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>204 No Content</code></li><li>El ítem ya no existe en el carrito.</li></ul>
+<h6 class="narrative-subheading">Checkout</h6></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-005" class="uc-row" data-uc-toggle="uc-uc-ord-005-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-005-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-005</td>
+        <td>Checkout<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">POST /carts/{cartId}/checkout</td>
+        <td class="font-monospace small">Cart.checkout</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+The cart must have at least one CartItem before it can be checked out. An empty cart cannot proceed to checkout.
+→ CART_IS_EMPTY" style="cursor:help">ORD-RULE-001</span><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Cart
+A cart can only be modified (add, update, remove items) or checked out when its status is OPEN. CHECKED_OUT carts are immutable.
+→ CART_NOT_OPEN" style="cursor:help">ORD-RULE-002</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-005-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Performs checkout of the customer's cart. Validates prices against the catalog (HTTP call — OWASP A04 monetary snapshot), transitions the cart to CHECKED_OUT, and creates a new PENDING_PAYMENT Order with frozen price snapshots. Emits OrderPlaced to trigger the CheckoutSaga (stock reservation → payment). The selected delivery address must exist in the CustomerAddress local read model and must not be marked as deleted.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-009</span> · Checkout — happy path (pago con tarjeta)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Carrito OPEN con 2 ítems: <code>{ productId: &quot;p1&quot;, quantity: 2 }</code>, <code>{ productId: &quot;p2&quot;, quantity: 1 }</code>.</li><li>CustomerAddress con <code>addressId = &quot;addr-1&quot;</code>, <code>deleted = false</code>, del cliente autenticado.</li><li>Catalog devuelve: <code>p1 = ACTIVE, price = 15000 COP</code>; <code>p2 = ACTIVE, price = 8500 COP</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con:</li></ul>
+<pre class="narrative-code"><code>  { &quot;deliveryAddressId&quot;: &quot;addr-1&quot; }</code></pre>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/orders/{newOrderId}</code></li><li>El carrito transiciona a <code>CHECKED_OUT</code>.</li><li>Se crea una <code>Order</code> con <code>status = PENDING_PAYMENT</code>:</li><li><code>paymentMethod = CARD</code></li><li><code>total = { amount: 38500, currency: COP }</code> (2×15000 + 1×8500)</li><li><code>deliveryAddress</code> = snapshot de la dirección addr-1</li><li>2 <code>OrderLine</code>: precios congelados del catálogo.</li><li>Se emite <code>OrderPlaced</code> al outbox con las líneas y el total.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-010</span> · Checkout — carrito vacío</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Carrito OPEN sin ítems.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con <code>{ &quot;deliveryAddressId&quot;: &quot;addr-1&quot; }</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_IS_EMPTY&quot; }</code></li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-011</span> · Checkout — dirección de entrega no encontrada</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Carrito OPEN con ítems.</li><li><code>deliveryAddressId = &quot;addr-deleted&quot;</code> existe en CustomerAddress pero <code>deleted = true</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con <code>{ &quot;deliveryAddressId&quot;: &quot;addr-deleted&quot; }</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>404 Not Found</code></li><li>Body: <code>{ &quot;code&quot;: &quot;DELIVERY_ADDRESS_NOT_FOUND&quot; }</code></li><li>No se crea ningún pedido. Carrito permanece OPEN.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-012</span> · Checkout — producto no disponible en catálogo</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Carrito OPEN con ítems: <code>{ productId: &quot;p1&quot;, quantity: 1 }</code>.</li><li>Catalog devuelve: <code>p1 = DISCONTINUED</code> (no ACTIVE).</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con dirección válida.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;PRODUCT_PRICE_UNAVAILABLE&quot; }</code></li><li>No se crea ningún pedido. Carrito permanece OPEN.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-006" class="uc-row" data-uc-toggle="uc-uc-ord-006-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-006-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-006</td>
+        <td>GetCart</td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td class="font-monospace small">GET /carts/{cartId}</td>
+        <td class="font-monospace small">Cart</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-006-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Retrieves the current cart with all its items for the authenticated customer.</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-013</span> · GetCart — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un carrito OPEN con 3 ítems.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>GET /api/orders/v1/carts/{cartId}</code></li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>200 OK</code></li><li>Body contiene el carrito con todos los ítems (id, productId, quantity).</li></ul>
+<h6 class="narrative-subheading">Orders</h6></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-010" class="uc-row" data-uc-toggle="uc-uc-ord-010-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-010-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-010</td>
+        <td>GetOrder</td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td class="font-monospace small">GET /orders/{orderId}</td>
+        <td class="font-monospace small">Order</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-010-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Retrieves full order details including all order lines and the delivery address snapshot. Customers can only access their own orders; admins can access any order.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-014</span> · GetOrder — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe un <code>Order</code> con <code>status = CONFIRMED</code> y 2 OrderLines.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>GET /api/orders/v1/orders/{orderId}</code> (cliente propietario o admin).</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>200 OK</code></li><li>Body contiene <code>OrderDetail</code>: id, customerId, status, paymentMethod, total, deliveryAddress, lines, createdAt, updatedAt.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-011" class="uc-row" data-uc-toggle="uc-uc-ord-011-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-011-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-011</td>
+        <td>ListOrders<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td class="font-monospace small">GET /orders</td>
+        <td class="font-monospace small">Order</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-011-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Returns a paginated list of orders. Customers see only their own orders (customerId injected from JWT). Admins can optionally filter by customerId or status to see any order in the system.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-015</span> · ListOrders — customer filtra sus pedidos</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>El cliente tiene 3 pedidos: 2 CONFIRMED, 1 CANCELLED.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>GET /api/orders/v1/orders?status=CONFIRMED</code></li></ul>
+<p>Header <code>Authorization: Bearer {token del cliente}</code>.</p>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>200 OK</code></li><li>Body: página con 2 <code>OrderSummary</code> en estado CONFIRMED (solo los del cliente autenticado).</li></ul>
+<p><strong>DECISIÓN-002 (scaffold):</strong> El handler debe ignorar el query param <code>customerId</code> si el actor es ROLE_CUSTOMER e inyectar siempre <code>customerId = JWT.sub</code>.</p></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-016</span> · ListOrders — admin lista todos los pedidos de un cliente</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>El cliente <code>c2</code> tiene 5 pedidos.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>GET /api/orders/v1/orders?customerId=c2</code> con token de ROLE_ADMIN.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>200 OK</code></li><li>Body: página con los 5 pedidos del cliente c2.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-012" class="uc-row" data-uc-toggle="uc-uc-ord-012-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-012-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-012</td>
+        <td>CancelOrder<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-primary">customer</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">PATCH /orders/{orderId}/cancel</td>
+        <td class="font-monospace small">Order.cancel</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.
+→ ORDER_CANNOT_BE_CANCELLED" style="cursor:help">ORD-RULE-005</span><span class="badge rounded-pill text-bg-light border me-1" title="terminalState · Order
+A DELIVERED order is in a terminal state and cannot be transitioned or modified in any way.
+→ ORDER_ALREADY_DELIVERED" style="cursor:help">ORD-RULE-006</span><span class="badge rounded-pill text-bg-light border me-1" title="terminalState · Order
+A CANCELLED order is in a terminal state and cannot be transitioned or modified in any way.
+→ ORDER_ALREADY_CANCELLED" style="cursor:help">ORD-RULE-007</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-012-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Cancels an order that is in PENDING_PAYMENT or CONFIRMED status (ORD-RULE-005). Customers can only cancel their own orders; admins can cancel any order. Emits OrderCancelled consumed by delivery and payments for downstream compensation.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-017</span> · CancelOrder — happy path (customer cancela pedido PENDING_PAYMENT)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code> del cliente autenticado.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>204 No Content</code></li><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-018</span> · CancelOrder — pedido ya DELIVERED (terminal state)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = DELIVERED</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;ORDER_ALREADY_DELIVERED&quot; }</code></li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-019</span> · CancelOrder — pedido IN_DELIVERY (no cancelable)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = IN_DELIVERY</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;ORDER_CANNOT_BE_CANCELLED&quot; }</code></li></ul>
+<h6 class="narrative-subheading">Saga Event Handlers</h6></div>
+      </details></div></td></tr></tbody>
+    </table></div>
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.eventTriggered">Disparados por eventos</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+    <th style="width:1.6rem"></th>
+    <th data-i18n="uc.id">ID</th>
+    <th data-i18n="uc.name">Nombre</th>
+    <th data-i18n="uc.actor">Actor</th>
+    <th data-i18n="uc.type">Tipo</th>
+    <th data-i18n="uc.trigger">Disparador</th>
+    <th data-i18n="uc.target">Agregado · método</th>
+    <th data-i18n="uc.rules">Reglas</th>
+    <th data-i18n="uc.saga">Saga</th>
+  </tr></thead><tbody>
+      <tr id="uc-uc-ord-020" class="uc-row" data-uc-toggle="uc-uc-ord-020-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-020-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-020</td>
+        <td>ConfirmOrder<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ PaymentApproved (payments · payments.payment.approved)</td>
+        <td class="font-monospace small">Order.confirm</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be confirmed when its status is PENDING_PAYMENT. This guard ensures PaymentApproved events are idempotently processed.
+→ ORDER_NOT_PENDING_PAYMENT" style="cursor:help">ORD-RULE-008</span></td>
+        <td><a href="#saga-checkoutsaga" class="badge bg-dark text-decoration-none" title="CheckoutSaga">CheckoutSaga #3</a></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-020-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Confirms the order after receiving PaymentApproved (step 3 of CheckoutSaga). Transitions order from PENDING_PAYMENT to CONFIRMED. Emits OrderConfirmed to trigger DeliveryOrder creation (step 4). Idempotent via consumerIdempotency.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-020</span> · ConfirmOrder — happy path (PaymentApproved)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>PaymentApproved</code> con <code>orderId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El handler procesa el evento idempotentemente.</li><li>El pedido transiciona a <code>status = CONFIRMED</code>.</li><li>Se emite <code>OrderConfirmed</code> al outbox.</li></ul>
+<p><strong>DECISIÓN-003 (scaffold):</strong> Verificar ORD-RULE-008 antes de llamar <code>order.confirm()</code>. Si el pedido no está en PENDING_PAYMENT (ya fue confirmado — redelivery idempotente), loggear warn y marcar el evento como procesado sin lanzar excepción.</p></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-021</span> · ConfirmOrder — evento duplicado (idempotencia)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = CONFIRMED</code> (evento fue procesado antes).</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega nuevamente <code>PaymentApproved</code> con mismo <code>orderId</code> (redelivery del broker).</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El <code>consumerIdempotency</code> detecta el evento como ya procesado.</li><li>No se emite <code>OrderConfirmed</code> duplicado.</li><li>HTTP 200 si el broker recibe ACK correcto.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-021" class="uc-row" data-uc-toggle="uc-uc-ord-021-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-021-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-021</td>
+        <td>CancelOrderOnStockFailed<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ StockReservationFailed (inventory · inventory.stock.reservation.failed)</td>
+        <td class="font-monospace small">Order.cancel</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.
+→ ORDER_CANNOT_BE_CANCELLED" style="cursor:help">ORD-RULE-005</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-021-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Cancels the order when stock reservation fails (StockReservationFailed event from inventory — CheckoutSaga compensation path). Transitions order from PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-022</span> · CancelOrderOnStockFailed — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>StockReservationFailed</code> con <code>orderId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-023</span> · CancelOrderOnStockFailed — pedido ya CANCELLED (idempotencia)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = CANCELLED</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega <code>StockReservationFailed</code> de nuevo (redelivery).</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-007 detectan el estado terminal.</li><li>No se emite <code>OrderCancelled</code> duplicado. Evento procesado silenciosamente.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-022" class="uc-row" data-uc-toggle="uc-uc-ord-022-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-022-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-022</td>
+        <td>CancelOrderOnPaymentFailed<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ PaymentFailed (payments · payments.payment.failed)</td>
+        <td class="font-monospace small">Order.cancel</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be cancelled when its status is PENDING_PAYMENT or CONFIRMED. IN_DELIVERY, DELIVERED, and CANCELLED orders cannot be cancelled.
+→ ORDER_CANNOT_BE_CANCELLED" style="cursor:help">ORD-RULE-005</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-022-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Cancels the order when payment processing fails (PaymentFailed event from payments — CheckoutSaga compensation path). Transitions order from PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-024</span> · CancelOrderOnPaymentFailed — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>PaymentFailed</code> con <code>orderId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox (triggers refund check in payments if CARD).</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-023" class="uc-row" data-uc-toggle="uc-uc-ord-023-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-023-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-023</td>
+        <td>SetOrderInDelivery<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ DeliveryOrderCreated (delivery · delivery.delivery.order.created)</td>
+        <td class="font-monospace small">Order.setInDelivery</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be set to IN_DELIVERY when its status is CONFIRMED. This guard ensures DeliveryOrderCreated events are idempotently processed.
+→ ORDER_NOT_CONFIRMED" style="cursor:help">ORD-RULE-009</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-023-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Transitions the order to IN_DELIVERY after DeliveryOrderCreated confirms a courier has been assigned (step 4 completion). Enforces ORD-RULE-009 (order must be CONFIRMED).
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-025</span> · SetOrderInDelivery — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CONFIRMED</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>DeliveryOrderCreated</code> con <code>orderId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El pedido transiciona a <code>status = IN_DELIVERY</code>.</li><li>No se emite ningún evento adicional desde orders.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-026</span> · SetOrderInDelivery — pedido no CONFIRMED (idempotencia)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = IN_DELIVERY</code> (evento fue procesado antes).</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega <code>DeliveryOrderCreated</code> de nuevo (redelivery).</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-009 detectan el estado incorrecto.</li><li>Evento procesado silenciosamente sin cambio de estado.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-024" class="uc-row" data-uc-toggle="uc-uc-ord-024-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-024-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-024</td>
+        <td>CompleteDelivery<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ DeliveryCompleted (delivery · delivery.delivery.completed)</td>
+        <td class="font-monospace small">Order.complete</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1" title="statePrecondition · Order
+An order can only be completed (DELIVERED) when its status is IN_DELIVERY. This guard ensures DeliveryCompleted events are idempotently processed.
+→ ORDER_NOT_IN_DELIVERY" style="cursor:help">ORD-RULE-010</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-024-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Transitions the order to DELIVERED after the courier confirms package delivery (DeliveryCompleted event from delivery BC). Enforces ORD-RULE-010.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-027</span> · CompleteDelivery — happy path</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = IN_DELIVERY</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>DeliveryCompleted</code> con <code>orderId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El pedido transiciona a <code>status = DELIVERED</code>.</li><li>El estado es terminal.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-028</span> · CompleteDelivery — pedido no IN_DELIVERY (idempotencia)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = DELIVERED</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega <code>DeliveryCompleted</code> de nuevo (redelivery).</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-010 manejan el redelivery.</li><li>No hay cambio de estado. Evento procesado silenciosamente.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-025" class="uc-row" data-uc-toggle="uc-uc-ord-025-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-025-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-025</td>
+        <td>AcknowledgeStockReleased<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ StockReleased (inventory · inventory.stock.released)</td>
+        <td class="font-monospace small">Order</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-025-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Idempotent acknowledgment when inventory confirms stock has been released (StockReleased compensation event). No state change in Order — the order is already CANCELLED at this point. Handler marks the event as processed for saga audit tracking via consumerIdempotency.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-029</span> · AcknowledgeStockReleased — acuse de recibo de compensación</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CANCELLED</code> (ya cancelado por PaymentFailed).</li><li>El BC <code>inventory</code> ha liberado el stock y emite <code>StockReleased</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>StockReleased</code> con <code>orderId</code> y <code>reservationId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El handler carga el pedido (para log de auditoría).</li><li>El estado del pedido no cambia (ya es CANCELLED).</li><li>El evento queda marcado como procesado.</li><li>No se emite ningún evento nuevo.</li></ul></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-026" class="uc-row" data-uc-toggle="uc-uc-ord-026-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-026-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-026</td>
+        <td>AcknowledgePaymentRefunded<span class="badge bg-warning text-dark ms-1" title="Implementación scaffold — el handler tiene puntos de extensión TODO">scaffold</span></td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ PaymentRefunded (payments · payments.payment.refunded)</td>
+        <td class="font-monospace small">Order</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-026-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Idempotent acknowledgment when payments confirms a card refund was processed (PaymentRefunded event). No state change in Order — the order is already CANCELLED. Handler marks the event as processed for saga audit tracking.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-030</span> · AcknowledgePaymentRefunded — acuse de recibo de reembolso</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CANCELLED</code> (cancelado después de PaymentApproved — admin cancel o customer cancel de CONFIRMED).</li><li>El BC <code>payments</code> ha procesado el reembolso de tarjeta.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>PaymentRefunded</code> con <code>orderId</code> y <code>refundId</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El handler carga el pedido (para log de auditoría).</li><li>El estado del pedido no cambia (ya es CANCELLED).</li><li>El evento queda marcado como procesado.</li></ul>
+<h6 class="narrative-subheading">CustomerAddress Sync</h6></div>
+      </details></div></td></tr>
+      <tr id="uc-uc-ord-030" class="uc-row" data-uc-toggle="uc-uc-ord-030-detail">
+        <td class="text-center"><button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="uc-uc-ord-030-detail" aria-expanded="false" title="Ver detalle"><span class="uc-caret">&#9656;</span></button></td>
+        <td class="font-monospace small">UC-ORD-030</td>
+        <td>SyncCustomerAddress</td>
+        <td><span class="badge bg-secondary">system</span></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td class="font-monospace small">⇠ CustomerAddressUpdated (customers · customers.customer.address.updated)</td>
+        <td class="font-monospace small">CustomerAddress.upsert</td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr><tr class="uc-detail-row" id="uc-uc-ord-030-detail" hidden><td></td><td colspan="8"><div class="uc-detail"><p class="mb-2">Upserts the CustomerAddress local read model when a CustomerAddressUpdated event arrives from the customers BC. If the address is new, a new CustomerAddress record is inserted. If it already exists (by addressId), it is updated. The 'deleted' flag is preserved to support soft-deletion.
+</p>
+
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">Flujos (Given / When / Then)</h6>
+      
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-031</span> · SyncCustomerAddress — nueva dirección (INSERT)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>No existe ningún <code>CustomerAddress</code> con <code>addressId = &quot;addr-new&quot;</code> en el LRM.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>CustomerAddressUpdated</code> con:</li></ul>
+<pre class="narrative-code"><code>  {
+    &quot;addressId&quot;: &quot;addr-new&quot;,
+    &quot;customerId&quot;: &quot;c1&quot;,
+    &quot;street&quot;: &quot;Calle 123 #45-67&quot;,
+    &quot;city&quot;: &quot;Bogotá&quot;,
+    &quot;postalCode&quot;: &quot;110111&quot;,
+    &quot;reference&quot;: &quot;Apto 301&quot;,
+    &quot;deleted&quot;: false
+  }</code></pre>
+<p><strong>Then</strong>:</p>
+<ul><li>Se inserta un nuevo <code>CustomerAddress</code> con todos los campos.</li><li><code>deleted = false</code>.</li><li>El evento queda marcado como procesado.</li></ul></div>
+      </details>
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">FL-ORD-032</span> · SyncCustomerAddress — dirección eliminada (soft-delete)</summary>
+        <div class="mt-2"><p><strong>Given</strong>:</p>
+<ul><li>Existe <code>CustomerAddress</code> con <code>addressId = &quot;addr-old&quot;</code>, <code>deleted = false</code>.</li></ul>
+<p><strong>When</strong>:</p>
+<ul><li>Llega evento <code>CustomerAddressUpdated</code> con <code>addressId = &quot;addr-old&quot;</code>, <code>deleted = true</code>.</li></ul>
+<p><strong>Then</strong>:</p>
+<ul><li>El registro <code>CustomerAddress</code> se actualiza: <code>deleted = true</code>.</li><li>Desde este momento, el checkout rechazará <code>deliveryAddressId = &quot;addr-old&quot;</code> con</li></ul>
+<p><code>DELIVERY_ADDRESS_NOT_FOUND</code>.</p></div>
+      </details></div></td></tr></tbody>
+    </table></div></div>
+  </section>
+<section id="sec-events" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.eventsReadModels">Eventos y read models</span></h2>
+    <div class="detail-card">
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="events.published">Publicados</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead class="table-light"><tr><th data-i18n="events.name">Nombre</th><th data-i18n="events.channel">Canal</th><th data-i18n="events.scope">Alcance</th><th data-i18n="events.payload">Payload</th></tr></thead><tbody><tr id="event-orderplaced"><td>OrderPlaced</td><td class="font-monospace small">orders.order.placed</td><td>integration</td><td><span class="badge rounded-pill text-bg-light border me-1">orderId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">customerId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">paymentMethod: String(20)</span><span class="badge rounded-pill text-bg-light border me-1">total: Money</span><span class="badge rounded-pill text-bg-light border me-1">deliveryAddressId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">lines: List[OrderLineSnapshot]</span></td></tr><tr id="event-orderconfirmed"><td>OrderConfirmed</td><td class="font-monospace small">orders.order.confirmed</td><td>integration</td><td><span class="badge rounded-pill text-bg-light border me-1">orderId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">customerId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">paymentMethod: String(20)</span><span class="badge rounded-pill text-bg-light border me-1">total: Money</span><span class="badge rounded-pill text-bg-light border me-1">deliveryAddressId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">deliveryAddress: DeliveryAddressSnapshot</span></td></tr><tr id="event-ordercancelled"><td>OrderCancelled</td><td class="font-monospace small">orders.order.cancelled</td><td>integration</td><td><span class="badge rounded-pill text-bg-light border me-1">orderId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">customerId: Uuid</span><span class="badge rounded-pill text-bg-light border me-1">paymentMethod: String(20)</span></td></tr></tbody></table></div>
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="events.consumed">Consumidos</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead class="table-light"><tr><th data-i18n="events.name">Nombre</th><th data-i18n="events.sourceBc">BC origen</th><th data-i18n="events.channel">Canal</th></tr></thead><tbody><tr><td>PaymentApproved</td><td><a href="payments-review.html#event-paymentapproved" class="text-decoration-none"><span class="badge bg-secondary">payments</span></a></td><td class="font-monospace small">payments.payment.approved</td></tr><tr><td>PaymentFailed</td><td><a href="payments-review.html#event-paymentfailed" class="text-decoration-none"><span class="badge bg-secondary">payments</span></a></td><td class="font-monospace small">payments.payment.failed</td></tr><tr><td>PaymentRefunded</td><td><a href="payments-review.html#event-paymentrefunded" class="text-decoration-none"><span class="badge bg-secondary">payments</span></a></td><td class="font-monospace small">payments.payment.refunded</td></tr><tr><td>StockReservationFailed</td><td><a href="inventory-review.html#event-stockreservationfailed" class="text-decoration-none"><span class="badge bg-secondary">inventory</span></a></td><td class="font-monospace small">inventory.stock.reservation.failed</td></tr><tr><td>StockReleased</td><td><a href="inventory-review.html#event-stockreleased" class="text-decoration-none"><span class="badge bg-secondary">inventory</span></a></td><td class="font-monospace small">inventory.stock.released</td></tr><tr><td>DeliveryOrderCreated</td><td><a href="delivery-review.html#event-deliveryordercreated" class="text-decoration-none"><span class="badge bg-secondary">delivery</span></a></td><td class="font-monospace small">delivery.delivery.order.created</td></tr><tr><td>DeliveryCompleted</td><td><a href="delivery-review.html#event-deliverycompleted" class="text-decoration-none"><span class="badge bg-secondary">delivery</span></a></td><td class="font-monospace small">delivery.delivery.completed</td></tr><tr><td>CustomerAddressUpdated</td><td><a href="customers-review.html#event-customeraddressupdated" class="text-decoration-none"><span class="badge bg-secondary">customers</span></a></td><td class="font-monospace small">customers.customer.address.updated</td></tr></tbody></table></div>
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="events.readModels">Read models</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead class="table-light"><tr><th data-i18n="events.name">Nombre</th><th data-i18n="events.from">Origen</th><th data-i18n="events.event">Evento origen</th><th data-i18n="events.keyBy">Clave</th><th data-i18n="events.upsert">Estrategia upsert</th></tr></thead><tbody><tr><td>CustomerAddress</td><td><span class="badge bg-secondary">—</span></td><td class="font-monospace small">—</td><td class="font-monospace small">—</td><td>—</td></tr></tbody></table></div></div>
+  </section>
+<section id="sec-sagas" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.sagaParticipation">Participación en sagas</span></h2>
+    <div class="detail-card">
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="uc.saga">Saga</th>
+        <th data-i18n="saga.step">Paso</th>
+        <th data-i18n="saga.triggeredBy">Disparado por</th>
+        <th data-i18n="saga.onSuccess">Éxito</th>
+        <th data-i18n="saga.compensation">Compensación</th>
+        <th data-i18n="saga.implementedBy">Implementado por</th>
+      </tr></thead><tbody>
+    <tr id="saga-checkoutsaga">
+      <td><span class="badge bg-dark">CheckoutSaga</span></td>
+      <td>3</td>
+      <td class="font-monospace small">PaymentApproved</td>
+      <td class="font-monospace small text-success">OrderConfirmed</td>
+      <td class="font-monospace small">—</td>
+      <td><a href="#uc-uc-ord-020" class="text-decoration-none">UC-ORD-020 ConfirmOrder</a></td>
+    </tr></tbody>
+    </table></div></div>
+  </section>
+<section id="sec-security" class="mb-4 collapsible-section">
+      <h2 class="h5 mb-3 section-toggle d-flex align-items-center"><span class="uc-caret me-2">&#9656;</span><span data-i18n="ui.endpointSecurity">Seguridad de endpoints</span><span class="badge bg-light text-dark border ms-2">9</span></h2>
+      <div class="section-body"><div class="detail-card">
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="sec.endpoint">Endpoint</th>
+        <th data-i18n="sec.access">Acceso</th>
+        <th data-i18n="sec.roles">Roles</th>
+        <th data-i18n="sec.permissions">Permisos</th>
+        <th data-i18n="sec.scopes">Scopes</th>
+        <th data-i18n="sec.ownership">Ownership</th>
+      </tr></thead><tbody>
+      <tr class="">
+        <td><div class="font-monospace small">POST /carts</div><div class="text-muted small">UC-ORD-001 CreateCart</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">POST /carts/{cartId}/items</div><div class="text-muted small">UC-ORD-002 AddItemToCart</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">PATCH /carts/{cartId}/items/{itemId}</div><div class="text-muted small">UC-ORD-003 UpdateCartItem</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">DELETE /carts/{cartId}/items/{itemId}</div><div class="text-muted small">UC-ORD-004 RemoveCartItem</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">POST /carts/{cartId}/checkout</div><div class="text-muted small">UC-ORD-005 Checkout</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">GET /carts/{cartId}</div><div class="text-muted small">UC-ORD-006 GetCart</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">GET /orders/{orderId}</div><div class="text-muted small">UC-ORD-010 GetOrder</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span><span class="badge rounded-pill text-bg-primary me-1">ROLE_ADMIN</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">GET /orders</div><div class="text-muted small">UC-ORD-011 ListOrders</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span><span class="badge rounded-pill text-bg-primary me-1">ROLE_ADMIN</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr class="">
+        <td><div class="font-monospace small">PATCH /orders/{orderId}/cancel</div><div class="text-muted small">UC-ORD-012 CancelOrder</div></td>
+        <td><span class="badge bg-success" data-i18n="sec.protected">protegido</span></td>
+        <td><span class="badge rounded-pill text-bg-primary me-1">ROLE_CUSTOMER</span><span class="badge rounded-pill text-bg-primary me-1">ROLE_ADMIN</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">customerId ↔ sub</span></td>
+      </tr></tbody>
+    </table></div></div></div>
+    </section>
+<section id="sec-operations" class="mb-4 collapsible-section collapsed">
+      <h2 class="h5 mb-3 section-toggle d-flex align-items-center"><span class="uc-caret me-2">&#9656;</span><span data-i18n="ui.operationalBehavior">Comportamiento operacional</span><span class="badge bg-light text-dark border ms-2">17</span></h2>
+      <div class="section-body"><div class="detail-card">
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th data-i18n="ops.endpoint">Endpoint / disparador</th>
+        <th data-i18n="uc.type">Tipo</th>
+        <th data-i18n="ops.idempotency">Idempotencia</th>
+        <th data-i18n="ops.cache">Caché</th>
+        <th data-i18n="ops.async">Async</th>
+        <th data-i18n="ops.bulk">Lote</th>
+        <th data-i18n="ops.pagination">Paginación</th>
+        <th data-i18n="ops.implementation">Implementación</th>
+        <th data-i18n="ops.dependencies">Dependencias</th>
+      </tr></thead><tbody>
+      <tr>
+        <td><div class="font-monospace small">POST /carts</div><div class="text-muted small">UC-ORD-001 CreateCart</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="badge bg-primary" title="storage: cache">Idempotency-Key · PT24H</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">POST /carts/{cartId}/items</div><div class="text-muted small">UC-ORD-002 AddItemToCart</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">PATCH /carts/{cartId}/items/{itemId}</div><div class="text-muted small">UC-ORD-003 UpdateCartItem</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">DELETE /carts/{cartId}/items/{itemId}</div><div class="text-muted small">UC-ORD-004 RemoveCartItem</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">POST /carts/{cartId}/checkout</div><div class="text-muted small">UC-ORD-005 Checkout</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="badge bg-light text-dark border" title="fk CustomerAddress">1 fk</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">GET /carts/{cartId}</div><div class="text-muted small">UC-ORD-006 GetCart</div></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">GET /orders/{orderId}</div><div class="text-muted small">UC-ORD-010 GetOrder</div></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">GET /orders</div><div class="text-muted small">UC-ORD-011 ListOrders</div></td>
+        <td><span class="badge bg-info text-dark">query</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="font-monospace small">20/100 · createdAt DESC</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">PATCH /orders/{orderId}/cancel</div><div class="text-muted small">UC-ORD-012 CancelOrder</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ PaymentApproved (payments · payments.payment.approved)</div><div class="text-muted small">UC-ORD-020 ConfirmOrder</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ StockReservationFailed (inventory · inventory.stock.reservation.failed)</div><div class="text-muted small">UC-ORD-021 CancelOrderOnStockFailed</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ PaymentFailed (payments · payments.payment.failed)</div><div class="text-muted small">UC-ORD-022 CancelOrderOnPaymentFailed</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ DeliveryOrderCreated (delivery · delivery.delivery.order.created)</div><div class="text-muted small">UC-ORD-023 SetOrderInDelivery</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ DeliveryCompleted (delivery · delivery.delivery.completed)</div><div class="text-muted small">UC-ORD-024 CompleteDelivery</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ StockReleased (inventory · inventory.stock.released)</div><div class="text-muted small">UC-ORD-025 AcknowledgeStockReleased</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ PaymentRefunded (payments · payments.payment.refunded)</div><div class="text-muted small">UC-ORD-026 AcknowledgePaymentRefunded</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-warning text-dark">scaffold</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr>
+      <tr>
+        <td><div class="font-monospace small">⇠ CustomerAddressUpdated (customers · customers.customer.address.updated)</div><div class="text-muted small">UC-ORD-030 SyncCustomerAddress</div></td>
+        <td><span class="badge bg-warning text-dark">command</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td><span class="badge bg-success">full</span></td>
+        <td><span class="text-muted">—</span></td>
+      </tr></tbody>
+    </table></div></div></div>
+    </section>
+<section id="sec-integrations" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.directIntegrations">Integraciones directas</span></h2>
+    <div class="detail-card"><h6 class="text-uppercase text-muted small mt-1 mb-2" data-i18n="int.contextMap">Mapa de contexto</h6>
+       <div class="saga-diagram mb-3"><pre class="mermaid">flowchart LR
+  n_orders[&quot;orders&quot;]:::center
+  n_catalog[&quot;catalog&quot;]
+  n_orders --&gt;|customer-supplier / http| n_catalog
+  n_delivery[&quot;delivery&quot;]
+  n_orders --&gt;|event / message-broker| n_delivery
+  n_inventory[&quot;inventory&quot;]
+  n_orders --&gt;|event / message-broker| n_inventory
+  n_notifications[&quot;notifications&quot;]
+  n_orders --&gt;|event / message-broker| n_notifications
+  n_payments[&quot;payments&quot;]
+  n_orders --&gt;|event / message-broker| n_payments
+  n_customers[&quot;customers&quot;]
+  n_customers --&gt;|event / message-broker| n_orders
+  n_delivery --&gt;|event / message-broker| n_orders
+  n_inventory --&gt;|event / message-broker| n_orders
+  n_payments --&gt;|event / message-broker| n_orders
+  classDef center fill:#111827,color:#fff,stroke:#111827;
+  classDef external fill:#fff7ed,stroke:#fb923c,color:#7c2d12;</pre></div>
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="int.outbound">Salientes (de qué depende)</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead class="table-light"><tr>
+    <th data-i18n="int.partner">Contraparte</th>
+    <th data-i18n="int.strategy">Estrategia</th>
+    <th data-i18n="int.channel">Canal</th>
+    <th data-i18n="int.contracts">Contratos</th>
+    <th data-i18n="int.triggers">Disparadores</th>
+    <th data-i18n="int.auth">Autenticación</th>
+    <th data-i18n="int.resilience">Resiliencia</th>
+    <th data-i18n="int.necessity">Necesidad</th>
+  </tr></thead><tbody>
+      <tr class="">
+        <td><span class="badge bg-secondary">catalog</span></td>
+        <td><span class="badge bg-primary">customer-supplier</span></td>
+        <td class="font-monospace small">http</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">validateProductsAndPrices</span></td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">UC-ORD-005 Checkout</span></td>
+        <td class="font-monospace small">internal-jwt</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">Mandatory synchronous HTTP call to catalog at checkout time to obtain the authoritative price for each product in the cart. Mandatory HTTP for monetary integrity — prevents OWASP A04 fraud via stale or client-manipulated prices. The customer never sends prices; prices are always fetched from the catalog.
+Mandatory HTTP for monetary snapshot (OrderLine.unitPrice reads Product.price). Designer evaluated LRM trade-offs including OWASP A04 fraud risk and chose HTTP. Price is always read from catalog in real time at checkout — no inconsistency window. The customer sends only productId + quantity; the backend reads the authoritative price.</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">delivery</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">OrderConfirmed</span><span class="badge rounded-pill text-bg-light border me-1">OrderCancelled</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">OrderConfirmed triggers DeliveryOrder creation (step 4). OrderCancelled triggers delivery cancellation if the delivery was already created.</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">inventory</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">OrderPlaced</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">Triggers stock reservation. Saga trigger event (step 1).</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">notifications</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">OrderConfirmed</span><span class="badge rounded-pill text-bg-light border me-1">OrderCancelled</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">Notifications BC sends an order confirmation message when the order is confirmed and a cancellation notice when the order is cancelled.</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">payments</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">OrderCancelled</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">Payments BC consumes OrderCancelled to check if a card payment was already captured. If so, it initiates a refund via payment-gateway and emits PaymentRefunded. This closes the compensation chain for post-confirmation cancellations that occur outside the CheckoutSaga (e.g., admin cancellation, customer cancellation request).</span></td>
+      </tr></tbody></table></div>
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="int.inbound">Entrantes (quién depende de él)</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead class="table-light"><tr>
+    <th data-i18n="int.partner">Contraparte</th>
+    <th data-i18n="int.strategy">Estrategia</th>
+    <th data-i18n="int.channel">Canal</th>
+    <th data-i18n="int.contracts">Contratos</th>
+    <th data-i18n="int.triggers">Disparadores</th>
+    <th data-i18n="int.auth">Autenticación</th>
+    <th data-i18n="int.resilience">Resiliencia</th>
+    <th data-i18n="int.necessity">Necesidad</th>
+  </tr></thead><tbody>
+      <tr class="">
+        <td><span class="badge bg-secondary">customers</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">CustomerAddressUpdated</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">Orders maintains a local read model of customer addresses fed by this event. Designer chose LRM for delivery address (non-monetary identity data). Eventual consistency accepted (typical lag &lt; 1-2s). Step 2 must define the initial snapshot strategy (e.g., one-time HTTP call at first order placement before the LRM is warmed up).</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">delivery</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">DeliveryOrderCreated</span><span class="badge rounded-pill text-bg-light border me-1">DeliveryCompleted</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">DeliveryOrderCreated confirms to orders that the delivery is being arranged. DeliveryCompleted transitions the order to DELIVERED status.</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">inventory</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">StockReservationFailed</span><span class="badge rounded-pill text-bg-light border me-1">StockReleased</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">StockReservationFailed triggers order cancellation (OrderCancelled) in orders. StockReleased is the compensation confirmation emitted by inventory after releasing reserved stock; orders receives it for saga state tracking.</span></td>
+      </tr>
+      <tr class="">
+        <td><span class="badge bg-secondary">payments</span></td>
+        <td><span class="badge bg-info text-dark">event</span></td>
+        <td class="font-monospace small">message-broker</td>
+        <td><span class="badge rounded-pill text-bg-light border me-1">PaymentApproved</span><span class="badge rounded-pill text-bg-light border me-1">PaymentFailed</span><span class="badge rounded-pill text-bg-light border me-1">PaymentRefunded</span></td>
+        <td><span class="text-muted">—</span></td>
+        <td class="font-monospace small">—</td>
+        <td class="font-monospace small">—</td>
+        <td><span class="small">PaymentApproved triggers order confirmation (step 3). PaymentFailed triggers order cancellation (compensation path). PaymentRefunded confirms the refund saga step for card payments.</span></td>
+      </tr></tbody></table></div></div>
+  </section>
+<section id="sec-storage" class="mb-4 collapsible-section collapsed">
+      <h2 class="h5 mb-3 section-toggle d-flex align-items-center"><span class="uc-caret me-2">&#9656;</span><span data-i18n="ui.storageBuckets">Buckets de almacenamiento</span></h2>
+      <div class="section-body"><div class="detail-card"><p class="text-muted small" data-i18n="ui.noStorageBuckets">Este BC no interactúa con ningún bucket de almacenamiento.</p></div></div>
+    </section>
+<section id="sec-diagnostics" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="ui.validationHealth">Salud de validación</span><span class="badge bg-light text-dark border ms-2">0</span></h2>
+    <div class="alert alert-success small mb-0" data-i18n="ui.noDiagnostics">No hay diagnósticos para este alcance.</div>
+  </section>
+      </div>
+    </div>
+  </main>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
+    window.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.mermaid').forEach(function (el) {
+        try { mermaid.run({ nodes: [el], suppressErrors: true }); }
+        catch (e) { console.warn('Mermaid render error:', e); }
+      });
+    });
+  </script>
+  <script>
+    (function () {
+      // Expand / collapse use-case narrative rows.
+      document.addEventListener('click', function (ev) {
+        var trigger = ev.target.closest('[data-uc-toggle]');
+        if (trigger) {
+          if (ev.target.closest('a, button.copy-btn, summary')) return;
+          var id = trigger.getAttribute('data-uc-toggle');
+          var detail = document.getElementById(id);
+          if (detail) {
+            var open = detail.hasAttribute('hidden');
+            if (open) { detail.removeAttribute('hidden'); } else { detail.setAttribute('hidden', ''); }
+            document.querySelectorAll('[data-uc-toggle="' + id + '"] .uc-toggle, .uc-toggle[data-uc-toggle="' + id + '"]').forEach(function (b) {
+              b.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+            var btn = trigger.matches('.uc-toggle') ? trigger : trigger.querySelector('.uc-toggle');
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          }
+          return;
+        }
+        // Copy-to-clipboard buttons.
+        var copy = ev.target.closest('.copy-btn');
+        if (copy) {
+          ev.preventDefault();
+          var sel = copy.getAttribute('data-copy-target');
+          var src = sel ? document.querySelector(sel) : null;
+          var text = src ? src.textContent : (copy.getAttribute('data-copy-text') || '');
+          var done = function () {
+            copy.classList.add('copied');
+            var prev = copy.textContent;
+            copy.textContent = (window.dslT ? dslT('ui.copied') : 'Copied');
+            setTimeout(function () { copy.classList.remove('copied'); copy.textContent = prev; }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, done);
+          } else {
+            var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+            ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done();
+          }
+          return;
+        }
+        // Collapsible section headers.
+        var st = ev.target.closest('.section-toggle');
+        if (st) {
+          var sec = st.closest('.collapsible-section');
+          if (sec) sec.classList.toggle('collapsed');
+        }
+      });
+
+      // Flash highlight when navigating to an in-page anchor (traceability links).
+      function flashTarget() {
+        if (!location.hash) return;
+        var el = document.getElementById(location.hash.slice(1));
+        if (!el) return;
+        // If the target is a hidden narrative detail row, reveal it.
+        if (el.hasAttribute && el.hasAttribute('hidden')) el.removeAttribute('hidden');
+        el.classList.remove('xref-flash');
+        void el.offsetWidth;
+        el.classList.add('xref-flash');
+      }
+      window.addEventListener('hashchange', flashTarget);
+      window.addEventListener('DOMContentLoaded', flashTarget);
+
+      // Scroll-spy for the in-page nav.
+      window.addEventListener('DOMContentLoaded', function () {
+        var links = Array.prototype.slice.call(document.querySelectorAll('.review-nav a[href^="#"]'));
+        if (!links.length || !('IntersectionObserver' in window)) return;
+        var map = {};
+        var targets = [];
+        links.forEach(function (a) {
+          var t = document.getElementById(a.getAttribute('href').slice(1));
+          if (t) { map[t.id] = a; targets.push(t); }
+        });
+        var obs = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) {
+              links.forEach(function (a) { a.classList.remove('active'); });
+              if (map[e.target.id]) map[e.target.id].classList.add('active');
+            }
+          });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        targets.forEach(function (t) { obs.observe(t); });
+      });
+    })();
+  </script>
+</body>
+</html>

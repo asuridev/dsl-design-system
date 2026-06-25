@@ -1,0 +1,361 @@
+proposals:
+  - id: DIAG-001
+    title: >-
+      [INT-007] orders consumes event "PaymentApproved" from "payments" which is declared in system.yaml but not yet
+      designed (no payments.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[0]
+    current: orders.yaml#/domainEvents/consumed[0]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "PaymentApproved" from "payments" which is
+      declared in system.yaml but not yet designed (no payments.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[0] Relevant files: orders.yaml#/domainEvents/consumed[0]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-002
+    title: >-
+      [INT-007] orders consumes event "PaymentFailed" from "payments" which is declared in system.yaml but not yet
+      designed (no payments.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[1]
+    current: orders.yaml#/domainEvents/consumed[1]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "PaymentFailed" from "payments" which is declared
+      in system.yaml but not yet designed (no payments.yaml in arch/).". Context: orders.yaml#/domainEvents/consumed[1]
+      Relevant files: orders.yaml#/domainEvents/consumed[1]. Task: Fix this validation diagnostic by updating the
+      canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL
+      validation/refinement checks after proposing changes.
+  - id: DIAG-003
+    title: >-
+      [INT-007] orders consumes event "PaymentRefunded" from "payments" which is declared in system.yaml but not yet
+      designed (no payments.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[2]
+    current: orders.yaml#/domainEvents/consumed[2]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "PaymentRefunded" from "payments" which is
+      declared in system.yaml but not yet designed (no payments.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[2] Relevant files: orders.yaml#/domainEvents/consumed[2]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-004
+    title: >-
+      [INT-007] orders consumes event "StockReservationFailed" from "inventory" which is declared in system.yaml but not
+      yet designed (no inventory.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[3]
+    current: orders.yaml#/domainEvents/consumed[3]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "StockReservationFailed" from "inventory" which is
+      declared in system.yaml but not yet designed (no inventory.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[3] Relevant files: orders.yaml#/domainEvents/consumed[3]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-005
+    title: >-
+      [INT-007] orders consumes event "StockReleased" from "inventory" which is declared in system.yaml but not yet
+      designed (no inventory.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[4]
+    current: orders.yaml#/domainEvents/consumed[4]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "StockReleased" from "inventory" which is declared
+      in system.yaml but not yet designed (no inventory.yaml in arch/).". Context: orders.yaml#/domainEvents/consumed[4]
+      Relevant files: orders.yaml#/domainEvents/consumed[4]. Task: Fix this validation diagnostic by updating the
+      canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL
+      validation/refinement checks after proposing changes.
+  - id: DIAG-006
+    title: >-
+      [INT-007] orders consumes event "DeliveryOrderCreated" from "delivery" which is declared in system.yaml but not
+      yet designed (no delivery.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[5]
+    current: orders.yaml#/domainEvents/consumed[5]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "DeliveryOrderCreated" from "delivery" which is
+      declared in system.yaml but not yet designed (no delivery.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[5] Relevant files: orders.yaml#/domainEvents/consumed[5]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-007
+    title: >-
+      [INT-007] orders consumes event "DeliveryCompleted" from "delivery" which is declared in system.yaml but not yet
+      designed (no delivery.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[6]
+    current: orders.yaml#/domainEvents/consumed[6]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "DeliveryCompleted" from "delivery" which is
+      declared in system.yaml but not yet designed (no delivery.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[6] Relevant files: orders.yaml#/domainEvents/consumed[6]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-008
+    title: >-
+      [INT-007] orders consumes event "CustomerAddressUpdated" from "customers" which is declared in system.yaml but not
+      yet designed (no customers.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - orders.yaml#/domainEvents/consumed[7]
+    current: orders.yaml#/domainEvents/consumed[7]
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-007] orders consumes event "CustomerAddressUpdated" from "customers" which is
+      declared in system.yaml but not yet designed (no customers.yaml in arch/).". Context:
+      orders.yaml#/domainEvents/consumed[7] Relevant files: orders.yaml#/domainEvents/consumed[7]. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-009
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 1: onSuccess "StockReserved" is not published by inventory.yaml (BC not yet
+      designed — no inventory.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[0]/onSuccess
+    current: system.yaml#/sagas[0]/steps[0]/onSuccess
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 1: onSuccess "StockReserved" is not published
+      by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).". Context:
+      system.yaml#/sagas[0]/steps[0]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[0]/onSuccess. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-010
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 1: onFailure "StockReservationFailed" is not published by inventory.yaml (BC
+      not yet designed — no inventory.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[0]/onFailure
+    current: system.yaml#/sagas[0]/steps[0]/onFailure
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 1: onFailure "StockReservationFailed" is not
+      published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).". Context:
+      system.yaml#/sagas[0]/steps[0]/onFailure Relevant files: system.yaml#/sagas[0]/steps[0]/onFailure. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-011
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 1: compensation "StockReleased" is not published by any designed BC yet
+      (producer BC not yet in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[0]/compensation
+    current: system.yaml#/sagas[0]/steps[0]/compensation
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 1: compensation "StockReleased" is not
+      published by any designed BC yet (producer BC not yet in arch/).". Context:
+      system.yaml#/sagas[0]/steps[0]/compensation Relevant files: system.yaml#/sagas[0]/steps[0]/compensation. Task: Fix
+      this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-012
+    title: >-
+      [INT-012] Saga "CheckoutSaga" step 2: triggeredBy "StockReserved" would be published by an undesigned BC (not yet
+      in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[1]/triggeredBy
+    current: system.yaml#/sagas[0]/steps[1]/triggeredBy
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-012] Saga "CheckoutSaga" step 2: triggeredBy "StockReserved" would be
+      published by an undesigned BC (not yet in arch/).". Context: system.yaml#/sagas[0]/steps[1]/triggeredBy Relevant
+      files: system.yaml#/sagas[0]/steps[1]/triggeredBy. Task: Fix this validation diagnostic by updating the canonical
+      design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL
+      validation/refinement checks after proposing changes.
+  - id: DIAG-013
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 2: onSuccess "PaymentApproved" is not published by payments.yaml (BC not yet
+      designed — no payments.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[1]/onSuccess
+    current: system.yaml#/sagas[0]/steps[1]/onSuccess
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 2: onSuccess "PaymentApproved" is not published
+      by payments.yaml (BC not yet designed — no payments.yaml in arch/).". Context:
+      system.yaml#/sagas[0]/steps[1]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[1]/onSuccess. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-014
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 2: onFailure "PaymentFailed" is not published by payments.yaml (BC not yet
+      designed — no payments.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[1]/onFailure
+    current: system.yaml#/sagas[0]/steps[1]/onFailure
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 2: onFailure "PaymentFailed" is not published
+      by payments.yaml (BC not yet designed — no payments.yaml in arch/).". Context:
+      system.yaml#/sagas[0]/steps[1]/onFailure Relevant files: system.yaml#/sagas[0]/steps[1]/onFailure. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-015
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 2: compensation "PaymentRefunded" is not published by any designed BC yet
+      (producer BC not yet in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[1]/compensation
+    current: system.yaml#/sagas[0]/steps[1]/compensation
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 2: compensation "PaymentRefunded" is not
+      published by any designed BC yet (producer BC not yet in arch/).". Context:
+      system.yaml#/sagas[0]/steps[1]/compensation Relevant files: system.yaml#/sagas[0]/steps[1]/compensation. Task: Fix
+      this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: DIAG-016
+    title: >-
+      [INT-012] Saga "CheckoutSaga" step 3: triggeredBy "PaymentApproved" would be published by an undesigned BC (not
+      yet in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[2]/triggeredBy
+    current: system.yaml#/sagas[0]/steps[2]/triggeredBy
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-012] Saga "CheckoutSaga" step 3: triggeredBy "PaymentApproved" would be
+      published by an undesigned BC (not yet in arch/).". Context: system.yaml#/sagas[0]/steps[2]/triggeredBy Relevant
+      files: system.yaml#/sagas[0]/steps[2]/triggeredBy. Task: Fix this validation diagnostic by updating the canonical
+      design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL
+      validation/refinement checks after proposing changes.
+  - id: DIAG-017
+    title: >-
+      [INT-014] Saga "CheckoutSaga" step 4: onSuccess "DeliveryOrderCreated" is not published by delivery.yaml (BC not
+      yet designed — no delivery.yaml in arch/).
+    severity: warning
+    rationale: Validation found a design inconsistency that should be reviewed before generation.
+    affectedFiles:
+      - system.yaml#/sagas[0]/steps[3]/onSuccess
+    current: system.yaml#/sagas[0]/steps[3]/onSuccess
+    proposed: Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.
+    agentPrompt: >-
+      Review the DSL design decision "[INT-014] Saga "CheckoutSaga" step 4: onSuccess "DeliveryOrderCreated" is not
+      published by delivery.yaml (BC not yet designed — no delivery.yaml in arch/).". Context:
+      system.yaml#/sagas[0]/steps[3]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[3]/onSuccess. Task: Fix this
+      validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the
+      artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.
+  - id: catalog-UC-003
+    title: Lookup and FK validation routes
+    severity: review
+    rationale: These choices decide where referential integrity is checked and which dependencies appear.
+    affectedFiles: &ref_0
+      - arch/catalog/catalog.yaml
+    current: 4 FK validation(s), 0 use case(s) with lookups
+    proposed: 'Review options: notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort'
+    agentPrompt: >-
+      Review the DSL design decision "Lookup and FK validation routes". Context: 4 FK validation(s), 0 use case(s) with
+      lookups Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (notFoundError | lookups[]
+      | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current
+      decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after
+      proposing changes.
+  - id: catalog-EV-001
+    title: Events and Local Read Models
+    severity: review
+    rationale: Event and LRM decisions control coupling, availability and eventual consistency trade-offs.
+    affectedFiles: *ref_0
+    current: 2 published event(s), 0 consumed event(s), 0 local read model(s)
+    proposed: >-
+      Review options: publish event | consume event | listenerRequired false | persistent projection | readModel
+      aggregate | HTTP sync instead of LRM
+    agentPrompt: >-
+      Review the DSL design decision "Events and Local Read Models". Context: 2 published event(s), 0 consumed event(s),
+      0 local read model(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (publish
+      event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead
+      of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic
+      and run the DSL validation/refinement checks after proposing changes.
+  - id: catalog-INT-001
+    title: Integration points
+    severity: review
+    rationale: Integration declarations must align with system.yaml and contract artifacts.
+    affectedFiles: *ref_0
+    current: 'outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1)'
+    proposed: >-
+      Review options: outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth
+      override
+    agentPrompt: >-
+      Review the DSL design decision "Integration points". Context: outbound: 1 (event/message-broker: 1); inbound: 1
+      (customer-supplier/http: 1) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options
+      (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and
+      update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the
+      DSL validation/refinement checks after proposing changes.
+  - id: orders-UC-003
+    title: Lookup and FK validation routes
+    severity: review
+    rationale: These choices decide where referential integrity is checked and which dependencies appear.
+    affectedFiles: &ref_1
+      - arch/orders/orders.yaml
+    current: 1 FK validation(s), 0 use case(s) with lookups
+    proposed: 'Review options: notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort'
+    agentPrompt: >-
+      Review the DSL design decision "Lookup and FK validation routes". Context: 1 FK validation(s), 0 use case(s) with
+      lookups Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (notFoundError | lookups[] |
+      same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current
+      decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after
+      proposing changes.
+  - id: orders-EV-001
+    title: Events and Local Read Models
+    severity: review
+    rationale: Event and LRM decisions control coupling, availability and eventual consistency trade-offs.
+    affectedFiles: *ref_1
+    current: 3 published event(s), 8 consumed event(s), 1 local read model(s)
+    proposed: >-
+      Review options: publish event | consume event | listenerRequired false | persistent projection | readModel
+      aggregate | HTTP sync instead of LRM
+    agentPrompt: >-
+      Review the DSL design decision "Events and Local Read Models". Context: 3 published event(s), 8 consumed event(s),
+      1 local read model(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (publish event
+      | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM)
+      and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run
+      the DSL validation/refinement checks after proposing changes.
+  - id: orders-INT-001
+    title: Integration points
+    severity: review
+    rationale: Integration declarations must align with system.yaml and contract artifacts.
+    affectedFiles: *ref_1
+    current: 'outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4)'
+    proposed: >-
+      Review options: outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth
+      override
+    agentPrompt: >-
+      Review the DSL design decision "Integration points". Context: outbound: 5 (customer-supplier/http: 1,
+      event/message-broker: 4); inbound: 4 (event/message-broker: 4) Relevant files: arch/orders/orders.yaml. Task:
+      Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience
+      override | auth override) and update the design only if the current decision should change. Keep the artifacts
+      technology-agnostic and run the DSL validation/refinement checks after proposing changes.

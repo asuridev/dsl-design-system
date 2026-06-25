@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>canasta-familiar — Revisión de diseño</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
+    .bg-purple { background-color: #6f42c1 !important; }
+    .metric-tile, .decision-card, .detail-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
+    .detail-card { margin-bottom: 1.25rem; }
+    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
+    .decision-card { margin-bottom: 1rem; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
+    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
+    .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    /* Expandable use-case narrative */
+    .uc-row { cursor: pointer; }
+    .uc-toggle { color: var(--bs-secondary-color); text-decoration: none; }
+    .uc-caret { display: inline-block; transition: transform .15s; }
+    .uc-toggle[aria-expanded="true"] .uc-caret { transform: rotate(90deg); }
+    .uc-detail { padding: .5rem .25rem; font-size: .9rem; }
+    .uc-detail .narrative-quote { border-left: 3px solid var(--bs-border-color); padding-left: .75rem; color: var(--bs-secondary-color); margin: .5rem 0; }
+    .uc-detail .narrative-code { background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: .35rem; padding: .6rem; font-size: .8rem; overflow:auto; }
+    .uc-detail .narrative-table { font-size: .82rem; }
+    .uc-detail .narrative-flow > summary { cursor: pointer; }
+    .uc-detail .narrative-subheading { text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); margin-top: .75rem; }
+    /* Copy-to-clipboard control */
+    .copy-btn { font-size: .72rem; }
+    .copy-btn.copied { color: var(--bs-success); border-color: var(--bs-success); }
+    /* Sticky in-page navigation */
+    .review-nav { position: sticky; top: 1rem; font-size: .82rem; }
+    .review-nav a { display: block; padding: .2rem .5rem; border-left: 2px solid transparent; color: var(--bs-secondary-color); text-decoration: none; border-radius: 0 .25rem .25rem 0; }
+    .review-nav a:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+    .review-nav a.active { border-left-color: var(--bs-primary); color: var(--bs-body-color); font-weight: 600; }
+    /* Attention panel + cross-link target highlight */
+    .attention-card { border-left: 4px solid var(--bs-warning); }
+    .attention-card.is-error { border-left-color: var(--bs-danger); }
+    .attention-card.is-ok { border-left-color: var(--bs-success); }
+    :target { scroll-margin-top: 4.5rem; }
+    .xref-flash { animation: xrefFlash 1.4s ease-out; }
+    @keyframes xrefFlash { 0% { background: rgba(255,193,7,.45); } 100% { background: transparent; } }
+    .collapsible-section > .section-toggle { cursor: pointer; user-select: none; }
+    .collapsible-section > .section-toggle .uc-caret { transform: rotate(90deg); }
+    .collapsible-section.collapsed > .section-toggle .uc-caret { transform: rotate(0deg); }
+    .collapsible-section.collapsed > .section-body { display: none; }
+    .bc-card { transition: transform .15s, box-shadow .15s; }
+    .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center">
+      <span class="navbar-brand fw-bold fs-5">canasta-familiar — <span data-i18n="ui.designReview">Revisión de diseño</span></span>
+      <div class="d-flex gap-3 align-items-center"><span class="text-muted small">24/6/2026, 6:48:44 p. m.</span>
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div></div>
+    </div>
+  </nav>
+
+  <div class="container-xl pb-5">
+    <div class="alert alert-secondary mb-4" style="font-size:.9rem">B2C digital platform for selling grocery and household staple products. Customers browse a catalog, place orders online, and receive home delivery using the company's own courier fleet. Supports card payments via an external payment gateway and cash-on-delivery.
+</div>
+    <div class="alert alert-secondary mb-4">
+    <div class="text-uppercase small fw-semibold mb-2" data-i18n="diff.title">Cambios desde la última revisión</div>
+    <span class="text-body-secondary" data-i18n="diff.none">Sin cambios estructurales desde la última corrida.</span>
+  </div>
+    
+    <section class="mb-5">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h5 class="mb-0" data-i18n="ui.decisionReview">Revisión de decisiones</h5>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="badge bg-warning text-dark">0 errores / 17 advertencias</span>
+          <a href="proposals.html" class="btn btn-sm btn-dark" data-i18n="ui.openProposals">Propuestas abiertas</a>
+          <a href="decisions.html" class="btn btn-sm btn-outline-dark" data-i18n="ui.decisionsExplorer">Explorador de decisiones</a>
+          <a href="patch-proposals.yaml" class="btn btn-sm btn-outline-secondary" data-i18n="ui.patchProposals">Propuestas de ajuste</a>
+        </div>
+      </div>
+      <div class="mb-4"><div class="attention-card  p-3 rounded bg-body">
+    <div class="text-uppercase small fw-semibold text-body-secondary mb-2" data-i18n="ui.attentionRequired">Requiere tu atención</div>
+    <div class="d-flex flex-wrap gap-2"><a href="#sec-system-diagnostics" class="text-decoration-none"><span class="badge bg-warning text-dark">17 advertencia(s) de validación</span></a> <a href="proposals.html" class="text-decoration-none"><span class="badge bg-info text-dark">17 caso(s) de uso en scaffold</span></a></div>
+  </div></div>
+      
+    <div class="row g-3 mb-4">
+      
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">7</div>
+            <div class="metric-label">BCs</div>
+            <div class="metric-detail">bounded contexts</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">24</div>
+            <div class="metric-label">Decisiones</div>
+            <div class="metric-detail">review points</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">17</div>
+            <div class="metric-label">Diagnósticos</div>
+            <div class="metric-detail">0 errores / 17 advertencias</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">16</div>
+            <div class="metric-label">Integraciones</div>
+            <div class="metric-detail">system integrations</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">2</div>
+            <div class="metric-label">Sistemas externos</div>
+            <div class="metric-detail">declared dependencies</div>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <div class="metric-tile">
+            <div class="metric-value">1</div>
+            <div class="metric-label">Sagas</div>
+            <div class="metric-detail">cross-BC processes</div>
+          </div>
+        </div>
+    </div>
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <h6 class="mb-3" data-i18n="ui.systemDecisions">Decisiones del sistema</h6>
+          
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-001</span>
+          <h6 class="mb-1">System profile</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: canasta-familiar (unclassified)</p>
+      <p class="small text-muted mb-2">Confirms how much domain design investment the system deserves.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">core</span><span class="badge rounded-pill text-bg-secondary">supporting</span><span class="badge rounded-pill text-bg-secondary">generic</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-001-0" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-001-0">Review the DSL design decision &quot;System profile&quot;. Context: canasta-familiar (unclassified) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (core | supporting | generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-002</span>
+          <h6 class="mb-1">Bounded context boundaries</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 7 BC(s), type split: core: 2, supporting: 4, generic: 1</p>
+      <p class="small text-muted mb-2">BC boundaries drive ownership, language and downstream generation modules.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">keep current BCs</span><span class="badge rounded-pill text-bg-secondary">split oversized BCs</span><span class="badge rounded-pill text-bg-secondary">merge thin BCs</span><span class="badge rounded-pill text-bg-secondary">reclassify core/supporting/generic</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-002-1" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-002-1">Review the DSL design decision &quot;Bounded context boundaries&quot;. Context: 7 BC(s), type split: core: 2, supporting: 4, generic: 1 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (keep current BCs | split oversized BCs | merge thin BCs | reclassify core/supporting/generic) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-003</span>
+          <h6 class="mb-1">Integration style</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3</p>
+      <p class="small text-muted mb-2">This is the main coupling and availability map of the system.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">customer-supplier http</span><span class="badge rounded-pill text-bg-secondary">event message-broker</span><span class="badge rounded-pill text-bg-primary">acl · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">open-host</span><span class="badge rounded-pill text-bg-secondary">shared-kernel</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-003-2" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-003-2">Review the DSL design decision &quot;Integration style&quot;. Context: 16 integration(s), patterns: event: 13, customer-supplier: 1, acl: 2, channels: message-broker: 13, http: 3 Relevant files: arch/system/system.yaml. Task: Evaluate the available options (customer-supplier http | event message-broker | acl | open-host | shared-kernel) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-004</span>
+          <h6 class="mb-1">Infrastructure constraints</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url)</p>
+      <p class="small text-muted mb-2">Infrastructure flags explain why generated projects need shared auth, broker, or object storage capabilities.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-primary">modular-monolith · <span data-i18n="ui.recommended">actual</span></span><span class="badge rounded-pill text-bg-secondary">microservices</span><span class="badge rounded-pill text-bg-secondary">schema-per-bc</span><span class="badge rounded-pill text-bg-secondary">db-per-bc</span><span class="badge rounded-pill text-bg-secondary">auth server on/off</span><span class="badge rounded-pill text-bg-secondary">message broker on/off</span><span class="badge rounded-pill text-bg-secondary">object storage on/off</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-004-3" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-004-3">Review the DSL design decision &quot;Infrastructure constraints&quot;. Context: deployment=modular-monolith, database=relational, authServer=true, messageBroker=true, objectStorage=1 bucket(s) (product-media: public/public-url) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (modular-monolith | microservices | schema-per-bc | db-per-bc | auth server on/off | message broker on/off | object storage on/off) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-005</span>
+          <h6 class="mb-1">External systems and sagas</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: 2 external system(s), 1 saga(s), 3 actor type(s)</p>
+      <p class="small text-muted mb-2">External dependencies and cross-BC processes are high-value review points before generation.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">declare external ACL</span><span class="badge rounded-pill text-bg-secondary">model saga</span><span class="badge rounded-pill text-bg-secondary">keep process inside one BC</span><span class="badge rounded-pill text-bg-secondary">declare actors for validation</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-005-4" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-005-4">Review the DSL design decision &quot;External systems and sagas&quot;. Context: 2 external system(s), 1 saga(s), 3 actor type(s) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (declare external ACL | model saga | keep process inside one BC | declare actors for validation) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-category="strategic">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">SYS-006</span>
+          <h6 class="mb-1">Reliability patterns</h6>
+        </div>
+        <span class="badge bg-light text-dark border">strategic</span>
+      </div>
+      <p class="small mb-2"><strong data-i18n="ui.current">Actual</strong>: outbox=true (retention 7d), consumerIdempotency=true (retention 14d)</p>
+      <p class="small text-muted mb-2">Event reliability flags control at-least-once publication and consumer deduplication; recommended on whenever sagas exist.</p>
+      <div class="option-row mb-3"><span class="badge rounded-pill text-bg-secondary">outbox on/off</span><span class="badge rounded-pill text-bg-secondary">consumerIdempotency on/off</span><span class="badge rounded-pill text-bg-secondary">set retention days</span></div>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prompt-sys-006-5" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prompt-sys-006-5">Review the DSL design decision &quot;Reliability patterns&quot;. Context: outbox=true (retention 7d), consumerIdempotency=true (retention 14d) Relevant files: arch/system/system.yaml. Task: Evaluate the available options (outbox on/off | consumerIdempotency on/off | set retention days) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+        </div>
+        <div class="col-lg-5" id="sec-system-diagnostics">
+          <h6 class="mb-3" data-i18n="ui.validationHealth">Salud de validación</h6>
+          
+    <div class="list-group diagnostic-list">
+      
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[0]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;PaymentApproved&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[1]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;PaymentFailed&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[2]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;PaymentRefunded&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[3]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;StockReservationFailed&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[4]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;StockReleased&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[5]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;DeliveryOrderCreated&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[6]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;DeliveryCompleted&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).</p>
+        </div>
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <span class="badge bg-warning text-dark me-2">warn</span>
+              <strong>INT-007</strong>
+            </div>
+            <code class="small text-muted">orders.yaml#/domainEvents/consumed[7]</code>
+          </div>
+          <p class="small mb-0 mt-2">orders consumes event &quot;CustomerAddressUpdated&quot; from &quot;customers&quot; which is declared in system.yaml but not yet designed (no customers.yaml in arch/).</p>
+        </div>
+    </div>
+          <a href="proposals.html" class="small d-inline-block mt-2">+9 · <span data-i18n="ui.viewAll">Ver todos</span></a>
+        </div>
+      </div>
+    </section>
+    
+      <section class="mb-5">
+        <h5 class="mb-3" data-i18n="ui.systemArchitecture">Arquitectura del sistema</h5>
+        <div class="sys-diagram-wrap bg-body rounded border">
+          <div class="sys-toolbar">
+            <button class="sys-btn" data-sys-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+            <button class="sys-btn" data-sys-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">&minus;</button>
+            <button class="sys-btn" data-sys-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+            <button class="sys-btn" data-sys-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+          </div>
+          <p class="sys-hint" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</p>
+          <div class="sys-diag-target" id="sys-diag-target" tabindex="0">
+            <div class="mermaid">C4Container
+    title Canasta Familiar — C4 Contenedores (L2)
+
+    Person(customer, &quot;Customer&quot;, &quot;Registered B2C consumer&quot;)
+    Person(admin, &quot;Admin&quot;, &quot;Back-office operator&quot;)
+
+    System_Ext(paymentGateway, &quot;payment-gateway&quot;, &quot;Card payment processor\n(MercadoPago / Stripe)&quot;)
+
+    Boundary(b0, &quot;Canasta Familiar Platform&quot;) {
+        Container(catalog, &quot;catalog&quot;, &quot;Core&quot;, &quot;Product catalog, categories and pricing.\nAuthoritative source of product prices.&quot;)
+        Container(orders, &quot;orders&quot;, &quot;Core&quot;, &quot;Full order lifecycle: cart, checkout,\nconfirmation, delivery tracking.&quot;)
+        Container(payments, &quot;payments&quot;, &quot;Supporting&quot;, &quot;Payment processing: card via gateway,\ncash-on-delivery recording.&quot;)
+        Container(inventory, &quot;inventory&quot;, &quot;Supporting&quot;, &quot;Real-time stock control.\nReserves and releases stock in saga.&quot;)
+        Container(delivery, &quot;delivery&quot;, &quot;Supporting&quot;, &quot;Home delivery with own courier fleet.\nTracks deliveries end-to-end.&quot;)
+        Container(customers, &quot;customers&quot;, &quot;Supporting&quot;, &quot;Customer accounts and delivery addresses.\nPublishes address events for orders LRM.&quot;)
+        Container(notifications, &quot;notifications&quot;, &quot;Generic&quot;, &quot;Transactional customer notifications.\nDelegates sending to external provider.&quot;)
+    }
+
+    System_Ext(notificationProvider, &quot;notification-provider&quot;, &quot;Email/SMS/push messaging provider\n(SendGrid, Firebase, Twilio)&quot;)
+
+    Rel(customer, catalog, &quot;browse products&quot;)
+    Rel(customer, orders, &quot;place orders, track deliveries&quot;)
+    Rel(customer, customers, &quot;manage account &amp; addresses&quot;)
+    Rel(admin, catalog, &quot;manage products &amp; categories&quot;)
+    Rel(admin, inventory, &quot;adjust stock levels&quot;)
+    Rel(admin, orders, &quot;manage &amp; monitor orders&quot;)
+    Rel(admin, delivery, &quot;manage courier fleet&quot;)
+
+    Rel(orders, catalog, &quot;validateProductsAndPrices&quot;, &quot;Sync / HTTP&quot;)
+
+    Rel(orders, inventory, &quot;OrderPlaced&quot;, &quot;Event / Message Broker&quot;)
+    Rel(inventory, payments, &quot;StockReserved&quot;, &quot;Event / Message Broker&quot;)
+    Rel(payments, orders, &quot;PaymentApproved, PaymentFailed, PaymentRefunded&quot;, &quot;Event / Message Broker&quot;)
+    Rel(orders, delivery, &quot;OrderConfirmed, OrderCancelled&quot;, &quot;Event / Message Broker&quot;)
+    Rel(inventory, orders, &quot;StockReservationFailed, StockReleased&quot;, &quot;Event / Message Broker&quot;)
+    Rel(payments, inventory, &quot;PaymentFailed&quot;, &quot;Event / Message Broker&quot;)
+    Rel(catalog, inventory, &quot;ProductActivated, ProductDiscontinued&quot;, &quot;Event / Message Broker&quot;)
+    Rel(customers, orders, &quot;CustomerAddressUpdated&quot;, &quot;Event / Message Broker&quot;)
+    Rel(delivery, orders, &quot;DeliveryOrderCreated, DeliveryCompleted&quot;, &quot;Event / Message Broker&quot;)
+    Rel(delivery, payments, &quot;CashCollected&quot;, &quot;Event / Message Broker&quot;)
+
+    Rel(orders, payments, &quot;OrderCancelled&quot;, &quot;Event / Message Broker&quot;)
+    Rel(orders, notifications, &quot;OrderConfirmed, OrderCancelled&quot;, &quot;Event / Message Broker&quot;)
+    Rel(delivery, notifications, &quot;DeliveryCompleted&quot;, &quot;Event / Message Broker&quot;)
+    Rel(notifications, notificationProvider, &quot;sendMessage&quot;, &quot;ACL / HTTPS&quot;)
+
+    Rel(payments, paymentGateway, &quot;chargePayment, refundPayment&quot;, &quot;ACL / HTTPS&quot;)
+
+    %% ── Conexiones HTTP → azul ───────────────────────────────────────
+    UpdateRelStyle(orders, catalog, $lineColor=&quot;royalblue&quot;, $textColor=&quot;royalblue&quot;)
+
+    %% ── Conexiones por evento → naranja ──────────────────────────────
+    UpdateRelStyle(orders, inventory, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(inventory, payments, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(payments, orders, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(orders, delivery, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(inventory, orders, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(payments, inventory, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(catalog, inventory, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(customers, orders, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(delivery, orders, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(delivery, payments, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(orders, payments, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(orders, notifications, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+    UpdateRelStyle(delivery, notifications, $lineColor=&quot;orange&quot;, $textColor=&quot;darkorange&quot;)
+</div>
+          </div>
+        </div>
+      </section>
+    
+    <section class="mb-5">
+      <h5 class="mb-3" data-i18n="ui.systemSagas">Sagas del sistema</h5>
+      
+      <article class="saga-card mb-4">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+          <h6 class="mb-0">CheckoutSaga</h6>
+          <span class="badge bg-light text-dark border"><span data-i18n="saga.trigger">Disparador</span>: OrderPlaced (orders)</span>
+        </div>
+        <p class="small text-muted mb-2">Coordinates the checkout process across inventory, payments, orders and delivery. Reserves stock, processes payment, confirms the order and triggers home delivery. Compensates by releasing reserved stock and refunding the card charge if any step fails.
+</p>
+        <div class="saga-diagram mb-3"><pre class="mermaid">sequenceDiagram
+  autonumber
+  participant bc_orders as orders
+  participant bc_inventory as inventory
+  participant bc_payments as payments
+  participant bc_delivery as delivery
+  Note over bc_orders: trigger: OrderPlaced
+  bc_orders-&gt;&gt;bc_inventory: 1. OrderPlaced
+  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased
+  bc_inventory-&gt;&gt;bc_payments: 2. StockReserved
+  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded
+  bc_payments-&gt;&gt;bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]
+  bc_orders-&gt;&gt;bc_delivery: 4. OrderConfirmed
+  Note over bc_delivery: ✓ DeliveryOrderCreated</pre></div>
+        <div class="table-responsive"><table class="table table-sm table-hover align-middle">
+          <thead class="table-light"><tr>
+            <th data-i18n="saga.step">Paso</th>
+            <th data-i18n="saga.bc">BC</th>
+            <th data-i18n="saga.triggeredBy">Disparado por</th>
+            <th data-i18n="saga.onSuccess">Éxito</th>
+            <th data-i18n="saga.onFailure">Fallo</th>
+            <th data-i18n="saga.compensation">Compensación</th>
+            <th data-i18n="saga.implementedBy">Implementado por</th>
+          </tr></thead><tbody>
+        <tr>
+          <td>1</td>
+          <td><span class="badge bg-secondary">inventory</span></td>
+          <td class="font-monospace small">OrderPlaced</td>
+          <td class="font-monospace small text-success">StockReserved</td>
+          <td class="font-monospace small text-danger">StockReservationFailed</td>
+          <td class="font-monospace small">StockReleased</td>
+          <td><span class="text-muted">—</span></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><span class="badge bg-secondary">payments</span></td>
+          <td class="font-monospace small">StockReserved</td>
+          <td class="font-monospace small text-success">PaymentApproved</td>
+          <td class="font-monospace small text-danger">PaymentFailed</td>
+          <td class="font-monospace small">PaymentRefunded</td>
+          <td><span class="text-muted">—</span></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><span class="badge bg-secondary">orders</span></td>
+          <td class="font-monospace small">PaymentApproved</td>
+          <td class="font-monospace small text-success">OrderConfirmed</td>
+          <td class="font-monospace small text-danger">—</td>
+          <td class="font-monospace small">—</td>
+          <td><span class="font-monospace small">orders/UC-ORD-020</span> ConfirmOrder</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><span class="badge bg-secondary">delivery</span></td>
+          <td class="font-monospace small">OrderConfirmed</td>
+          <td class="font-monospace small text-success">DeliveryOrderCreated</td>
+          <td class="font-monospace small text-danger">—</td>
+          <td class="font-monospace small">—</td>
+          <td><span class="text-muted">—</span></td>
+        </tr></tbody>
+        </table></div>
+      </article>
+    </section>
+
+    <section>
+      <h5 class="mb-3">
+        <span data-i18n="ui.boundedContexts">Bounded Contexts</span>
+        <span class="badge bg-secondary ms-1">7</span>
+      </h5>
+      <div class="row g-3">
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">catalog</h6>
+              <span class="badge bg-primary">core</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Manages the product catalog: categories, product details, images and pricing. It is the single authoritative source for all product data and prices in the platform.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> Product, Category</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><div class="d-flex gap-2 flex-wrap"><a href="catalog-review.html" class="btn btn-sm btn-dark" data-i18n="nav.review">Revisión</a><a href="catalog-design.html" class="btn btn-sm btn-outline-dark" data-i18n="nav.diagrams">Diagramas</a><a href="catalog-openapi.html" class="btn btn-sm btn-outline-success" data-i18n="nav.restApi">API REST</a><a href="catalog-asyncapi.html" class="btn btn-sm btn-outline-primary" data-i18n="nav.events">Eventos</a></div></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">orders</h6>
+              <span class="badge bg-primary">core</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Manages the full order lifecycle from cart creation and checkout through payment confirmation, delivery tracking and order completion. Validates prices against catalog via HTTP at checkout (monetary snapshot). Maintains a local read model of customer addresses fed by CustomerAddressUpdated events from the customers BC (designer chose LRM for delivery address — non-monetary identity data).
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> Order, Cart</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><div class="d-flex gap-2 flex-wrap"><a href="orders-review.html" class="btn btn-sm btn-dark" data-i18n="nav.review">Revisión</a><a href="orders-design.html" class="btn btn-sm btn-outline-dark" data-i18n="nav.diagrams">Diagramas</a><a href="orders-openapi.html" class="btn btn-sm btn-outline-success" data-i18n="nav.restApi">API REST</a><a href="orders-asyncapi.html" class="btn btn-sm btn-outline-primary" data-i18n="nav.events">Eventos</a></div></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">payments</h6>
+              <span class="badge bg-purple">supporting</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Processes and records payments for orders. Supports card payments via an external payment gateway and cash-on-delivery payments recorded when the courier collects the cash. Handles refunds for cancelled confirmed orders charged by card.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> Payment</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><span class="badge bg-warning text-dark" data-i18n="ui.pendingTactical">Diseño táctico pendiente</span></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">inventory</h6>
+              <span class="badge bg-purple">supporting</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Tracks real-time stock levels for each active product. Creates a StockItem when a product is activated and permanently closes it when the product is discontinued. Reserves stock during the CheckoutSaga and releases it as compensation if payment fails.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> StockItem</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><span class="badge bg-warning text-dark" data-i18n="ui.pendingTactical">Diseño táctico pendiente</span></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">delivery</h6>
+              <span class="badge bg-purple">supporting</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Manages home delivery orders using the company's own courier fleet. Handles the full delivery lifecycle from assignment to completion. Records cash-on-delivery events for the payments BC.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> DeliveryOrder, Courier</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><span class="badge bg-warning text-dark" data-i18n="ui.pendingTactical">Diseño táctico pendiente</span></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">customers</h6>
+              <span class="badge bg-purple">supporting</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Manages customer accounts and their delivery addresses. Publishes CustomerAddressUpdated events consumed by orders to maintain a local read model of delivery addresses for order snapshots.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> Customer</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><span class="badge bg-warning text-dark" data-i18n="ui.pendingTactical">Diseño táctico pendiente</span></div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100 bc-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="card-title mb-0 fw-semibold">notifications</h6>
+              <span class="badge bg-secondary">generic</span>
+            </div>
+            <p class="card-text text-muted" style="font-size:.82rem">Delivers transactional notifications to customers (email, SMS, push) for key order lifecycle events: order confirmed, order cancelled, delivery completed. Fully delegates sending to an external notification provider. Generic domain — no competitive advantage; no business logic beyond template selection and dispatch.
+</p>
+            <p class="small mb-2"><strong>Aggregates:</strong> Notification</p>
+          </div>
+          <div class="card-footer bg-transparent border-top-0 pb-3"><span class="badge bg-warning text-dark" data-i18n="ui.pendingTactical">Diseño táctico pendiente</span></div>
+        </div>
+      </div></div>
+    </section>
+  </div>
+
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
+    // Render saga sequence diagrams (and any .mermaid outside the system C4 diagram).
+    document.querySelectorAll('.mermaid').forEach(function (el) {
+      if (el.closest('#sys-diag-target')) return;
+      try { mermaid.run({ nodes: [el], suppressErrors: true }); }
+      catch (e) { console.warn('Saga diagram render error:', e); }
+    });
+    (async function() {
+      var mermaidEl = document.querySelector('#sys-diag-target .mermaid');
+      if (!mermaidEl) return;
+      try { await mermaid.run({ nodes: [mermaidEl], suppressErrors: true }); }
+      catch(e) { console.warn('System diagram render error:', e); }
+      // Set arrow stroke-width to 2px — C4 diagram uses inline stroke-width attributes,
+      // not CSS classes, so we update them directly after render.
+      var svgEl = document.querySelector('#sys-diag-target svg');
+      if (svgEl) {
+        svgEl.querySelectorAll('path[stroke-width="1"], line[stroke-width="1"]').forEach(function(p) {
+          p.setAttribute('stroke-width', '2');
+        });
+      }
+      var target = document.getElementById('sys-diag-target');
+      if (!target) return;
+      var wrap = target.closest('.sys-diagram-wrap');
+      if (!wrap) return;
+      var scale = 1, tx = 0, ty = 0, dragging = false, startX = 0, startY = 0;
+      // Returns the viewBox width (SVG canvas size) used to set CSS width.
+      function getViewW() {
+        var svg = target.querySelector('svg');
+        if (svg && svg.viewBox && svg.viewBox.baseVal.width > 1) return svg.viewBox.baseVal.width;
+        var bcrW = svg ? svg.getBoundingClientRect().width : 0;
+        return bcrW > 1 ? bcrW : 800;
+      }
+      // Returns { x, width } of the actual drawn content inside the SVG (via getBBox).
+      // Falls back to { x:0, width: viewBoxWidth } when getBBox is unavailable.
+      function getContentBounds() {
+        var svg = target.querySelector('svg');
+        if (svg) {
+          try {
+            var bb = svg.getBBox();
+            if (bb.width > 1) return { x: bb.x, width: bb.width };
+          } catch(e) {}
+        }
+        return { x: 0, width: getViewW() };
+      }
+      function apply() {
+        var svg = target.querySelector('svg');
+        if (!svg) return;
+        // Width is based on the full viewBox so the SVG coordinate system scales uniformly.
+        svg.style.width = Math.round(getViewW() * scale) + 'px';
+        svg.style.height = 'auto';
+        svg.style.maxWidth = 'none';
+        target.style.transform = 'translate(' + Math.round(tx) + 'px,' + Math.round(ty) + 'px)';
+      }
+      function zoom(d) { scale = Math.min(4, Math.max(0.25, Math.round((scale + d) * 100) / 100)); apply(); }
+      function reset() {
+        // Scale 1:1, but offset so content left edge aligns with container.
+        var cb = getContentBounds();
+        scale = 1; tx = -Math.round(cb.x); ty = 0; apply();
+      }
+      function fit() {
+        var avail = Math.max(240, wrap.clientWidth - 32);
+        var cb = getContentBounds();
+        // Scale to fit the actual content width (with 16px breathing room), then offset to align content left edge.
+        scale = Math.min(2.5, Math.max(0.05, (avail - 16) / cb.width));
+        tx = -Math.round(cb.x * scale); ty = 0; apply();
+      }
+      // Clamp tx/ty so at least minVis px of the diagram remains visible in the wrap.
+      function clampPan() {
+        var svg = target.querySelector('svg');
+        if (!svg) return;
+        var minVis = 80;
+        var svgW = parseFloat(svg.style.width) || 200;
+        var svgH = target.getBoundingClientRect().height || 200;
+        var wW = wrap.clientWidth, wH = wrap.clientHeight;
+        tx = Math.min(wW - minVis, Math.max(-(svgW - minVis), tx));
+        ty = Math.min(wH - minVis, Math.max(-(svgH - minVis), ty));
+      }
+      wrap.querySelectorAll('[data-sys-zoom]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var a = btn.getAttribute('data-sys-zoom');
+          if (a === 'in') zoom(0.15);
+          else if (a === 'out') zoom(-0.15);
+          else if (a === 'reset') reset();
+          else if (a === 'fit') fit();
+        });
+      });
+      target.addEventListener('pointerdown', function(e) {
+        if (e.button !== 0) return;
+        dragging = true; startX = e.clientX - tx; startY = e.clientY - ty;
+        target.classList.add('sys-dragging'); target.setPointerCapture(e.pointerId);
+      });
+      target.addEventListener('pointermove', function(e) {
+        if (!dragging) return;
+        tx = e.clientX - startX; ty = e.clientY - startY;
+        clampPan(); apply();
+      });
+      target.addEventListener('pointerup', function() { dragging = false; target.classList.remove('sys-dragging'); });
+      target.addEventListener('keydown', function(e) {
+        if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(0.15); }
+        else if (e.key === '-') { e.preventDefault(); zoom(-0.15); }
+        else if (e.key === '0') { e.preventDefault(); reset(); }
+      });
+      wrap.addEventListener('wheel', function(e) { e.preventDefault(); zoom(e.deltaY < 0 ? 0.1 : -0.1); }, { passive: false });
+      requestAnimationFrame(function() { requestAnimationFrame(function() { fit(); }); });
+    })();
+  </script>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    (function () {
+      // Expand / collapse use-case narrative rows.
+      document.addEventListener('click', function (ev) {
+        var trigger = ev.target.closest('[data-uc-toggle]');
+        if (trigger) {
+          if (ev.target.closest('a, button.copy-btn, summary')) return;
+          var id = trigger.getAttribute('data-uc-toggle');
+          var detail = document.getElementById(id);
+          if (detail) {
+            var open = detail.hasAttribute('hidden');
+            if (open) { detail.removeAttribute('hidden'); } else { detail.setAttribute('hidden', ''); }
+            document.querySelectorAll('[data-uc-toggle="' + id + '"] .uc-toggle, .uc-toggle[data-uc-toggle="' + id + '"]').forEach(function (b) {
+              b.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+            var btn = trigger.matches('.uc-toggle') ? trigger : trigger.querySelector('.uc-toggle');
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          }
+          return;
+        }
+        // Copy-to-clipboard buttons.
+        var copy = ev.target.closest('.copy-btn');
+        if (copy) {
+          ev.preventDefault();
+          var sel = copy.getAttribute('data-copy-target');
+          var src = sel ? document.querySelector(sel) : null;
+          var text = src ? src.textContent : (copy.getAttribute('data-copy-text') || '');
+          var done = function () {
+            copy.classList.add('copied');
+            var prev = copy.textContent;
+            copy.textContent = (window.dslT ? dslT('ui.copied') : 'Copied');
+            setTimeout(function () { copy.classList.remove('copied'); copy.textContent = prev; }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, done);
+          } else {
+            var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+            ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done();
+          }
+          return;
+        }
+        // Collapsible section headers.
+        var st = ev.target.closest('.section-toggle');
+        if (st) {
+          var sec = st.closest('.collapsible-section');
+          if (sec) sec.classList.toggle('collapsed');
+        }
+      });
+
+      // Flash highlight when navigating to an in-page anchor (traceability links).
+      function flashTarget() {
+        if (!location.hash) return;
+        var el = document.getElementById(location.hash.slice(1));
+        if (!el) return;
+        // If the target is a hidden narrative detail row, reveal it.
+        if (el.hasAttribute && el.hasAttribute('hidden')) el.removeAttribute('hidden');
+        el.classList.remove('xref-flash');
+        void el.offsetWidth;
+        el.classList.add('xref-flash');
+      }
+      window.addEventListener('hashchange', flashTarget);
+      window.addEventListener('DOMContentLoaded', flashTarget);
+
+      // Scroll-spy for the in-page nav.
+      window.addEventListener('DOMContentLoaded', function () {
+        var links = Array.prototype.slice.call(document.querySelectorAll('.review-nav a[href^="#"]'));
+        if (!links.length || !('IntersectionObserver' in window)) return;
+        var map = {};
+        var targets = [];
+        links.forEach(function (a) {
+          var t = document.getElementById(a.getAttribute('href').slice(1));
+          if (t) { map[t.id] = a; targets.push(t); }
+        });
+        var obs = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) {
+              links.forEach(function (a) { a.classList.remove('active'); });
+              if (map[e.target.id]) map[e.target.id].classList.add('active');
+            }
+          });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        targets.forEach(function (t) { obs.observe(t); });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -10,6 +10,7 @@ const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
 const { validateIntegrationCoherence } = require('../utils/integration-validator');
 const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');
 const { clientI18nScript, localeSwitcher, normalizeLocale, t, themeBootScript, themeSwitcher, clientThemeScript } = require('../utils/i18n');
+const { parseBcNarrative } = require('../utils/narrative');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,16 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+// Stable, HTML-id / anchor-safe slug used to cross-link entities (use cases,
+// rules, errors, events, sagas) within and across review pages.
+function slug(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
 function countBy(items, getKey) {
   const result = {};
   for (const item of asArray(items)) {
@@ -43,6 +54,11 @@ function countBy(items, getKey) {
 async function readYamlIfExists(filePath) {
   if (!(await fs.pathExists(filePath))) return null;
   return yaml.load(await fs.readFile(filePath, 'utf8')) || {};
+}
+
+async function readTextIfExists(filePath) {
+  if (!(await fs.pathExists(filePath))) return null;
+  return fs.readFile(filePath, 'utf8');
 }
 
 function metric(label, value, detail) {
@@ -370,7 +386,7 @@ function extractDomainRuleIndex(bcYaml) {
   return index;
 }
 
-function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
+function extractUseCaseCatalog(bcYaml, opIndex, internalIndex, narrative) {
   if (!bcYaml) return [];
   const ruleIndex = extractDomainRuleIndex(bcYaml);
   return asArray(bcYaml.useCases).map((uc) => {
@@ -380,11 +396,15 @@ function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
       ? { saga: uc.sagaStep.saga, order: uc.sagaStep.order, role: uc.sagaStep.role }
       : null;
     const rules = asArray(uc.rules);
+    // Plain-language narrative (spec section + Given/When/Then flows) parsed
+    // from {bc}-spec.md / {bc}-flows.md, resolved by use case id.
+    const narr = (narrative && uc.id) ? narrative.get(uc.id) : null;
     return {
       id: uc.id || '',
       name: uc.name || '',
       actor: uc.actor || '',
       type: uc.type || '',
+      description: typeof uc.description === 'string' ? uc.description : '',
       triggerKind: (uc.trigger && uc.trigger.kind) || '',
       triggerLabel: useCaseTriggerLabel(uc, opIndex, internalIndex),
       target,
@@ -401,8 +421,47 @@ function extractUseCaseCatalog(bcYaml, opIndex, internalIndex) {
       async: Boolean(uc.async),
       bulk: Boolean(uc.bulk),
       storageCalls: asArray(uc.storageCalls).map((c) => `${c.store}:${c.operation}`),
+      narrative: narr ? { spec: narr.spec || null, flows: asArray(narr.flows) } : null,
     };
   });
+}
+
+// Cross-reference index relating use cases, domain rules, events and saga steps.
+// Surfaced in review-model.json so the relationships the HTML links express are
+// inspectable and testable, and consumable by downstream tooling/agents.
+function buildTraceabilityIndex(reviewBcs, sagas) {
+  const useCases = {};
+  const events = {};
+  const sagaIndex = {};
+  for (const bc of asArray(reviewBcs)) {
+    for (const uc of asArray(bc.useCaseCatalog)) {
+      if (!uc.id) continue;
+      useCases[uc.id] = {
+        bc: bc.name,
+        rules: asArray(uc.rules),
+        saga: uc.saga ? { name: uc.saga.saga, order: uc.saga.order } : null,
+        anchor: `${bc.links && bc.links.reviewFile ? bc.links.reviewFile : bc.name + '-review.html'}#uc-${slug(uc.id)}`,
+      };
+    }
+    for (const ev of asArray(bc.events && bc.events.published)) {
+      events[ev.name] = {
+        producer: bc.name,
+        channel: ev.channel || '',
+        anchor: `${bc.name}-review.html#event-${slug(ev.name)}`,
+      };
+    }
+  }
+  for (const saga of asArray(sagas)) {
+    sagaIndex[saga.name] = {
+      trigger: saga.trigger || null,
+      steps: asArray(saga.steps).map((s) => ({
+        order: s.order,
+        bc: s.bc,
+        implementedBy: s.implementedBy ? `${s.implementedBy.bc}/${s.implementedBy.id}` : null,
+      })),
+    };
+  }
+  return { useCases, events, sagas: sagaIndex };
 }
 
 // Operational / non-functional decisions declared per use case (idempotency,
@@ -571,7 +630,8 @@ function extractEvents(bcYaml) {
   }));
   const consumed = asArray(domainEvents.consumed).map((event) => ({
     name: event.name || '',
-    sourceBc: event.sourceBc || '',
+    // Canonical YAML uses `from`; accept `sourceBc` for backward compatibility.
+    sourceBc: event.from || event.sourceBc || '',
     channel: event.channel || '',
   }));
   const readModels = [
@@ -1459,7 +1519,19 @@ function renderMetricTiles(metrics) {
 
 function renderDecisionCards(decisions, locale = 'es') {
   if (!decisions.length) return `<p class="text-muted small" data-i18n="ui.noDecisions">${i18nText('ui.noDecisions', locale)}</p>`;
-  return decisions.map((item) => `
+  return decisions.map((item, idx) => {
+    const promptId = `prompt-${slug(item.id || 'decision')}-${idx}`;
+    const current = String(item.current || '').toLowerCase();
+    // Highlight the option that matches the current decision (token appears in
+    // the current-state summary) so the reviewer sees the live choice vs. the
+    // alternatives at a glance.
+    const options = asArray(item.options).map((option) => {
+      const isCurrent = current && current.includes(String(option).toLowerCase());
+      return isCurrent
+        ? `<span class="badge rounded-pill text-bg-primary">${escapeHtml(option)} · <span data-i18n="ui.recommended">${i18nText('ui.recommended', locale)}</span></span>`
+        : `<span class="badge rounded-pill text-bg-secondary">${escapeHtml(option)}</span>`;
+    }).join('');
+    return `
     <article class="decision-card" data-category="${escapeHtml(item.category)}">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
         <div>
@@ -1470,14 +1542,16 @@ function renderDecisionCards(decisions, locale = 'es') {
       </div>
       <p class="small mb-2"><strong data-i18n="ui.current">${i18nText('ui.current', locale)}</strong>: ${escapeHtml(item.current)}</p>
       <p class="small text-muted mb-2">${escapeHtml(item.rationale)}</p>
-      <div class="option-row mb-3">
-        ${asArray(item.options).map((option) => `<span class="badge rounded-pill text-bg-secondary">${escapeHtml(option)}</span>`).join('')}
-      </div>
+      <div class="option-row mb-3">${options}</div>
       <details>
-        <summary class="small fw-semibold" data-i18n="ui.promptForAgent">${i18nText('ui.promptForAgent', locale)}</summary>
-        <pre class="prompt-box"><code>${escapeHtml(item.prompt)}</code></pre>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">${i18nText('ui.promptForAgent', locale)}</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#${promptId}" data-i18n="ui.copyPrompt">${i18nText('ui.copyPrompt', locale)}</button>
+        </summary>
+        <pre class="prompt-box"><code id="${promptId}">${escapeHtml(item.prompt)}</code></pre>
       </details>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 }
 
 function renderDiagnostics(diagnostics, locale = 'es') {
@@ -1571,8 +1645,162 @@ function mermaidRenderAllScript() {
   <\/script>`;
 }
 
+// Shared CSS for the restructured review experience: cards, metric tiles,
+// expandable use-case narrative, copy-prompt buttons, sticky in-page nav,
+// collapsible sections and the cross-link highlight. Kept inline so the output
+// stays self-contained and works offline via file://.
+function reviewSharedStyles() {
+  return `
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
+    .bg-purple { background-color: #6f42c1 !important; }
+    .metric-tile, .decision-card, .detail-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
+    .detail-card { margin-bottom: 1.25rem; }
+    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
+    .decision-card { margin-bottom: 1rem; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
+    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
+    .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    /* Expandable use-case narrative */
+    .uc-row { cursor: pointer; }
+    .uc-toggle { color: var(--bs-secondary-color); text-decoration: none; }
+    .uc-caret { display: inline-block; transition: transform .15s; }
+    .uc-toggle[aria-expanded="true"] .uc-caret { transform: rotate(90deg); }
+    .uc-detail { padding: .5rem .25rem; font-size: .9rem; }
+    .uc-detail .narrative-quote { border-left: 3px solid var(--bs-border-color); padding-left: .75rem; color: var(--bs-secondary-color); margin: .5rem 0; }
+    .uc-detail .narrative-code { background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: .35rem; padding: .6rem; font-size: .8rem; overflow:auto; }
+    .uc-detail .narrative-table { font-size: .82rem; }
+    .uc-detail .narrative-flow > summary { cursor: pointer; }
+    .uc-detail .narrative-subheading { text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); margin-top: .75rem; }
+    /* Copy-to-clipboard control */
+    .copy-btn { font-size: .72rem; }
+    .copy-btn.copied { color: var(--bs-success); border-color: var(--bs-success); }
+    /* Sticky in-page navigation */
+    .review-nav { position: sticky; top: 1rem; font-size: .82rem; }
+    .review-nav a { display: block; padding: .2rem .5rem; border-left: 2px solid transparent; color: var(--bs-secondary-color); text-decoration: none; border-radius: 0 .25rem .25rem 0; }
+    .review-nav a:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+    .review-nav a.active { border-left-color: var(--bs-primary); color: var(--bs-body-color); font-weight: 600; }
+    /* Attention panel + cross-link target highlight */
+    .attention-card { border-left: 4px solid var(--bs-warning); }
+    .attention-card.is-error { border-left-color: var(--bs-danger); }
+    .attention-card.is-ok { border-left-color: var(--bs-success); }
+    :target { scroll-margin-top: 4.5rem; }
+    .xref-flash { animation: xrefFlash 1.4s ease-out; }
+    @keyframes xrefFlash { 0% { background: rgba(255,193,7,.45); } 100% { background: transparent; } }
+    .collapsible-section > .section-toggle { cursor: pointer; user-select: none; }
+    .collapsible-section > .section-toggle .uc-caret { transform: rotate(90deg); }
+    .collapsible-section.collapsed > .section-toggle .uc-caret { transform: rotate(0deg); }
+    .collapsible-section.collapsed > .section-body { display: none; }`;
+}
+
+// Shared client-side behavior for the review pages: expand/collapse use-case
+// narrative rows, copy agent prompts to clipboard, collapse dense sections,
+// scroll-spy for the in-page nav, and a flash highlight when following an
+// in-page cross-link. Pure vanilla JS (no Bootstrap JS bundle required).
+function reviewInteractionScript() {
+  return `<script>
+    (function () {
+      // Expand / collapse use-case narrative rows.
+      document.addEventListener('click', function (ev) {
+        var trigger = ev.target.closest('[data-uc-toggle]');
+        if (trigger) {
+          if (ev.target.closest('a, button.copy-btn, summary')) return;
+          var id = trigger.getAttribute('data-uc-toggle');
+          var detail = document.getElementById(id);
+          if (detail) {
+            var open = detail.hasAttribute('hidden');
+            if (open) { detail.removeAttribute('hidden'); } else { detail.setAttribute('hidden', ''); }
+            document.querySelectorAll('[data-uc-toggle="' + id + '"] .uc-toggle, .uc-toggle[data-uc-toggle="' + id + '"]').forEach(function (b) {
+              b.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+            var btn = trigger.matches('.uc-toggle') ? trigger : trigger.querySelector('.uc-toggle');
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          }
+          return;
+        }
+        // Copy-to-clipboard buttons.
+        var copy = ev.target.closest('.copy-btn');
+        if (copy) {
+          ev.preventDefault();
+          var sel = copy.getAttribute('data-copy-target');
+          var src = sel ? document.querySelector(sel) : null;
+          var text = src ? src.textContent : (copy.getAttribute('data-copy-text') || '');
+          var done = function () {
+            copy.classList.add('copied');
+            var prev = copy.textContent;
+            copy.textContent = (window.dslT ? dslT('ui.copied') : 'Copied');
+            setTimeout(function () { copy.classList.remove('copied'); copy.textContent = prev; }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, done);
+          } else {
+            var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+            ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done();
+          }
+          return;
+        }
+        // Collapsible section headers.
+        var st = ev.target.closest('.section-toggle');
+        if (st) {
+          var sec = st.closest('.collapsible-section');
+          if (sec) sec.classList.toggle('collapsed');
+        }
+      });
+
+      // Flash highlight when navigating to an in-page anchor (traceability links).
+      function flashTarget() {
+        if (!location.hash) return;
+        var el = document.getElementById(location.hash.slice(1));
+        if (!el) return;
+        // If the target is a hidden narrative detail row, reveal it.
+        if (el.hasAttribute && el.hasAttribute('hidden')) el.removeAttribute('hidden');
+        el.classList.remove('xref-flash');
+        void el.offsetWidth;
+        el.classList.add('xref-flash');
+      }
+      window.addEventListener('hashchange', flashTarget);
+      window.addEventListener('DOMContentLoaded', flashTarget);
+
+      // Scroll-spy for the in-page nav.
+      window.addEventListener('DOMContentLoaded', function () {
+        var links = Array.prototype.slice.call(document.querySelectorAll('.review-nav a[href^="#"]'));
+        if (!links.length || !('IntersectionObserver' in window)) return;
+        var map = {};
+        var targets = [];
+        links.forEach(function (a) {
+          var t = document.getElementById(a.getAttribute('href').slice(1));
+          if (t) { map[t.id] = a; targets.push(t); }
+        });
+        var obs = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) {
+              links.forEach(function (a) { a.classList.remove('active'); });
+              if (map[e.target.id]) map[e.target.id].classList.add('active');
+            }
+          });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        targets.forEach(function (t) { obs.observe(t); });
+      });
+    })();
+  <\/script>`;
+}
+
 function useCaseTableHead(locale) {
   return `<thead class="table-light"><tr>
+    <th style="width:1.6rem"></th>
     <th data-i18n="uc.id">${i18nText('uc.id', locale)}</th>
     <th data-i18n="uc.name">${i18nText('uc.name', locale)}</th>
     <th data-i18n="uc.actor">${i18nText('uc.actor', locale)}</th>
@@ -1584,13 +1812,48 @@ function useCaseTableHead(locale) {
   </tr></thead>`;
 }
 
+// Plain-language detail panel for a use case: description, spec section
+// (preconditions / flow / postconditions) and Given/When/Then scenarios.
+// Returns '' when no narrative is available so the row stays non-expandable.
+function renderUseCaseNarrative(uc, locale = 'es') {
+  const narr = uc.narrative;
+  const hasNarr = narr && (narr.spec || asArray(narr.flows).length);
+  if (!hasNarr && !uc.description) return '';
+
+  const parts = [];
+  if (uc.description) {
+    parts.push(`<p class="mb-2">${escapeHtml(uc.description)}</p>`);
+  }
+  if (narr && narr.spec && narr.spec.html) {
+    parts.push(`<div class="narrative-spec mb-2">${narr.spec.html}</div>`);
+  }
+  const flows = narr ? asArray(narr.flows) : [];
+  if (flows.length) {
+    const flowBlocks = flows.map((f) => `
+      <details class="narrative-flow mb-2" open>
+        <summary class="fw-semibold small"><span class="font-monospace">${escapeHtml(f.id)}</span> · ${escapeHtml(f.title)}</summary>
+        <div class="mt-2">${f.html}</div>
+      </details>`).join('');
+    parts.push(`
+      <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.flows">${i18nText('ui.flows', locale)}</h6>
+      ${flowBlocks}`);
+  }
+  return parts.join('\n');
+}
+
 function renderUseCaseRows(rows, locale = 'es') {
   return rows.map((uc) => {
     const sagaBadge = uc.saga
-      ? `<span class="badge bg-dark" title="${escapeHtml(uc.saga.saga)}">${escapeHtml(uc.saga.saga)}${uc.saga.order != null ? ' #' + escapeHtml(uc.saga.order) : ''}</span>`
+      ? `<a href="#saga-${escapeHtml(slug(uc.saga.saga))}" class="badge bg-dark text-decoration-none" title="${escapeHtml(uc.saga.saga)}">${escapeHtml(uc.saga.saga)}${uc.saga.order != null ? ' #' + escapeHtml(uc.saga.order) : ''}</a>`
       : '<span class="text-muted">—</span>';
-    return `
-      <tr>
+    const anchor = uc.id ? `uc-${slug(uc.id)}` : '';
+    const detail = renderUseCaseNarrative(uc, locale);
+    const toggle = detail
+      ? `<button type="button" class="btn btn-sm btn-link p-0 uc-toggle" data-uc-toggle="${anchor}-detail" aria-expanded="false" title="${i18nText('ui.expandDetail', locale)}"><span class="uc-caret">&#9656;</span></button>`
+      : '';
+    const mainRow = `
+      <tr${anchor ? ` id="${anchor}"` : ''}${detail ? ' class="uc-row"' : ''}${detail ? ` data-uc-toggle="${anchor}-detail"` : ''}>
+        <td class="text-center">${toggle}</td>
         <td class="font-monospace small">${escapeHtml(uc.id)}</td>
         <td>${escapeHtml(uc.name)}${behaviorBadges(uc, locale)}</td>
         <td><span class="badge bg-${actorBadgeClass(uc.actor)}">${escapeHtml(uc.actor || '—')}</span></td>
@@ -1600,6 +1863,10 @@ function renderUseCaseRows(rows, locale = 'es') {
         <td>${rulePills(uc.ruleDetails, locale)}</td>
         <td>${sagaBadge}</td>
       </tr>`;
+    const detailRow = detail
+      ? `<tr class="uc-detail-row" id="${anchor}-detail" hidden><td></td><td colspan="8"><div class="uc-detail">${detail}</div></td></tr>`
+      : '';
+    return mainRow + detailRow;
   }).join('');
 }
 
@@ -1800,15 +2067,27 @@ function renderSagaParticipation(bcName, sagas, locale = 'es') {
     }
   }
   if (!rows.length) return `<p class="text-muted small" data-i18n="ui.noSagaParticipation">${i18nText('ui.noSagaParticipation', locale)}</p>`;
-  const body = rows.map((step) => `
-    <tr>
+  const seenSaga = new Set();
+  const body = rows.map((step) => {
+    // First row of each saga carries the #saga-<slug> anchor that use-case rows
+    // link to. The implementing use case links back to its #uc-<id> row.
+    const sagaAnchor = seenSaga.has(step.saga) ? '' : ` id="saga-${slug(step.saga)}"`;
+    seenSaga.add(step.saga);
+    const impl = step.implementedBy
+      ? (step.implementedBy.bc === bcName
+        ? `<a href="#uc-${slug(step.implementedBy.id)}" class="text-decoration-none">${escapeHtml(`${step.implementedBy.id} ${step.implementedBy.name}`)}</a>`
+        : escapeHtml(`${step.implementedBy.bc}/${step.implementedBy.id} ${step.implementedBy.name}`))
+      : '<span class="text-muted">—</span>';
+    return `
+    <tr${sagaAnchor}>
       <td><span class="badge bg-dark">${escapeHtml(step.saga)}</span></td>
       <td>${escapeHtml(step.order)}</td>
       <td class="font-monospace small">${escapeHtml(step.triggeredBy || '—')}</td>
       <td class="font-monospace small text-success">${escapeHtml(step.onSuccess || '—')}</td>
       <td class="font-monospace small">${escapeHtml(step.compensation || '—')}</td>
-      <td>${step.implementedBy ? escapeHtml(`${step.implementedBy.id} ${step.implementedBy.name}`) : '<span class="text-muted">—</span>'}</td>
-    </tr>`).join('');
+      <td>${impl}</td>
+    </tr>`;
+  }).join('');
   return `
     <div class="table-responsive"><table class="table table-sm table-hover align-middle">
       <thead class="table-light"><tr>
@@ -1833,13 +2112,21 @@ function renderEvents(events, locale = 'es') {
     <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="${titleKey}">${i18nText(titleKey, locale)}</h6>
     <div class="table-responsive"><table class="table table-sm table-hover align-middle">${head}<tbody>${body}</tbody></table></div>`;
 
+  // Published events carry an #event-<slug> anchor so consumers in other BC
+  // pages can deep-link to the producer's declaration.
   const pub = published.length ? sub('events.published',
     `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.channel">${i18nText('events.channel', locale)}</th><th data-i18n="events.scope">${i18nText('events.scope', locale)}</th><th data-i18n="events.payload">${i18nText('events.payload', locale)}</th></tr></thead>`,
-    published.map((e) => `<tr><td>${escapeHtml(e.name)}</td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td><td>${escapeHtml(e.scope || '—')}</td><td>${pillList(e.payload, 'text-bg-light border')}</td></tr>`).join('')) : '';
+    published.map((e) => `<tr id="event-${slug(e.name)}"><td>${escapeHtml(e.name)}</td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td><td>${escapeHtml(e.scope || '—')}</td><td>${pillList(e.payload, 'text-bg-light border')}</td></tr>`).join('')) : '';
 
+  // Consumed events link back to the producing BC's review page at the event anchor.
   const con = consumed.length ? sub('events.consumed',
     `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.sourceBc">${i18nText('events.sourceBc', locale)}</th><th data-i18n="events.channel">${i18nText('events.channel', locale)}</th></tr></thead>`,
-    consumed.map((e) => `<tr><td>${escapeHtml(e.name)}</td><td><span class="badge bg-secondary">${escapeHtml(e.sourceBc || '—')}</span></td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td></tr>`).join('')) : '';
+    consumed.map((e) => {
+      const srcBadge = e.sourceBc
+        ? `<a href="${escapeHtml(e.sourceBc)}-review.html#event-${slug(e.name)}" class="text-decoration-none"><span class="badge bg-secondary">${escapeHtml(e.sourceBc)}</span></a>`
+        : '<span class="text-muted">—</span>';
+      return `<tr><td>${escapeHtml(e.name)}</td><td>${srcBadge}</td><td class="font-monospace small">${escapeHtml(e.channel || '—')}</td></tr>`;
+    }).join('')) : '';
 
   const rmd = readModels.length ? sub('events.readModels',
     `<thead class="table-light"><tr><th data-i18n="events.name">${i18nText('events.name', locale)}</th><th data-i18n="events.from">${i18nText('events.from', locale)}</th><th data-i18n="events.event">${i18nText('events.event', locale)}</th><th data-i18n="events.keyBy">${i18nText('events.keyBy', locale)}</th><th data-i18n="events.upsert">${i18nText('events.upsert', locale)}</th></tr></thead>`,
@@ -1898,6 +2185,95 @@ function renderIntegrations(integrations, locale = 'es') {
   return contextMap + group('int.outbound', outbound) + group('int.inbound', inbound);
 }
 
+// Items the reviewer should look at first, derived from the BC review model:
+// validation errors/warnings, unprotected endpoints, scaffold use cases and
+// open decisions. Each links to the relevant in-page section.
+function bcAttentionItems(bcReview, health) {
+  const items = [];
+  const scaffolds = asArray(bcReview.useCaseCatalog).filter((uc) => uc.implementation === 'scaffold').length;
+  const gaps = asArray(bcReview.securityMatrix).filter((row) => row.unprotected).length;
+  const openDecisions = asArray(bcReview.decisions).length;
+  if (health.errors) items.push({ key: 'attention.errors', count: health.errors, level: 'error', href: '#sec-diagnostics' });
+  if (health.warnings) items.push({ key: 'attention.warnings', count: health.warnings, level: 'warn', href: '#sec-diagnostics' });
+  if (gaps) items.push({ key: 'attention.securityGaps', count: gaps, level: 'error', href: '#sec-security' });
+  if (scaffolds) items.push({ key: 'attention.scaffolds', count: scaffolds, level: 'info', href: '#sec-usecases' });
+  if (openDecisions) items.push({ key: 'attention.openDecisions', count: openDecisions, level: 'review', href: '#sec-decisions' });
+  return items;
+}
+
+// System-wide attention items aggregated across all bounded contexts, for the
+// dashboard's "needs your attention" panel.
+function systemAttentionItems(reviewModel, health) {
+  const items = [];
+  const bcs = asArray(reviewModel.boundedContexts);
+  const gaps = bcs.reduce((sum, bc) => sum + asArray(bc.securityMatrix).filter((r) => r.unprotected).length, 0);
+  const scaffolds = bcs.reduce((sum, bc) => sum + asArray(bc.useCaseCatalog).filter((uc) => uc.implementation === 'scaffold').length, 0);
+  if (health.errors) items.push({ key: 'attention.errors', count: health.errors, level: 'error', href: '#sec-system-diagnostics' });
+  if (health.warnings) items.push({ key: 'attention.warnings', count: health.warnings, level: 'warn', href: '#sec-system-diagnostics' });
+  if (gaps) items.push({ key: 'attention.securityGaps', count: gaps, level: 'error', href: 'proposals.html' });
+  if (scaffolds) items.push({ key: 'attention.scaffolds', count: scaffolds, level: 'info', href: 'proposals.html' });
+  return items;
+}
+
+function renderBcSummary(bcReview, locale = 'es') {
+  const catalog = asArray(bcReview.useCaseCatalog);
+  const commands = catalog.filter((uc) => uc.type === 'command').length;
+  const queries = catalog.filter((uc) => uc.type === 'query').length;
+  const published = asArray(bcReview.events && bcReview.events.published).length;
+  const integrations = asArray(bcReview.integrations && bcReview.integrations.outbound).length
+    + asArray(bcReview.integrations && bcReview.integrations.inbound).length;
+  const sentence = i18nText('bc.summary', locale, {
+    type: bcReview.type || '—',
+    ucTotal: catalog.length,
+    commands,
+    queries,
+    published,
+    integrations,
+  });
+  return `<p class="mb-0 text-body-secondary">${sentence}</p>`;
+}
+
+function renderAttentionPanel(items, locale = 'es') {
+  if (!items.length) {
+    return `<div class="attention-card is-ok p-3 rounded bg-body"><span class="text-success">&#10003;</span> <span data-i18n="attention.allClear">${i18nText('attention.allClear', locale)}</span></div>`;
+  }
+  const badgeClass = { error: 'bg-danger', warn: 'bg-warning text-dark', info: 'bg-info text-dark', review: 'bg-secondary' };
+  const worst = items.some((it) => it.level === 'error') ? 'is-error' : '';
+  const chips = items.map((it) =>
+    `<a href="${it.href}" class="text-decoration-none"><span class="badge ${badgeClass[it.level] || 'bg-secondary'}">${i18nText(it.key, locale, { count: it.count })}</span></a>`
+  ).join(' ');
+  return `<div class="attention-card ${worst} p-3 rounded bg-body">
+    <div class="text-uppercase small fw-semibold text-body-secondary mb-2" data-i18n="ui.attentionRequired">${i18nText('ui.attentionRequired', locale)}</div>
+    <div class="d-flex flex-wrap gap-2">${chips}</div>
+  </div>`;
+}
+
+function renderReviewSideNav(sections, locale = 'es') {
+  const links = sections.map((s) =>
+    `<a href="#${s.id}"><span data-i18n="${s.key}">${i18nText(s.key, locale)}</span></a>`
+  ).join('');
+  return `<nav class="review-nav d-none d-lg-block">
+    <div class="text-uppercase small fw-semibold text-body-secondary mb-2" data-i18n="ui.onThisPage">${i18nText('ui.onThisPage', locale)}</div>
+    ${links}
+  </nav>`;
+}
+
+// One review section. Dense sections are wrapped in a collapsible shell with a
+// count badge so the reviewer can fold what they are not inspecting.
+function reviewSection(id, titleKey, body, locale, opts = {}) {
+  const count = opts.count != null ? `<span class="badge bg-light text-dark border ms-2">${escapeHtml(opts.count)}</span>` : '';
+  if (opts.collapsible) {
+    return `<section id="${id}" class="mb-4 collapsible-section${opts.collapsed ? ' collapsed' : ''}">
+      <h2 class="h5 mb-3 section-toggle d-flex align-items-center"><span class="uc-caret me-2">&#9656;</span><span data-i18n="${titleKey}">${i18nText(titleKey, locale)}</span>${count}</h2>
+      <div class="section-body">${body}</div>
+    </section>`;
+  }
+  return `<section id="${id}" class="mb-4">
+    <h2 class="h5 mb-3"><span data-i18n="${titleKey}">${i18nText(titleKey, locale)}</span>${count}</h2>
+    ${body}
+  </section>`;
+}
+
 function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   const health = countDiagnostics(bcReview.diagnostics);
   const linkButtons = [
@@ -1905,6 +2281,32 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
     bcReview.links.openApiFile ? `<a class="btn btn-sm btn-outline-success" href="${escapeHtml(bcReview.links.openApiFile)}" data-i18n="nav.restApi">${i18nText('nav.restApi', locale)}</a>` : '',
     bcReview.links.asyncApiFile ? `<a class="btn btn-sm btn-outline-primary" href="${escapeHtml(bcReview.links.asyncApiFile)}" data-i18n="nav.events">${i18nText('nav.events', locale)}</a>` : '',
   ].filter(Boolean).join('');
+
+  const navSections = [
+    { id: 'sec-decisions', key: 'ui.designDecisions' },
+    { id: 'sec-usecases', key: 'ui.useCaseCatalog' },
+    { id: 'sec-events', key: 'ui.eventsReadModels' },
+    { id: 'sec-sagas', key: 'ui.sagaParticipation' },
+    { id: 'sec-security', key: 'ui.endpointSecurity' },
+    { id: 'sec-operations', key: 'ui.operationalBehavior' },
+    { id: 'sec-integrations', key: 'ui.directIntegrations' },
+    { id: 'sec-storage', key: 'ui.storageBuckets' },
+    { id: 'sec-diagnostics', key: 'ui.validationHealth' },
+  ];
+
+  const attention = bcAttentionItems(bcReview, health);
+
+  const sectionsHtml = [
+    reviewSection('sec-decisions', 'ui.designDecisions', renderDecisionCards(bcReview.decisions, locale), locale, { count: asArray(bcReview.decisions).length }),
+    reviewSection('sec-usecases', 'ui.useCaseCatalog', `<div class="detail-card">${renderUseCaseCatalog(bcReview.useCaseCatalog, locale)}</div>`, locale, { count: asArray(bcReview.useCaseCatalog).length }),
+    reviewSection('sec-events', 'ui.eventsReadModels', `<div class="detail-card">${renderEvents(bcReview.events, locale)}</div>`, locale),
+    reviewSection('sec-sagas', 'ui.sagaParticipation', `<div class="detail-card">${renderSagaParticipation(bcReview.name, bcReview.sagas, locale)}</div>`, locale),
+    reviewSection('sec-security', 'ui.endpointSecurity', `<div class="detail-card">${renderSecurityMatrix(bcReview.securityMatrix, locale)}</div>`, locale, { collapsible: true, count: asArray(bcReview.securityMatrix).length }),
+    reviewSection('sec-operations', 'ui.operationalBehavior', `<div class="detail-card">${renderOperationsMatrix(bcReview.operationsMatrix, locale)}</div>`, locale, { collapsible: true, collapsed: true, count: asArray(bcReview.operationsMatrix).length }),
+    reviewSection('sec-integrations', 'ui.directIntegrations', `<div class="detail-card">${renderIntegrations(bcReview.integrations, locale)}</div>`, locale),
+    reviewSection('sec-storage', 'ui.storageBuckets', `<div class="detail-card">${renderStorageSummary(bcReview.storage, locale)}</div>`, locale, { collapsible: true, collapsed: true }),
+    reviewSection('sec-diagnostics', 'ui.validationHealth', renderDiagnostics(bcReview.diagnostics, locale), locale, { count: health.total }),
+  ].join('\n');
 
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(normalizeLocale(locale))}">
@@ -1915,30 +2317,7 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   ${themeBootScript()}
   ${mermaidScriptTag()}
-  <style>
-    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
-    [data-bs-theme="dark"] .btn-dark {
-      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
-      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
-      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
-    }
-    [data-bs-theme="dark"] .btn-outline-dark {
-      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
-      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
-      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
-    }
-    .metric-tile, .decision-card, .detail-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
-    .detail-card { margin-bottom: 1.25rem; }
-    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
-    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
-    .decision-card { margin-bottom: 1rem; }
-    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
-    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
-    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
-    .diagnostic-list code { white-space: normal; }
-    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
-  </style>
+  <style>${reviewSharedStyles()}</style>
 </head>
 <body>
   <nav class="navbar navbar-dark bg-dark mb-4">
@@ -1954,7 +2333,7 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   <main class="container-xl pb-5">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
       <div>
-        <h1 class="h4 mb-1">${escapeHtml(bcReview.name)}</h1>
+        <h1 class="h4 mb-1">${escapeHtml(bcReview.name)} <span class="badge bg-${({ core: 'primary', supporting: 'purple', generic: 'secondary' })[bcReview.type] || 'secondary'} align-middle">${escapeHtml(bcReview.type || '—')}</span></h1>
         <p class="text-muted mb-0">${bcReview.purpose ? escapeHtml(bcReview.purpose) : i18nSpan('ui.noPurpose', locale)}</p>
       </div>
       <div class="text-end small text-muted">
@@ -1963,56 +2342,22 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
       </div>
     </div>
 
+    <div class="detail-card mb-3">${renderBcSummary(bcReview, locale)}</div>
+    <div class="mb-4">${renderAttentionPanel(attention, locale)}</div>
+
     ${renderMetricTiles(bcReview.metrics)}
 
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.useCaseCatalog">${i18nText('ui.useCaseCatalog', locale)}</h2>
-      <div class="detail-card">${renderUseCaseCatalog(bcReview.useCaseCatalog, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.endpointSecurity">${i18nText('ui.endpointSecurity', locale)}</h2>
-      <div class="detail-card">${renderSecurityMatrix(bcReview.securityMatrix, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.operationalBehavior">${i18nText('ui.operationalBehavior', locale)}</h2>
-      <div class="detail-card">${renderOperationsMatrix(bcReview.operationsMatrix, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.sagaParticipation">${i18nText('ui.sagaParticipation', locale)}</h2>
-      <div class="detail-card">${renderSagaParticipation(bcReview.name, bcReview.sagas, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.eventsReadModels">${i18nText('ui.eventsReadModels', locale)}</h2>
-      <div class="detail-card">${renderEvents(bcReview.events, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.storageBuckets">${i18nText('ui.storageBuckets', locale)}</h2>
-      <div class="detail-card">${renderStorageSummary(bcReview.storage, locale)}</div>
-    </section>
-
-    <section class="mb-4">
-      <h2 class="h5 mb-3" data-i18n="ui.directIntegrations">${i18nText('ui.directIntegrations', locale)}</h2>
-      <div class="detail-card">${renderIntegrations(bcReview.integrations, locale)}</div>
-    </section>
-
-    <section class="mb-5">
-      <h2 class="h5 mb-3" data-i18n="ui.designDecisions">${i18nText('ui.designDecisions', locale)}</h2>
-      ${renderDecisionCards(bcReview.decisions, locale)}
-    </section>
-
-    <section>
-      <h2 class="h5 mb-3" data-i18n="ui.validationHealth">${i18nText('ui.validationHealth', locale)}</h2>
-      ${renderDiagnostics(bcReview.diagnostics, locale)}
-    </section>
+    <div class="row">
+      <div class="col-lg-2">${renderReviewSideNav(navSections, locale)}</div>
+      <div class="col-lg-10">
+        ${sectionsHtml}
+      </div>
+    </div>
   </main>
   ${clientI18nScript(locale)}
   ${clientThemeScript()}
   ${mermaidRenderAllScript()}
+  ${reviewInteractionScript()}
 </body>
 </html>`;
 }
@@ -2101,11 +2446,7 @@ function buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   ${themeBootScript()}
   ${mermaidScriptTag()}
-  <style>
-    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
-    .detail-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; margin-bottom: 1.25rem; }
-    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
-  </style>
+  <style>${reviewSharedStyles()}</style>
 </head>
 <body>
   <nav class="navbar navbar-dark bg-dark mb-4">
@@ -2123,11 +2464,128 @@ function buildDecisionsExplorerHtml(systemData, reviewModel, generatedAt, locale
   ${clientI18nScript(locale)}
   ${clientThemeScript()}
   ${mermaidRenderAllScript()}
+  ${reviewInteractionScript()}
 </body>
 </html>`;
 }
 
-function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale = 'es') {
+// Render the iteration proposals (open decisions, security gaps and validation
+// diagnostics) as an in-browser, prioritized panel with copy-ready agent
+// prompts — so the reviewer iterates from the HTML instead of opening the YAML.
+function renderProposalCards(proposals, locale = 'es') {
+  if (!asArray(proposals).length) {
+    return `<div class="alert alert-success" data-i18n="prop.none">${i18nText('prop.none', locale)}</div>`;
+  }
+  const order = { error: 0, warning: 1, review: 2 };
+  const sorted = [...proposals].sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
+  const sevBadge = { error: 'bg-danger', warning: 'bg-warning text-dark', review: 'bg-secondary' };
+  const sevKey = { error: 'prop.error', warning: 'prop.warning', review: 'prop.review' };
+  return sorted.map((p, idx) => {
+    const promptId = `prop-prompt-${slug(p.id || 'p')}-${idx}`;
+    const files = asArray(p.affectedFiles).map((f) => `<code class="small">${escapeHtml(f)}</code>`).join(' ');
+    return `
+    <article class="decision-card" data-severity="${escapeHtml(p.severity)}">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">${escapeHtml(p.id)}</span>
+          <h6 class="mb-1">${escapeHtml(p.title)}</h6>
+        </div>
+        <span class="badge ${sevBadge[p.severity] || 'bg-secondary'}" data-i18n="${sevKey[p.severity] || 'prop.review'}">${i18nText(sevKey[p.severity] || 'prop.review', locale)}</span>
+      </div>
+      ${p.rationale ? `<p class="small text-muted mb-2">${escapeHtml(p.rationale)}</p>` : ''}
+      ${p.proposed ? `<p class="small mb-2">${escapeHtml(p.proposed)}</p>` : ''}
+      ${files ? `<p class="small mb-2"><strong data-i18n="prop.affects">${i18nText('prop.affects', locale)}</strong>: ${files}</p>` : ''}
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">${i18nText('ui.promptForAgent', locale)}</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#${promptId}" data-i18n="ui.copyPrompt">${i18nText('ui.copyPrompt', locale)}</button>
+        </summary>
+        <pre class="prompt-box"><code id="${promptId}">${escapeHtml(p.agentPrompt || '')}</code></pre>
+      </details>
+    </article>`;
+  }).join('');
+}
+
+function buildProposalsHtml(systemData, proposals, generatedAt, locale = 'es') {
+  const systemName = systemData?.system?.name ?? t(locale, 'ui.designReview');
+  return `<!DOCTYPE html>
+<html lang="${escapeHtml(normalizeLocale(locale))}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(systemName)} — ${i18nText('prop.title', locale)}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  ${themeBootScript()}
+  <style>${reviewSharedStyles()}</style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">${i18nText('nav.dashboard', locale)}</span></a>
+        <span class="navbar-brand fw-bold mb-0">${escapeHtml(systemName)} — <span data-i18n="prop.title">${i18nText('prop.title', locale)}</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><span class="text-muted small">${escapeHtml(generatedAt)}</span>${themeSwitcher(locale)}${localeSwitcher(locale)}</div>
+    </div>
+  </nav>
+  <main class="container-xl pb-5">
+    <p class="text-body-secondary" data-i18n="prop.intro">${i18nText('prop.intro', locale)}</p>
+    ${renderProposalCards(proposals, locale)}
+  </main>
+  ${clientI18nScript(locale)}
+  ${clientThemeScript()}
+  ${reviewInteractionScript()}
+</body>
+</html>`;
+}
+
+// Compare the previous review-model.json with the freshly built one so the
+// dashboard can show what changed since the last run (the loop is about
+// iterating — the reviewer wants to see the effect of their last change).
+function diffReviewModels(prev, current) {
+  if (!prev) return null;
+  const ids = (arr) => new Set(asArray(arr).map((x) => x && x.id).filter(Boolean));
+  const diagKey = (d) => `${d.code}|${d.location}|${d.message}`;
+  const diagSet = (arr) => new Set(asArray(arr).map(diagKey));
+  const ucIds = (model) => new Set(asArray(model.boundedContexts).flatMap((bc) => asArray(bc.useCaseCatalog).map((uc) => uc.id)));
+
+  const prevDec = ids(prev.decisions); const curDec = ids(current.decisions);
+  const prevDiag = diagSet(prev.diagnostics); const curDiag = diagSet(current.diagnostics);
+  const prevUc = ucIds(prev); const curUc = ucIds(current);
+
+  const count = (set, notIn) => [...set].filter((x) => !notIn.has(x)).length;
+  const diff = {
+    newDecisions: count(curDec, prevDec),
+    resolvedDecisions: count(prevDec, curDec),
+    newDiagnostics: count(curDiag, prevDiag),
+    resolvedDiagnostics: count(prevDiag, curDiag),
+    newUseCases: count(curUc, prevUc),
+    removedUseCases: count(prevUc, curUc),
+  };
+  diff.hasChanges = Object.values(diff).some((v) => v > 0);
+  return diff;
+}
+
+function renderDiffBanner(diff, locale = 'es') {
+  if (!diff) return '';
+  const items = [];
+  const add = (key, count, cls) => { if (count) items.push(`<span class="badge ${cls}">${i18nText(key, locale, { count })}</span>`); };
+  add('diff.newDecisions', diff.newDecisions, 'bg-primary');
+  add('diff.resolvedDecisions', diff.resolvedDecisions, 'bg-success');
+  add('diff.newDiagnostics', diff.newDiagnostics, 'bg-danger');
+  add('diff.resolvedDiagnostics', diff.resolvedDiagnostics, 'bg-success');
+  add('diff.newUseCases', diff.newUseCases, 'bg-info text-dark');
+  add('diff.removedUseCases', diff.removedUseCases, 'bg-secondary');
+  const body = items.length
+    ? `<div class="d-flex flex-wrap gap-2">${items.join('')}</div>`
+    : `<span class="text-body-secondary" data-i18n="diff.none">${i18nText('diff.none', locale)}</span>`;
+  return `<div class="alert alert-secondary mb-4">
+    <div class="text-uppercase small fw-semibold mb-2" data-i18n="diff.title">${i18nText('diff.title', locale)}</div>
+    ${body}
+  </div>`;
+}
+
+function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale = 'es', extras = {}) {
   const systemName = systemData?.system?.name ?? t(locale, 'ui.designReview');
   const systemDesc = systemData?.system?.description ?? '';
   const health = reviewModel ? countDiagnostics(reviewModel.diagnostics) : { errors: 0, warnings: 0, total: 0 };
@@ -2202,25 +2660,33 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     ? `<div class="alert alert-secondary mb-4" style="font-size:.9rem">${escapeHtml(systemDesc)}</div>`
     : '';
 
+  const proposalsFile = extras.proposalsFile;
+  const attention = reviewModel ? systemAttentionItems(reviewModel, health) : [];
+  const diagShown = reviewModel ? asArray(reviewModel.diagnostics).slice(0, 8) : [];
+  const moreDiag = reviewModel ? Math.max(0, asArray(reviewModel.diagnostics).length - diagShown.length) : 0;
+
   const reviewIntro = reviewModel ? `
     <section class="mb-5">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <h5 class="mb-0" data-i18n="ui.decisionReview">${i18nText('ui.decisionReview', locale)}</h5>
         <div class="d-flex gap-2 flex-wrap">
           <span class="badge bg-${health.errors ? 'danger' : (health.warnings ? 'warning text-dark' : 'success')}">${i18nText('ui.errorsWarnings', locale, health)}</span>
-          ${decisionsFile ? `<a href="${escapeHtml(decisionsFile)}" class="btn btn-sm btn-dark" data-i18n="ui.decisionsExplorer">${i18nText('ui.decisionsExplorer', locale)}</a>` : ''}
-          ${patchFile ? `<a href="${escapeHtml(patchFile)}" class="btn btn-sm btn-outline-dark" data-i18n="ui.patchProposals">${i18nText('ui.patchProposals', locale)}</a>` : ''}
+          ${proposalsFile ? `<a href="${escapeHtml(proposalsFile)}" class="btn btn-sm btn-dark" data-i18n="ui.openProposals">${i18nText('ui.openProposals', locale)}</a>` : ''}
+          ${decisionsFile ? `<a href="${escapeHtml(decisionsFile)}" class="btn btn-sm btn-outline-dark" data-i18n="ui.decisionsExplorer">${i18nText('ui.decisionsExplorer', locale)}</a>` : ''}
+          ${patchFile ? `<a href="${escapeHtml(patchFile)}" class="btn btn-sm btn-outline-secondary" data-i18n="ui.patchProposals">${i18nText('ui.patchProposals', locale)}</a>` : ''}
         </div>
       </div>
+      <div class="mb-4">${renderAttentionPanel(attention, locale)}</div>
       ${renderMetricTiles(systemMetrics)}
       <div class="row g-3">
         <div class="col-lg-7">
           <h6 class="mb-3" data-i18n="ui.systemDecisions">${i18nText('ui.systemDecisions', locale)}</h6>
           ${renderDecisionCards(reviewModel.systemDecisions, locale)}
         </div>
-        <div class="col-lg-5">
+        <div class="col-lg-5" id="sec-system-diagnostics">
           <h6 class="mb-3" data-i18n="ui.validationHealth">${i18nText('ui.validationHealth', locale)}</h6>
-          ${renderDiagnostics(reviewModel.diagnostics.slice(0, 8), locale)}
+          ${renderDiagnostics(diagShown, locale)}
+          ${moreDiag && proposalsFile ? `<a href="${escapeHtml(proposalsFile)}" class="small d-inline-block mt-2">+${moreDiag} · <span data-i18n="ui.viewAll">${i18nText('ui.viewAll', locale)}</span></a>` : ''}
         </div>
       </div>
     </section>` : '';
@@ -2241,32 +2707,9 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
   ${themeBootScript()}
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
   <style>
-    body { background: var(--bs-secondary-bg); }
+    ${reviewSharedStyles()}
     .bc-card { transition: transform .15s, box-shadow .15s; }
     .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
-    .bg-purple { background-color: #6f42c1 !important; }
-    /* Bootstrap does not flip dark-flavored buttons with data-bs-theme; remap
-       them to light variants so card/section actions stay visible on dark cards. */
-    [data-bs-theme="dark"] .btn-dark {
-      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
-      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
-      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
-    }
-    [data-bs-theme="dark"] .btn-outline-dark {
-      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
-      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
-      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
-    }
-    .metric-tile, .decision-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
-    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
-    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
-    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
-    .decision-card { margin-bottom: 1rem; }
-    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
-    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
-    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
-    .diagnostic-list code { white-space: normal; }
-    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
   </style>
 </head>
 <body>
@@ -2279,6 +2722,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
 
   <div class="container-xl pb-5">
     ${descAlert}
+    ${extras.diff ? renderDiffBanner(extras.diff, locale) : ''}
     ${reviewIntro}
     ${diagramSection}
     ${sagaSection}
@@ -2401,6 +2845,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
   <\/script>
   ${clientI18nScript(locale)}
   ${clientThemeScript()}
+  ${reviewInteractionScript()}
 </body>
 </html>`;
 }
@@ -2616,6 +3061,12 @@ function registerPreview(program) {
         const openApiDoc = await readYamlIfExists(path.join(bcDir, `${bcName}-open-api.yaml`));
         const internalApiDoc = await readYamlIfExists(path.join(bcDir, `${bcName}-internal-api.yaml`));
         const asyncApiDoc = await readYamlIfExists(path.join(bcDir, `${bcName}-async-api.yaml`));
+        // Human-readable narrative artifacts: use case specs and Given/When/Then
+        // flows. Parsed into a per-UC index so the review can show behavior in
+        // plain language next to each use case.
+        const specMd = await readTextIfExists(path.join(bcDir, `${bcName}-spec.md`));
+        const flowsMd = await readTextIfExists(path.join(bcDir, `${bcName}-flows.md`));
+        const narrative = (specMd || flowsMd) ? parseBcNarrative(specMd, flowsMd) : null;
 
         if (bcDoc) {
           bcDoc.bc = bcDoc.bc || bcName;
@@ -2625,7 +3076,7 @@ function registerPreview(program) {
           if (asyncApiDoc) asyncApiByBc.set(bcName, asyncApiDoc);
         }
 
-        bcArtifacts.set(bcName, { bcDir, bcDoc, openApiDoc, internalApiDoc, asyncApiDoc });
+        bcArtifacts.set(bcName, { bcDir, bcDoc, openApiDoc, internalApiDoc, asyncApiDoc, narrative });
       }
 
       spinner.text = t(locale, 'cli.validating');
@@ -2713,7 +3164,7 @@ function registerPreview(program) {
           hasDesign,
           metrics: buildBcMetrics(artifact.bcDoc, bcDiagnostics),
           decisions: bcDecisions,
-          useCaseCatalog: extractUseCaseCatalog(artifact.bcDoc, opIndex, internalOpIndex),
+          useCaseCatalog: extractUseCaseCatalog(artifact.bcDoc, opIndex, internalOpIndex, artifact.narrative),
           securityMatrix: extractSecurityMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           operationsMatrix: extractOperationsMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           events: extractEvents(artifact.bcDoc),
@@ -2751,13 +3202,29 @@ function registerPreview(program) {
         boundedContexts: reviewBcs,
         decisions: [...systemDecisions, ...reviewBcs.flatMap((bc) => bc.decisions)],
         sagas,
+        traceability: buildTraceabilityIndex(reviewBcs, sagas),
         diagnostics,
       };
+
+      // Diff against the previous run (if any) so the dashboard can show what
+      // changed since the last review — iteration is the whole point of preview.
+      let diff = null;
+      try {
+        const prevPath = path.join(reviewDir, 'review-model.json');
+        if (await fs.pathExists(prevPath)) {
+          const prevModel = JSON.parse(await fs.readFile(prevPath, 'utf8'));
+          diff = diffReviewModels(prevModel, reviewModel);
+        }
+      } catch { /* ignore unreadable/legacy previous model */ }
+
+      // Proposals are computed once and surfaced both as the agent-facing YAML
+      // and as an in-browser, prioritized HTML panel.
+      const proposals = buildPatchProposals(reviewModel);
 
       let patchFile = null;
       if (opts.includePatches) {
         patchFile = 'patch-proposals.yaml';
-        await fs.writeFile(path.join(reviewDir, patchFile), yaml.dump({ proposals: buildPatchProposals(reviewModel) }, { lineWidth: 120 }), 'utf8');
+        await fs.writeFile(path.join(reviewDir, patchFile), yaml.dump({ proposals }, { lineWidth: 120 }), 'utf8');
       }
 
       if (opts.format === 'json' || opts.format === 'all') {
@@ -2777,8 +3244,16 @@ function registerPreview(program) {
         'utf8'
       );
 
+      // Iteration proposals page (open decisions, security gaps, diagnostics).
+      const proposalsFile = 'proposals.html';
+      await fs.writeFile(
+        path.join(reviewDir, proposalsFile),
+        buildProposalsHtml(systemData, proposals, generatedAt, locale),
+        'utf8'
+      );
+
       // Generate index.html
-      const indexHtml = buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale);
+      const indexHtml = buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewModel, patchFile, decisionsFile, locale, { diff, proposalsFile });
       const indexPath = path.join(reviewDir, 'index.html');
       await fs.writeFile(indexPath, indexHtml, 'utf8');
 

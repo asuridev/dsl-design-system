@@ -134,16 +134,20 @@ estática** en `arch/review/` que le da al diseñador una vista **tabulada y gr�
 todo el diseño —**sin producir una sola línea de código**— para analizarlo y afinarlo
 **antes** de pasar a la generación:
 
-- **Dashboard** (`index.html`) con la salud de validación, las decisiones estratégicas y
-  enlaces por bounded context.
-- **Revisión táctica por BC** (`{bc}-review.html`): modelo de dominio, casos de uso,
-  reglas, eventos e integraciones en tablas legibles.
+- **Dashboard** (`index.html`) con un panel "requiere tu atención", la salud de validación,
+  las decisiones estratégicas, un banner de "cambios desde la última revisión" y enlaces por
+  bounded context.
+- **Revisión táctica por BC** (`{bc}-review.html`): resumen ejecutivo, navegación lateral y
+  casos de uso **expandibles** que muestran el comportamiento en lenguaje natural
+  (Given/When/Then de `{bc}-flows.md` y pre/postcondiciones de `{bc}-spec.md`), no solo
+  códigos. Reglas, eventos y pasos de saga son **enlaces clicables** entre sí.
 - **Diagramas** (`{bc}-design.html`): máquinas de estado, dominio y secuencias en Mermaid,
   con zoom y desplazamiento.
 - **Contratos navegables**: el OpenAPI público/interno en Swagger UI y los canales
   AsyncAPI, tal como los verá un consumidor.
-- **Prompts para iterar**: cada decisión incluye alternativas y un prompt listo para
-  pedirle al agente que ajuste el diseño.
+- **Iterar con un clic** (`proposals.html`): las decisiones abiertas, gaps de seguridad y
+  diagnósticos se reúnen y priorizan; cada uno incluye alternativas (con la opción actual
+  resaltada) y un prompt con botón **Copiar** para pedirle al agente que ajuste el diseño.
 
 El comando **no modifica** los YAML canónicos: solo produce HTML y diagnósticos. Así el
 diseñador detecta huecos, inconsistencias y decisiones discutibles —y las corrige en el

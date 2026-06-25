@@ -106,12 +106,14 @@ Salidas principales:
 | Archivo | Propósito |
 |---|---|
 | `arch/review/index.html` | Dashboard con salud de validación, decisiones estratégicas y enlaces por BC. |
-| `arch/review/{bc}-review.html` | Revisión táctica del BC: modelo, use cases, reglas, eventos, integraciones, contratos y prompts. |
+| `arch/review/{bc}-review.html` | Revisión táctica del BC: resumen ejecutivo, panel "requiere tu atención", navegación lateral, use cases con narrativa expandible, reglas, eventos, integraciones, contratos y prompts. |
 | `arch/review/{bc}-design.html` | Diagramas Mermaid existentes, cuando están presentes. |
 | `arch/review/{bc}-openapi.html` | Visor Swagger UI del contrato REST público. |
 | `arch/review/{bc}-internal-openapi.html` | Visor Swagger UI del contrato REST interno, si existe. |
 | `arch/review/{bc}-asyncapi.html` | Visor de canales y mensajes AsyncAPI. |
-| `arch/review/review-model.json` | Modelo estructurado de revisión, si se usa `--format json` o `--format all`. |
+| `arch/review/proposals.html` | Panel HTML priorizado de propuestas de iteración (decisiones abiertas, gaps de seguridad y diagnósticos) con prompts listos para copiar. |
+| `arch/review/decisions.html` | Explorador de decisiones cross-BC con filtros por BC y categoría. |
+| `arch/review/review-model.json` | Modelo estructurado de revisión (incluye un índice `traceability`), si se usa `--format json` o `--format all`. |
 | `arch/review/patch-proposals.yaml` | Propuestas de revisión para iterar con el agente, sin aplicar cambios automáticamente. |
 
 Flags útiles:
@@ -134,10 +136,21 @@ El visor `{bc}-design.html` añade controles de diagrama para **acercar**, **ale
 un diagrama, la página muestra el mensaje del parser, el archivo afectado, la fuente con
 números de línea y un prompt para pedir al agente que corrija el `.mmd` correspondiente.
 
-Cada decisión visible en el HTML incluye alternativas de diseño y un bloque **Prompt for
-agent** para copiar al chat. Ese prompt debe usarse como punto de partida para pedir al
-agente que ajuste `system.yaml`, `{bc}.yaml`, contratos o documentación relacionada,
-manteniendo los artefactos agnósticos de tecnología.
+Para que la revisión sea fácil de entender, cada `{bc}-review.html` abre con un **resumen
+ejecutivo** y un panel **"requiere tu atención"** (errores, advertencias, endpoints sin
+autorización, casos en scaffold y decisiones por confirmar), seguido de una **navegación
+lateral** con scroll-spy. Cada caso de uso es expandible: muestra su descripción, las
+pre/postcondiciones de `{bc}-spec.md` y los escenarios **Given/When/Then** de
+`{bc}-flows.md` en lenguaje natural, en lugar de solo códigos. Los códigos son **enlaces
+clicables**: un paso de saga lleva al caso de uso que lo implementa, un evento consumido al
+BC que lo publica, etc.
+
+Cada decisión visible en el HTML incluye alternativas de diseño (con la opción actual
+resaltada) y un bloque **Prompt for agent** con botón **Copiar**. Ese prompt debe usarse
+como punto de partida para pedir al agente que ajuste `system.yaml`, `{bc}.yaml`, contratos
+o documentación relacionada, manteniendo los artefactos agnósticos de tecnología. La página
+`proposals.html` reúne y prioriza todas las propuestas abiertas; el dashboard muestra además
+un banner **"cambios desde la última revisión"** comparando con la corrida anterior.
 
 ### 1.5 Ejemplos y gobernanza
 

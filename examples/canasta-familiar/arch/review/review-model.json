@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-14T14:47:20.393Z",
+  "generatedAt": "2026-06-24T23:48:44.719Z",
   "archPath": "C:\\Documentos\\dsl-project\\dsl-design-system\\examples\\canasta-familiar\\arch",
   "system": {
     "name": "canasta-familiar",
@@ -358,6 +358,7 @@
           "name": "CreateCategory",
           "actor": "admin",
           "type": "command",
+          "description": "Creates a new product category. Status defaults to ACTIVE. Name must be unique across all categories.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /categories",
           "target": "Category.create",
@@ -380,13 +381,32 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "CreateCategory",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li><li>El <code>name</code> proporcionado no existe en ninguna otra categoría (CAT-RULE-005).</li><li>Si se proporciona <code>parentCategoryId</code>, la categoría padre debe existir.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>POST /categories</code> con <code>name</code>, <code>description?</code> y <code>parentCategoryId?</code>.</li><li>El sistema verifica que no existe otra categoría con el mismo <code>name</code>.</li><li>Si se proporciona <code>parentCategoryId</code>, el sistema verifica que la categoría padre existe.</li><li>El sistema crea la categoría con <code>status = ACTIVE</code>.</li><li>El sistema responde <code>201 Created</code> con el header <code>Location: /api/catalog/v1/categories/{id}</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>1a</strong> — Ya existe una categoría con el mismo nombre: <code>409 Conflict</code> con code <code>CATEGORY_NAME_ALREADY_EXISTS</code>.</li><li><strong>1b</strong> — El <code>parentCategoryId</code> proporcionado no corresponde a ninguna categoría: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>La categoría existe con <code>status = ACTIVE</code>.</li><li>La categoría es consultable por <code>GET /categories/{id}</code> y aparece en <code>GET /categories</code>.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-005</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-001",
+                "title": "CreateCategory — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>No existe ninguna categoría con <code>name = &quot;Lácteos&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/categories</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  {\n    &quot;name&quot;: &quot;Lácteos&quot;,\n    &quot;description&quot;: &quot;Leche, quesos, yogures y derivados lácteos&quot;\n  }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/catalog/v1/categories/{newCategoryId}</code></li><li>La categoría existe en BD con <code>status = ACTIVE</code>, <code>name = &quot;Lácteos&quot;</code>, <code>parentCategoryId = null</code>.</li><li><code>GET /categories/{newCategoryId}</code> retorna la categoría con todos los campos.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>name</code> con solo espacios en blanco → <code>422</code> con code <code>VALIDATION_ERROR</code> (minLength falla).</li><li><code>parentCategoryId</code> presente y válido → la categoría se crea con ese parent; se retorna <code>201</code>.</li><li><code>parentCategoryId</code> presente pero no existe → <code>404</code> con code <code>CATEGORY_NOT_FOUND</code>.</li><li>Request duplicado con mismo <code>Idempotency-Key</code> → se retorna <code>201</code> con misma <code>Location</code> (idempotente; no se crea duplicado).</li></ul>"
+              },
+              {
+                "id": "FL-CAT-002",
+                "title": "CreateCategory — nombre duplicado",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe una categoría con <code>name = &quot;Limpieza&quot;</code> y <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/categories</code> con <code>{ &quot;name&quot;: &quot;Limpieza&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CATEGORY_NAME_ALREADY_EXISTS&quot;, &quot;message&quot;: &quot;A category with name &#39;Limpieza&#39; already exists.&quot; }</code></li><li>No se crea ninguna categoría nueva en BD.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-002",
           "name": "UpdateCategory",
           "actor": "admin",
           "type": "command",
+          "description": "Updates mutable fields of an existing category. All fields are optional — only provided fields are updated. Name uniqueness is re-validated when name is changed.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /categories/{id}",
           "target": "Category.update",
@@ -409,13 +429,32 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "UpdateCategory",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>La categoría identificada por <code>{id}</code> existe.</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li><li>Si se proporciona <code>name</code>, el nuevo nombre no existe en ninguna otra categoría (CAT-RULE-005).</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /categories/{id}</code> con uno o más campos opcionales (<code>name?</code>, <code>description?</code>, <code>parentCategoryId?</code>).</li><li>El sistema carga la categoría por <code>id</code>.</li><li>Si <code>name</code> fue proporcionado, el sistema verifica unicidad del nuevo nombre (omitiendo la categoría actual).</li><li>Si <code>parentCategoryId</code> fue proporcionado, el sistema verifica que la categoría padre existe.</li><li>El sistema aplica los cambios a los campos provistos.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — La categoría <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li><li><strong>2b</strong> — El nuevo <code>name</code> ya existe en otra categoría: <code>409 Conflict</code> con code <code>CATEGORY_NAME_ALREADY_EXISTS</code>. <em>(Solo aplica si <code>name</code> fue proporcionado en el request.)</em></li><li><strong>2c</strong> — El <code>parentCategoryId</code> proporcionado no existe: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>. <em>(Solo aplica si <code>parentCategoryId</code> fue proporcionado en el request.)</em></li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>Los campos proporcionados de la categoría son actualizados.</li><li>Los campos no proporcionados permanecen sin cambio.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-005</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-003",
+                "title": "UpdateCategory — cambio de nombre",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Cargar la categoría por <code>id</code> → 404 si no existe.</li><li>Si <code>name</code> está en el body: verificar unicidad del nuevo nombre (omitiendo la categoría actual).</li><li>Si <code>parentCategoryId</code> está en el body: verificar que existe.</li><li>Llamar <code>category.update(name, description, parentCategoryId)</code> con los campos provistos.</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-001</code> existe con <code>name = &quot;Bebidas&quot;</code>, <code>status = ACTIVE</code>.</li><li>No existe otra categoría con <code>name = &quot;Bebidas y Jugos&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/categories/cat-001</code> con <code>{ &quot;name&quot;: &quot;Bebidas y Jugos&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li><code>GET /categories/cat-001</code> retorna <code>name = &quot;Bebidas y Jugos&quot;</code>.</li><li><code>description</code> y <code>parentCategoryId</code> permanecen sin cambio.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>name</code> en el body es idéntico al nombre actual → <code>204</code> (sin error, la categoría no cambia efectivamente; la validación de unicidad lo excluye correctamente).</li><li><code>name</code> en body colisiona con otra categoría diferente → <code>409 CATEGORY_NAME_ALREADY_EXISTS</code>.</li><li>Request sin ningún campo → <code>204</code> (PATCH vacío es válido; no se modifican campos).</li></ul>"
+              },
+              {
+                "id": "FL-CAT-004",
+                "title": "UpdateCategory — categoría no encontrada",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>No existe ninguna categoría con <code>id = &quot;cat-999&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/categories/cat-999</code> con <code>{ &quot;name&quot;: &quot;Nuevo Nombre&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>404 Not Found</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CATEGORY_NOT_FOUND&quot; }</code></li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-003",
           "name": "DeactivateCategory",
           "actor": "admin",
           "type": "command",
+          "description": "Deactivates a category. Blocked if the category has any ACTIVE products assigned to it. The admin must reassign or discontinue those products first.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /categories/{id}/deactivate",
           "target": "Category.deactivate",
@@ -438,13 +477,32 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "DeactivateCategory",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>La categoría identificada por <code>{id}</code> existe.</li><li>La categoría está en estado <code>ACTIVE</code>.</li><li>No existen productos en estado <code>ACTIVE</code> asignados a esta categoría (CAT-RULE-006).</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /categories/{id}/deactivate</code>.</li><li>El sistema carga la categoría por <code>id</code>.</li><li>El sistema cuenta los productos ACTIVE asignados a la categoría (<code>countActiveByCategoryId</code>).</li><li>Si el conteo es 0, el sistema transiciona el estado a <code>INACTIVE</code>.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — La categoría <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li><li><strong>3a</strong> — Existen productos ACTIVE asignados a la categoría: <code>422 Unprocessable Entity</code> con code <code>CATEGORY_HAS_ACTIVE_PRODUCTS</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>La categoría tiene <code>status = INACTIVE</code>.</li><li>La categoría no aparece en el catálogo de clientes.</li><li>Los productos previamente asignados no son afectados (siguen con su estado actual).</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-006</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-005",
+                "title": "DeactivateCategory — happy path",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Cargar la categoría por <code>id</code> → 404 si no existe.</li><li>Llamar <code>productRepository.countActiveByCategoryId(id)</code>.</li><li>Si count &gt; 0, lanzar <code>CATEGORY_HAS_ACTIVE_PRODUCTS</code> (422).</li><li>Llamar <code>category.deactivate()</code>.</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-002</code> existe con <code>status = ACTIVE</code>.</li><li>No existen productos con <code>status = ACTIVE</code> asignados a <code>cat-002</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/categories/cat-002/deactivate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li>La categoría <code>cat-002</code> tiene <code>status = INACTIVE</code>.</li><li><code>GET /categories/cat-002</code> retorna <code>status = INACTIVE</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Categoría ya en <code>INACTIVE</code> → <code>204</code> (idempotente; el estado no cambia).</li></ul>"
+              },
+              {
+                "id": "FL-CAT-006",
+                "title": "DeactivateCategory — tiene productos activos",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-003</code> existe con <code>status = ACTIVE</code>.</li><li>Existen 3 productos con <code>status = ACTIVE</code> y <code>categoryId = cat-003</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/categories/cat-003/deactivate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CATEGORY_HAS_ACTIVE_PRODUCTS&quot; }</code></li><li>La categoría <code>cat-003</code> permanece en <code>status = ACTIVE</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-004",
           "name": "ReactivateCategory",
           "actor": "admin",
           "type": "command",
+          "description": "Restores a category to ACTIVE status with no preconditions.",
           "triggerKind": "http",
           "triggerLabel": "PATCH /categories/{id}/reactivate",
           "target": "Category.reactivate",
@@ -457,13 +515,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "ReactivateCategory",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>La categoría identificada por <code>{id}</code> existe.</li><li>La categoría está en estado <code>INACTIVE</code>.</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /categories/{id}/reactivate</code>.</li><li>El sistema carga la categoría por <code>id</code>.</li><li>El sistema transiciona el estado a <code>ACTIVE</code>.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — La categoría <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>La categoría tiene <code>status = ACTIVE</code>.</li><li>Los productos ACTIVE asignados a ella quedan habilitados para el checkout.</li></ul>\n<p><strong>Reglas de negocio</strong>: ninguna adicional</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-007",
+                "title": "ReactivateCategory — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-004</code> existe con <code>status = INACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/categories/cat-004/reactivate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li>La categoría <code>cat-004</code> tiene <code>status = ACTIVE</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Categoría ya en <code>ACTIVE</code> → <code>204</code> (idempotente).</li><li>Categoría <code>{id}</code> no existe → <code>404 CATEGORY_NOT_FOUND</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-005",
           "name": "GetCategory",
           "actor": "customer",
           "type": "query",
+          "description": "Retrieves full details of a single category by its ID.",
           "triggerKind": "http",
           "triggerLabel": "GET /categories/{id}",
           "target": "Category",
@@ -476,13 +548,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "GetCategory",
+              "html": "<p><strong>Actor principal</strong>: customer (público — sin autenticación requerida)</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>Ninguna — endpoint público.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El cliente (o sistema) solicita <code>GET /categories/{id}</code>.</li><li>El sistema carga la categoría por <code>id</code>.</li><li>El sistema responde <code>200 OK</code> con el detalle completo de la categoría.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — La categoría <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li></ul>\n<p><strong>Postcondiciones</strong>: ninguna (operación de solo lectura).</p>\n<p><strong>Reglas de negocio</strong>: ninguna</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-008",
+                "title": "GetCategory — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-001</code> existe con <code>name = &quot;Lácteos&quot;</code>, <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/catalog/v1/categories/cat-001</code> (sin autenticación).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body contiene: <code>id</code>, <code>name</code>, <code>description</code>, <code>parentCategoryId</code>, <code>status</code>, <code>createdAt</code>, <code>updatedAt</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Categoría no existe → <code>404 CATEGORY_NOT_FOUND</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-006",
           "name": "ListCategories",
           "actor": "customer",
           "type": "query",
+          "description": "Returns a paginated list of categories, optionally filtered by status or parent category.\n",
           "triggerKind": "http",
           "triggerLabel": "GET /categories",
           "target": "Category",
@@ -495,13 +581,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "ListCategories",
+              "html": "<p><strong>Actor principal</strong>: customer (público — sin autenticación requerida)</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>Ninguna — endpoint público.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El cliente solicita <code>GET /categories</code> con parámetros opcionales <code>status?</code>, <code>parentCategoryId?</code>, <code>page?</code>, <code>size?</code>.</li><li>El sistema aplica los filtros provistos.</li><li>El sistema responde <code>200 OK</code> con una página de <code>CategorySummary</code>, ordenados alfabéticamente por <code>name</code>.</li></ol>\n<p><strong>Flujos alternativos</strong>:</p>\n<ul><li><strong>1a</strong> — Sin filtros: se retornan todas las categorías paginadas, ordenadas por nombre.</li><li><strong>1b</strong> — <code>parentCategoryId</code> = null implícito: retorna solo categorías raíz (sin padre).</li></ul>\n<p><strong>Postcondiciones</strong>: ninguna (operación de solo lectura).</p>\n<p><strong>Reglas de negocio</strong>: ninguna</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>\n<h6 class=\"narrative-subheading\">Productos</h6>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-009",
+                "title": "ListCategories — con filtros",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existen 5 categorías <code>ACTIVE</code> y 2 <code>INACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/catalog/v1/categories?status=ACTIVE&amp;page=1&amp;size=10</code> (sin autenticación).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li><code>data</code> contiene exactamente 5 elementos, todos con <code>status = ACTIVE</code>.</li><li><code>total = 5</code>, <code>page = 1</code>, <code>pages = 1</code>.</li><li>Elementos ordenados por <code>name ASC</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Sin filtros → retorna las 7 categorías (todas).</li><li><code>page=2&amp;size=3</code> sobre 5 elementos → <code>data</code> tiene 2 elementos, <code>total = 5</code>, <code>page = 2</code>, <code>pages = 2</code>.</li><li><code>parentCategoryId=cat-001</code> → retorna solo subcategorías de <code>cat-001</code>.</li></ul>\n<h6 class=\"narrative-subheading\">Productos</h6>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-007",
           "name": "CreateProduct",
           "actor": "admin",
           "type": "command",
+          "description": "Creates a new product in DRAFT status. SKU must be unique across the catalog. The referenced category must exist and be in ACTIVE status.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /products",
           "target": "Product.create",
@@ -532,13 +632,37 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "CreateProduct",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li><li>El <code>sku</code> proporcionado no existe en ningún otro producto (CAT-RULE-002).</li><li>La <code>categoryId</code> proporcionada corresponde a una categoría existente en estado <code>ACTIVE</code> (CAT-RULE-008).</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>POST /products</code> con <code>name</code>, <code>sku</code>, <code>description?</code>, <code>price</code>, <code>categoryId</code>.</li><li>El sistema verifica que no existe otro producto con el mismo <code>sku</code>.</li><li>El sistema carga la categoría por <code>categoryId</code> y verifica que está en estado <code>ACTIVE</code>.</li><li>El sistema crea el producto con <code>status = DRAFT</code>.</li><li>El sistema responde <code>201 Created</code> con <code>Location: /api/catalog/v1/products/{id}</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — Ya existe un producto con el mismo SKU: <code>409 Conflict</code> con code <code>PRODUCT_SKU_ALREADY_EXISTS</code>.</li><li><strong>3a</strong> — La <code>categoryId</code> no corresponde a ninguna categoría: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>.</li><li><strong>3b</strong> — La categoría existe pero está en estado <code>INACTIVE</code>: <code>422 Unprocessable Entity</code> con code <code>CATEGORY_NOT_ACTIVE</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>El producto existe con <code>status = DRAFT</code>.</li><li>El producto no es visible para los clientes hasta ser activado.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-002</code>, <code>CAT-RULE-008</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-010",
+                "title": "CreateProduct — happy path",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Verificar unicidad de <code>sku</code> (findBySku) → 409 si ya existe (CAT-RULE-002).</li><li>Cargar la categoría por <code>categoryId</code> → 404 si no existe.</li><li>Verificar que la categoría tiene <code>status = ACTIVE</code> → 422 si no (CAT-RULE-008).</li><li>Llamar <code>Product.create(name, sku, description, price, categoryId)</code>.</li><li>Persistir el producto.</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-001</code> existe con <code>status = ACTIVE</code>.</li><li>No existe ningún producto con <code>sku = &quot;LAC-001&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/products</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  {\n    &quot;name&quot;: &quot;Leche Entera 1L&quot;,\n    &quot;sku&quot;: &quot;LAC-001&quot;,\n    &quot;description&quot;: &quot;Leche entera pasteurizada 1 litro&quot;,\n    &quot;price&quot;: { &quot;amount&quot;: &quot;3500.0000&quot;, &quot;currency&quot;: &quot;COP&quot; },\n    &quot;categoryId&quot;: &quot;cat-001&quot;\n  }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/catalog/v1/products/{newProductId}</code></li><li>El producto existe con <code>status = DRAFT</code>, <code>sku = &quot;LAC-001&quot;</code>, <code>price.amount = &quot;3500.0000&quot;</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>price.amount = &quot;0.0000&quot;</code> → <code>422 VALIDATION_ERROR</code> (Money.amount positivo).</li><li><code>price.amount = &quot;-100.0000&quot;</code> → <code>422 VALIDATION_ERROR</code> (Money.amount positivo).</li><li>Request duplicado con mismo <code>Idempotency-Key</code> → <code>201</code> con misma <code>Location</code> (idempotente).</li></ul>"
+              },
+              {
+                "id": "FL-CAT-011",
+                "title": "CreateProduct — SKU duplicado",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Ya existe un producto con <code>sku = &quot;LAC-001&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/products</code> con <code>sku = &quot;LAC-001&quot;</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;PRODUCT_SKU_ALREADY_EXISTS&quot;, &quot;message&quot;: &quot;A product with SKU &#39;LAC-001&#39; already exists.&quot; }</code></li></ul>"
+              },
+              {
+                "id": "FL-CAT-012",
+                "title": "CreateProduct — categoría inactiva",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Categoría <code>cat-005</code> existe con <code>status = INACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/products</code> con <code>categoryId = &quot;cat-005&quot;</code> y datos válidos.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CATEGORY_NOT_ACTIVE&quot; }</code></li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-008",
           "name": "UpdateProduct",
           "actor": "admin",
           "type": "command",
+          "description": "Updates mutable fields of a product. Allowed in DRAFT and ACTIVE status only. Blocked entirely if the product is DISCONTINUED (CAT-RULE-003). All fields are optional — only provided fields are updated.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /products/{id}",
           "target": "Product.update",
@@ -577,13 +701,32 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "UpdateProduct",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El producto identificado por <code>{id}</code> existe.</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li><li>El producto no está en estado <code>DISCONTINUED</code> (CAT-RULE-003).</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /products/{id}</code> con uno o más campos opcionales.</li><li>El sistema carga el producto por <code>id</code>.</li><li>El sistema verifica que el producto no está <code>DISCONTINUED</code> (CAT-RULE-003 — evaluado primero).</li><li>Si <code>categoryId</code> fue proporcionada, el sistema verifica que la categoría existe y está <code>ACTIVE</code>.</li><li>Si <code>name</code> fue proporcionado (implícito — no hay unicidad de name, solo de sku).</li><li>El sistema aplica los cambios a los campos provistos.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — El producto <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>PRODUCT_NOT_FOUND</code>.</li><li><strong>3a</strong> — El producto está <code>DISCONTINUED</code>: <code>409 Conflict</code> con code <code>PRODUCT_ALREADY_DISCONTINUED</code>.</li><li><strong>4a</strong> — La <code>categoryId</code> no corresponde a ninguna categoría: <code>404 Not Found</code> con code <code>CATEGORY_NOT_FOUND</code>. <em>(Solo aplica si <code>categoryId</code> fue proporcionado.)</em></li><li><strong>4b</strong> — La categoría existe pero está <code>INACTIVE</code>: <code>422 Unprocessable Entity</code> con code <code>CATEGORY_NOT_ACTIVE</code>. <em>(Solo aplica si <code>categoryId</code> fue proporcionado.)</em></li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>Los campos proporcionados del producto son actualizados.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-002</code>, <code>CAT-RULE-003</code>, <code>CAT-RULE-008</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-013",
+                "title": "UpdateProduct — cambio de precio y categoría",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Cargar el producto → 404 si no existe.</li><li>Verificar que el producto no está <code>DISCONTINUED</code> (CAT-RULE-003) → 409 si lo está.</li><li>Si <code>categoryId</code> está en el body: cargar categoría, verificar <code>ACTIVE</code> (CAT-RULE-008).</li><li>Llamar <code>product.update(name, description, price, categoryId)</code> con campos provistos.</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-001</code> existe con <code>status = ACTIVE</code>, <code>price.amount = &quot;3500.0000&quot;</code>.</li><li>Categoría <code>cat-002</code> existe con <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-001</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  {\n    &quot;price&quot;: { &quot;amount&quot;: &quot;3800.0000&quot;, &quot;currency&quot;: &quot;COP&quot; },\n    &quot;categoryId&quot;: &quot;cat-002&quot;\n  }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li><code>GET /products/prod-001</code> retorna <code>price.amount = &quot;3800.0000&quot;</code> y <code>categoryId = &quot;cat-002&quot;</code>.</li></ul>"
+              },
+              {
+                "id": "FL-CAT-014",
+                "title": "UpdateProduct — producto discontinuado",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-002</code> existe con <code>status = DISCONTINUED</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-002</code> con <code>{ &quot;price&quot;: { &quot;amount&quot;: &quot;1000.0000&quot;, &quot;currency&quot;: &quot;COP&quot; } }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;PRODUCT_ALREADY_DISCONTINUED&quot; }</code></li><li>El producto no es modificado.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-009",
           "name": "ActivateProduct",
           "actor": "admin",
           "type": "command",
+          "description": "Transitions a product from DRAFT to ACTIVE status, making it available for purchase. Enforces CAT-RULE-001: product must have a name, positive price, and be assigned to an ACTIVE category. Emits ProductActivated so inventory creates a StockItem.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /products/{id}/activate",
           "target": "Product.activate",
@@ -614,13 +757,37 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "ActivateProduct",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El producto identificado por <code>{id}</code> existe.</li><li>El producto está en estado <code>DRAFT</code> (si está <code>DISCONTINUED</code>, la activación también es bloqueada implícitamente por el terminal state).</li><li>El producto tiene un <code>name</code> no vacío y un <code>price</code> positivo.</li><li>La categoría asignada al producto está en estado <code>ACTIVE</code> (CAT-RULE-001).</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /products/{id}/activate</code>.</li><li>El sistema carga el producto por <code>id</code>.</li><li>El sistema carga la categoría referenciada por <code>product.categoryId</code>.</li><li>El sistema verifica que la categoría está <code>ACTIVE</code> (parte de CAT-RULE-001).</li><li>El sistema verifica que el producto tiene <code>name</code> y <code>price</code> válidos (CAT-RULE-001).</li><li>El sistema transiciona <code>status</code> a <code>ACTIVE</code> y emite <code>ProductActivated</code>.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — El producto <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>PRODUCT_NOT_FOUND</code>.</li><li><strong>4a</strong> — La categoría del producto está <code>INACTIVE</code>: <code>422 Unprocessable Entity</code> con code <code>PRODUCT_NOT_READY_FOR_ACTIVATION</code>.</li><li><strong>5a</strong> — El producto no tiene los datos requeridos (price &lt;= 0 o name vacío): <code>422 Unprocessable Entity</code> con code <code>PRODUCT_NOT_READY_FOR_ACTIVATION</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>El producto tiene <code>status = ACTIVE</code>.</li><li>El producto es visible en el catálogo para clientes.</li><li>Se ha publicado el evento <code>ProductActivated</code> con <code>productId</code>, <code>sku</code>, <code>name</code>, <code>categoryId</code>.</li><li>El BC <code>inventory</code> recibirá el evento y creará un <code>StockItem</code> para este producto.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-001</code>, <code>CAT-RULE-002</code></p>\n<p><strong>Eventos emitidos</strong>: <code>ProductActivated</code></p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-015",
+                "title": "ActivateProduct — happy path",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Cargar el producto → 404 si no existe.</li><li>Cargar la categoría por <code>product.categoryId</code>.</li><li>Verificar que la categoría tiene <code>status = ACTIVE</code> → 422 si no (parte de CAT-RULE-001).</li><li>Verificar que <code>product.name</code> no está vacío y <code>product.price.amount &gt; 0</code> (CAT-RULE-001).</li><li>Llamar <code>product.activate()</code> → emite <code>ProductActivated</code>.</li><li>Persistir el producto.</li><li>El outbox publica <code>ProductActivated</code> al broker.</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-003</code> existe con <code>status = DRAFT</code>, <code>name = &quot;Queso Campesino 500g&quot;</code>, <code>price.amount = &quot;8500.0000&quot;</code>.</li><li>La categoría asignada (<code>cat-001</code>) tiene <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-003/activate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li><code>GET /products/prod-003</code> retorna <code>status = ACTIVE</code>.</li><li>El evento <code>ProductActivated</code> fue publicado al canal <code>catalog.product.activated</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;productId&quot;: &quot;prod-003&quot;, &quot;sku&quot;: &quot;...&quot;, &quot;name&quot;: &quot;Queso Campesino 500g&quot;, &quot;categoryId&quot;: &quot;cat-001&quot; }</code></pre>"
+              },
+              {
+                "id": "FL-CAT-016",
+                "title": "ActivateProduct — categoría inactiva",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-004</code> existe con <code>status = DRAFT</code> y <code>categoryId = &quot;cat-005&quot;</code>.</li><li>Categoría <code>cat-005</code> tiene <code>status = INACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-004/activate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;PRODUCT_NOT_READY_FOR_ACTIVATION&quot; }</code></li><li>El producto permanece en <code>status = DRAFT</code>.</li><li>No se emite ningún evento.</li></ul>"
+              },
+              {
+                "id": "FL-CAT-017",
+                "title": "ActivateProduct — producto ya activo",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-003</code> tiene <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-003/activate</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code> (idempotente — el estado ya es ACTIVE, la transición no ocurre pero tampoco falla).</li></ul>\n<blockquote class=\"narrative-quote\"><p><strong>Nota de implementación:</strong> El domainMethod <code>activate()</code> debe verificar si el estado ya es ACTIVE y, si es así, retornar sin emitir un segundo evento <code>ProductActivated</code>.</p></blockquote>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-010",
           "name": "DiscontinueProduct",
           "actor": "admin",
           "type": "command",
+          "description": "Permanently retires a product. Irreversible action. Emits ProductDiscontinued so inventory closes the associated StockItem.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /products/{id}/discontinue",
           "target": "Product.discontinue",
@@ -633,13 +800,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "DiscontinueProduct",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El producto identificado por <code>{id}</code> existe.</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>PATCH /products/{id}/discontinue</code>.</li><li>El sistema carga el producto por <code>id</code>.</li><li>El sistema transiciona <code>status</code> a <code>DISCONTINUED</code> y emite <code>ProductDiscontinued</code>.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos alternativos</strong>:</p>\n<ul><li><strong>3a</strong> — El producto ya estaba en estado <code>DISCONTINUED</code>: el sistema aplica la transición de forma idempotente (el estado terminal ya se alcanzó; no se emite un segundo evento).</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>El producto tiene <code>status = DISCONTINUED</code>.</li><li>El producto ya no puede ser modificado (estado terminal).</li><li>Se ha publicado el evento <code>ProductDiscontinued</code> con <code>productId</code>, <code>sku</code>.</li><li>El BC <code>inventory</code> recibirá el evento y cerrará permanentemente el <code>StockItem</code> asociado.</li></ul>\n<p><strong>Reglas de negocio</strong>: ninguna adicional</p>\n<p><strong>Eventos emitidos</strong>: <code>ProductDiscontinued</code></p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-018",
+                "title": "DiscontinueProduct — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-005</code> existe con <code>status = ACTIVE</code>, <code>sku = &quot;LAC-002&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/catalog/v1/products/prod-005/discontinue</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li><code>GET /products/prod-005</code> retorna <code>status = DISCONTINUED</code>.</li><li>El evento <code>ProductDiscontinued</code> fue publicado al canal <code>catalog.product.discontinued</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;productId&quot;: &quot;prod-005&quot;, &quot;sku&quot;: &quot;LAC-002&quot; }</code></pre>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Producto ya en <code>DISCONTINUED</code> → <code>204</code> (idempotente; no se emite segundo evento).</li><li>Producto no existe → <code>404 PRODUCT_NOT_FOUND</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-011",
           "name": "AddProductImage",
           "actor": "admin",
           "type": "command",
+          "description": "Uploads a new image to a product's gallery. The endpoint receives the binary as multipart/form-data; the use case stores it in the product-media object store and persists the returned public URL on the product. Blocked if the product is DISCONTINUED.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /products/{id}/images",
           "target": "Product.addImage",
@@ -664,13 +845,27 @@
           "bulk": false,
           "storageCalls": [
             "product-media:put"
-          ]
+          ],
+          "narrative": {
+            "spec": {
+              "title": "AddProductImage",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El producto identificado por <code>{id}</code> existe.</li><li>El producto no está en estado <code>DISCONTINUED</code> (CAT-RULE-003).</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>POST /products/{id}/images</code> con <code>url</code>, <code>altText?</code>, <code>imageType</code>, <code>displayOrder</code>.</li><li>El sistema carga el producto por <code>id</code>.</li><li>El sistema verifica que el producto no está <code>DISCONTINUED</code>.</li><li>El sistema agrega la imagen al gallery del producto.</li><li>El sistema responde <code>201 Created</code> con <code>Location: /api/catalog/v1/products/{id}/images/{imageId}</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — El producto <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>PRODUCT_NOT_FOUND</code>.</li><li><strong>3a</strong> — El producto está <code>DISCONTINUED</code>: <code>409 Conflict</code> con code <code>PRODUCT_ALREADY_DISCONTINUED</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>La imagen existe en el gallery del producto.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-003</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-019",
+                "title": "AddProductImage — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-001</code> existe con <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/products/prod-001/images</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  {\n    &quot;url&quot;: &quot;https://cdn.canastafamiliar.co/images/leche-1l-main.jpg&quot;,\n    &quot;altText&quot;: &quot;Leche entera 1 litro&quot;,\n    &quot;imageType&quot;: &quot;MAIN&quot;,\n    &quot;displayOrder&quot;: 0\n  }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/catalog/v1/products/prod-001/images/{imageId}</code></li><li><code>GET /products/prod-001</code> incluye la imagen en el array <code>images</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Producto no existe → <code>404 PRODUCT_NOT_FOUND</code>.</li><li>Producto en <code>DISCONTINUED</code> → <code>409 PRODUCT_ALREADY_DISCONTINUED</code>.</li><li><code>displayOrder = -1</code> → <code>422 VALIDATION_ERROR</code> (positiveOrZero falla).</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-012",
           "name": "RemoveProductImage",
           "actor": "admin",
           "type": "command",
+          "description": "Removes an image from a product's gallery and deletes the underlying binary from the product-media object store. Blocked if the product is DISCONTINUED. The image must exist in the product's gallery.\n",
           "triggerKind": "http",
           "triggerLabel": "DELETE /products/{id}/images/{imageId}",
           "target": "Product.removeImage",
@@ -695,13 +890,27 @@
           "bulk": false,
           "storageCalls": [
             "product-media:delete"
-          ]
+          ],
+          "narrative": {
+            "spec": {
+              "title": "RemoveProductImage",
+              "html": "<p><strong>Actor principal</strong>: admin</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>El producto identificado por <code>{id}</code> existe.</li><li>La imagen identificada por <code>{imageId}</code> existe dentro del gallery del producto.</li><li>El producto no está en estado <code>DISCONTINUED</code> (CAT-RULE-003).</li><li>El usuario autenticado tiene el rol <code>ROLE_ADMIN</code>.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El admin envía <code>DELETE /products/{id}/images/{imageId}</code>.</li><li>El sistema carga el producto por <code>id</code>.</li><li>El sistema verifica que el producto no está <code>DISCONTINUED</code>.</li><li>El sistema localiza la imagen por <code>imageId</code> dentro del gallery.</li><li>El sistema elimina la imagen del gallery.</li><li>El sistema responde <code>204 No Content</code>.</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — El producto <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>PRODUCT_NOT_FOUND</code>.</li><li><strong>3a</strong> — El producto está <code>DISCONTINUED</code>: <code>409 Conflict</code> con code <code>PRODUCT_ALREADY_DISCONTINUED</code>.</li><li><strong>4a</strong> — La imagen <code>{imageId}</code> no existe en el gallery del producto: <code>404 Not Found</code> con code <code>IMAGE_NOT_FOUND</code>.</li></ul>\n<p><strong>Postcondiciones</strong>:</p>\n<ul><li>La imagen ya no existe en el gallery del producto.</li></ul>\n<p><strong>Reglas de negocio</strong>: <code>CAT-RULE-003</code></p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-020",
+                "title": "RemoveProductImage — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-001</code> existe con <code>status = ACTIVE</code>.</li><li>La imagen <code>img-001</code> existe en el gallery del producto.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>DELETE /api/catalog/v1/products/prod-001/images/img-001</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li><code>GET /products/prod-001</code> ya no incluye <code>img-001</code> en el array <code>images</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Producto no existe → <code>404 PRODUCT_NOT_FOUND</code>.</li><li>Imagen <code>img-999</code> no existe en el gallery → <code>404 IMAGE_NOT_FOUND</code>.</li><li>Producto en <code>DISCONTINUED</code> → <code>409 PRODUCT_ALREADY_DISCONTINUED</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-013",
           "name": "GetProduct",
           "actor": "customer",
           "type": "query",
+          "description": "Retrieves full details of a product by its ID, including all associated images. Publicly accessible — no authentication required.\n",
           "triggerKind": "http",
           "triggerLabel": "GET /products/{id}",
           "target": "Product",
@@ -714,13 +923,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "GetProduct",
+              "html": "<p><strong>Actor principal</strong>: customer (público — sin autenticación requerida)</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>Ninguna — endpoint público.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El cliente solicita <code>GET /products/{id}</code>.</li><li>El sistema carga el producto por <code>id</code> incluyendo sus imágenes.</li><li>El sistema responde <code>200 OK</code> con <code>ProductDetail</code> (incluye todas las imágenes ordenadas por <code>displayOrder</code>).</li></ol>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>2a</strong> — El producto <code>{id}</code> no existe: <code>404 Not Found</code> con code <code>PRODUCT_NOT_FOUND</code>.</li></ul>\n<p><strong>Postcondiciones</strong>: ninguna (operación de solo lectura).</p>\n<p><strong>Reglas de negocio</strong>: ninguna</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-021",
+                "title": "GetProduct — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-001</code> existe con <code>status = ACTIVE</code> y 2 imágenes asociadas.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/catalog/v1/products/prod-001</code> (sin autenticación).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body <code>ProductDetail</code> contiene: <code>id</code>, <code>name</code>, <code>sku</code>, <code>description</code>, <code>price</code>, <code>status</code>, <code>categoryId</code>, <code>images</code> (2 elementos ordenados por <code>displayOrder ASC</code>), <code>createdAt</code>, <code>updatedAt</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li>Producto no existe → <code>404 PRODUCT_NOT_FOUND</code>.</li><li>Producto sin imágenes → <code>images = []</code>.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-014",
           "name": "ListProducts",
           "actor": "customer",
           "type": "query",
+          "description": "Returns a paginated list of products. Supports filtering by category, lifecycle status, and free-text search across name and SKU.\n",
           "triggerKind": "http",
           "triggerLabel": "GET /products",
           "target": "Product",
@@ -733,13 +956,27 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "ListProducts",
+              "html": "<p><strong>Actor principal</strong>: customer (público — sin autenticación requerida)</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>Ninguna — endpoint público.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El cliente solicita <code>GET /products</code> con parámetros opcionales <code>categoryId?</code>, <code>status?</code>, <code>search?</code>, <code>page?</code>, <code>size?</code>.</li><li>El sistema aplica los filtros provistos.</li><li>El sistema responde <code>200 OK</code> con una página de <code>ProductSummary</code>, ordenados por <code>createdAt DESC</code> por defecto.</li></ol>\n<p><strong>Flujos alternativos</strong>:</p>\n<ul><li><strong>1a</strong> — <code>search</code> presente: el sistema busca por texto en <code>name</code> y <code>sku</code> usando <code>LIKE_CONTAINS</code>.</li><li><strong>1b</strong> — Sin filtros: retorna todos los productos paginados.</li></ul>\n<p><strong>Postcondiciones</strong>: ninguna (operación de solo lectura).</p>\n<p><strong>Reglas de negocio</strong>: ninguna</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>\n<h6 class=\"narrative-subheading\">Integración (Internal API — BC orders → catalog)</h6>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-022",
+                "title": "ListProducts — con filtros",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existen 10 productos, 6 con <code>status = ACTIVE</code> en <code>categoryId = cat-001</code>, 4 en otras categorías.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/catalog/v1/products?categoryId=cat-001&amp;status=ACTIVE&amp;page=1&amp;size=5</code> (sin autenticación).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li><code>data</code> tiene 5 elementos, todos con <code>status = ACTIVE</code> y <code>categoryId = cat-001</code>.</li><li><code>total = 6</code>, <code>page = 1</code>, <code>size = 5</code>, <code>pages = 2</code>.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>search=leche</code> → retorna solo productos cuyo <code>name</code> o <code>sku</code> contiene &quot;leche&quot; (case-insensitive).</li><li>Sin filtros → retorna todos los productos, ordenados por <code>createdAt DESC</code>.</li><li><code>size=101</code> → <code>422 VALIDATION_ERROR</code> (max = 100).</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-CAT-015",
           "name": "ValidateProductsAndPrices",
           "actor": "system",
           "type": "query",
+          "description": "Returns the current authoritative price for each product in the provided list. Validates that every requested product exists and is ACTIVE. Used by the orders BC at checkout to construct the monetary snapshot (prevents OWASP A04 price manipulation). The orders BC must reject any snapshot that contains a non-ACTIVE product.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /internal/products/price-snapshot",
           "target": "Product",
@@ -752,7 +989,25 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": {
+              "title": "ValidateProductsAndPrices",
+              "html": "<p><strong>Actor principal</strong>: system (BC <code>orders</code> durante el checkout)</p>\n<p><strong>Precondiciones</strong>:</p>\n<ul><li>La solicitud contiene un JWT válido con rol <code>ROLE_CUSTOMER</code> o <code>ROLE_ADMIN</code>.</li><li>La lista <code>productIds</code> tiene entre 1 y 100 elementos.</li></ul>\n<p><strong>Flujo principal</strong>:</p>\n<ol><li>El BC <code>orders</code> envía <code>POST /products/price-snapshot</code> (internal API) con <code>productIds: [uuid, ...]</code>.</li><li>El sistema carga todos los productos de la lista en una sola consulta batch (<code>findAllByIdIn</code>).</li><li>Por cada <code>productId</code> en la lista, el sistema construye un <code>ProductPriceSnapshot</code> con <code>productId</code>, <code>name</code>, <code>price</code>, <code>status</code>.</li><li>Si algún <code>productId</code> no existe en el catálogo, el sistema incluye un placeholder con <code>status = null</code> (o simplemente lo omite — ver nota).</li><li>El sistema responde <code>200 OK</code> con <code>List[ProductPriceSnapshot]</code>.</li></ol>\n<blockquote class=\"narrative-quote\"><p><strong>Nota de diseño:</strong> El handler retorna un snapshot por cada producto encontrado. La responsabilidad de detectar productos faltantes o con <code>status != ACTIVE</code> es del BC <code>orders</code>. Si orders recibe una lista más corta que los IDs enviados, concluye que algún producto no existe y cancela el checkout.</p></blockquote>\n<p><strong>Flujos de excepción</strong>:</p>\n<ul><li><strong>1a</strong> — La lista <code>productIds</code> está vacía o supera los 100 elementos: <code>422 Unprocessable Entity</code> con code <code>VALIDATION_ERROR</code>.</li></ul>\n<p><strong>Postcondiciones</strong>: ninguna (operación de solo lectura).</p>\n<p><strong>Reglas de negocio</strong>: ninguna — solo lectura de datos autoritativos.</p>\n<p><strong>Eventos emitidos</strong>: ninguno</p>"
+            },
+            "flows": [
+              {
+                "id": "FL-CAT-023",
+                "title": "ValidateProductsAndPrices — happy path",
+                "html": "<blockquote class=\"narrative-quote\"><p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe:</p>\n<ol><li>Validar la lista (minSize=1, maxSize=100) → 422 si falla.</li><li>Llamar <code>productRepository.findAllByIdIn(productIds)</code> para carga batch.</li><li>Construir un <code>ProductPriceSnapshot</code> por cada producto encontrado.</li><li>Retornar la lista de snapshots (puede ser más corta que <code>productIds</code> si alguno no existe).</li></ol></blockquote>\n<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-001</code> con <code>status = ACTIVE</code>, <code>price = { &quot;amount&quot;: &quot;3500.0000&quot;, &quot;currency&quot;: &quot;COP&quot; }</code>, <code>name = &quot;Leche Entera 1L&quot;</code>.</li><li>Producto <code>prod-002</code> con <code>status = ACTIVE</code>, <code>price = { &quot;amount&quot;: &quot;8500.0000&quot;, &quot;currency&quot;: &quot;COP&quot; }</code>, <code>name = &quot;Queso Campesino 500g&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/internal/products/price-snapshot</code> (internal API) con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;productIds&quot;: [&quot;prod-001&quot;, &quot;prod-002&quot;] }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body:</li></ul>\n<pre class=\"narrative-code\"><code>  [\n    { &quot;productId&quot;: &quot;prod-001&quot;, &quot;name&quot;: &quot;Leche Entera 1L&quot;, &quot;price&quot;: { &quot;amount&quot;: &quot;3500.0000&quot;, &quot;currency&quot;: &quot;COP&quot; }, &quot;status&quot;: &quot;ACTIVE&quot; },\n    { &quot;productId&quot;: &quot;prod-002&quot;, &quot;name&quot;: &quot;Queso Campesino 500g&quot;, &quot;price&quot;: { &quot;amount&quot;: &quot;8500.0000&quot;, &quot;currency&quot;: &quot;COP&quot; }, &quot;status&quot;: &quot;ACTIVE&quot; }\n  ]</code></pre>"
+              },
+              {
+                "id": "FL-CAT-024",
+                "title": "ValidateProductsAndPrices — producto discontinuado en el cart",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Producto <code>prod-003</code> existe con <code>status = DISCONTINUED</code>.</li><li>Producto <code>prod-004</code> existe con <code>status = ACTIVE</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/catalog/v1/internal/products/price-snapshot</code> con <code>productIds: [&quot;prod-003&quot;, &quot;prod-004&quot;]</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body contiene snapshot de <code>prod-003</code> con <code>status = DISCONTINUED</code> y snapshot de <code>prod-004</code> con <code>status = ACTIVE</code>.</li><li>El BC <code>orders</code> detecta el status <code>DISCONTINUED</code> y rechaza el checkout para ese ítem.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>productIds = []</code> → <code>422 VALIDATION_ERROR</code> (minSize=1).</li><li><code>productIds</code> con 101 elementos → <code>422 VALIDATION_ERROR</code> (maxSize=100).</li><li><code>productIds</code> contiene un UUID que no existe en el catálogo → el snapshot de ese ID se omite de la respuesta; orders detecta el ID faltante y rechaza el checkout.</li></ul>"
+              }
+            ]
+          }
         }
       ],
       "securityMatrix": [
@@ -1642,6 +1897,7 @@
           "name": "CreateCart",
           "actor": "customer",
           "type": "command",
+          "description": "Creates a new OPEN cart for the authenticated customer with the selected payment method. Enforces that the customer has no other OPEN cart (ORD-RULE-004).\n",
           "triggerKind": "http",
           "triggerLabel": "POST /carts",
           "target": "Cart.create",
@@ -1664,13 +1920,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-001",
+                "title": "CreateCart — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>El cliente con <code>customerId = &quot;c1&quot;</code> no tiene ningún carrito OPEN.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;paymentMethod&quot;: &quot;CARD&quot; }</code></pre>\n<p>Header <code>Authorization: Bearer {token con sub=c1}</code>.</p>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/carts/{newCartId}</code></li><li>El carrito existe en BD con <code>status = OPEN</code>, <code>customerId = c1</code>, <code>paymentMethod = CARD</code>.</li><li>El carrito no tiene ítems.</li><li><code>GET /carts/{newCartId}</code> retorna el carrito recién creado.</li></ul>\n<p><strong>Casos borde</strong>:</p>\n<ul><li><code>paymentMethod</code> con valor inválido → <code>400 Bad Request</code>.</li><li>Request duplicado con mismo <code>Idempotency-Key</code> → <code>201</code> con misma <code>Location</code> (no se crea duplicado).</li></ul>"
+              },
+              {
+                "id": "FL-ORD-002",
+                "title": "CreateCart — cliente ya tiene carrito OPEN",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>El cliente ya tiene un carrito <code>{existingCartId}</code> con <code>status = OPEN</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts</code> con <code>{ &quot;paymentMethod&quot;: &quot;CASH_ON_DELIVERY&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CUSTOMER_ALREADY_HAS_OPEN_CART&quot; }</code></li><li>No se crea ningún carrito nuevo.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-002",
           "name": "AddItemToCart",
           "actor": "customer",
           "type": "command",
+          "description": "Adds a product to the customer's OPEN cart. Blocked if the cart is not OPEN (ORD-RULE-002). If the product is already in the cart, the scaffold implementation should increment the existing item's quantity.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /carts/{cartId}/items",
           "target": "Cart.addItem",
@@ -1693,13 +1965,34 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-003",
+                "title": "AddItemToCart — happy path (producto nuevo)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito <code>{cartId}</code> con <code>status = OPEN</code> para el cliente autenticado.</li><li>El carrito no tiene ítems con <code>productId = &quot;prod-123&quot;</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;productId&quot;: &quot;prod-123&quot;, &quot;quantity&quot;: 2 }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/carts/{cartId}/items/{newItemId}</code></li><li>El carrito tiene un nuevo ítem con <code>productId = prod-123</code> y <code>quantity = 2</code>.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-004",
+                "title": "AddItemToCart — producto ya existe en carrito (incremento de cantidad)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito OPEN con un ítem <code>productId = &quot;prod-123&quot;</code>, <code>quantity = 2</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;productId&quot;: &quot;prod-123&quot;, &quot;quantity&quot;: 3 }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>El ítem existente tiene ahora <code>quantity = 5</code> (2 + 3).</li><li>No se crea un ítem duplicado para el mismo productId.</li></ul>\n<p><strong>DECISIÓN-001 (scaffold):</strong> El handler debe verificar si ya existe un CartItem con el mismo <code>productId</code> en el carrito antes de llamar a <code>addItem()</code>. Si existe, incrementar la cantidad.</p>"
+              },
+              {
+                "id": "FL-ORD-005",
+                "title": "AddItemToCart — carrito no OPEN (CHECKED_OUT)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito con <code>status = CHECKED_OUT</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/items</code> con <code>{ &quot;productId&quot;: &quot;prod-456&quot;, &quot;quantity&quot;: 1 }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_NOT_OPEN&quot; }</code></li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-003",
           "name": "UpdateCartItem",
           "actor": "customer",
           "type": "command",
+          "description": "Updates the quantity of an existing cart item. Blocked if the cart is not OPEN (ORD-RULE-002). The cart item must belong to this cart.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /carts/{cartId}/items/{itemId}",
           "target": "Cart.updateItem",
@@ -1722,13 +2015,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-006",
+                "title": "UpdateCartItem — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito OPEN con ítem <code>{itemId}</code> con <code>quantity = 2</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/orders/v1/carts/{cartId}/items/{itemId}</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;quantity&quot;: 5 }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li>El ítem tiene ahora <code>quantity = 5</code>.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-007",
+                "title": "UpdateCartItem — ítem no existe en el carrito",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito OPEN, pero <code>{unknownItemId}</code> no pertenece a este carrito.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/orders/v1/carts/{cartId}/items/{unknownItemId}</code> con <code>{ &quot;quantity&quot;: 3 }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>404 Not Found</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_ITEM_NOT_FOUND&quot; }</code></li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-004",
           "name": "RemoveCartItem",
           "actor": "customer",
           "type": "command",
+          "description": "Removes a product line from the customer's OPEN cart. Blocked if the cart is not OPEN (ORD-RULE-002).\n",
           "triggerKind": "http",
           "triggerLabel": "DELETE /carts/{cartId}/items/{itemId}",
           "target": "Cart.removeItem",
@@ -1751,13 +2060,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-008",
+                "title": "RemoveCartItem — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito OPEN con ítem <code>{itemId}</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>DELETE /api/orders/v1/carts/{cartId}/items/{itemId}</code></li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li>El ítem ya no existe en el carrito.</li></ul>\n<h6 class=\"narrative-subheading\">Checkout</h6>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-005",
           "name": "Checkout",
           "actor": "customer",
           "type": "command",
+          "description": "Performs checkout of the customer's cart. Validates prices against the catalog (HTTP call — OWASP A04 monetary snapshot), transitions the cart to CHECKED_OUT, and creates a new PENDING_PAYMENT Order with frozen price snapshots. Emits OrderPlaced to trigger the CheckoutSaga (stock reservation → payment). The selected delivery address must exist in the CustomerAddress local read model and must not be marked as deleted.\n",
           "triggerKind": "http",
           "triggerLabel": "POST /carts/{cartId}/checkout",
           "target": "Cart.checkout",
@@ -1788,13 +2108,39 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-009",
+                "title": "Checkout — happy path (pago con tarjeta)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Carrito OPEN con 2 ítems: <code>{ productId: &quot;p1&quot;, quantity: 2 }</code>, <code>{ productId: &quot;p2&quot;, quantity: 1 }</code>.</li><li>CustomerAddress con <code>addressId = &quot;addr-1&quot;</code>, <code>deleted = false</code>, del cliente autenticado.</li><li>Catalog devuelve: <code>p1 = ACTIVE, price = 15000 COP</code>; <code>p2 = ACTIVE, price = 8500 COP</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  { &quot;deliveryAddressId&quot;: &quot;addr-1&quot; }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>201 Created</code></li><li>Header <code>Location: /api/orders/v1/orders/{newOrderId}</code></li><li>El carrito transiciona a <code>CHECKED_OUT</code>.</li><li>Se crea una <code>Order</code> con <code>status = PENDING_PAYMENT</code>:</li><li><code>paymentMethod = CARD</code></li><li><code>total = { amount: 38500, currency: COP }</code> (2×15000 + 1×8500)</li><li><code>deliveryAddress</code> = snapshot de la dirección addr-1</li><li>2 <code>OrderLine</code>: precios congelados del catálogo.</li><li>Se emite <code>OrderPlaced</code> al outbox con las líneas y el total.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-010",
+                "title": "Checkout — carrito vacío",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Carrito OPEN sin ítems.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con <code>{ &quot;deliveryAddressId&quot;: &quot;addr-1&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;CART_IS_EMPTY&quot; }</code></li></ul>"
+              },
+              {
+                "id": "FL-ORD-011",
+                "title": "Checkout — dirección de entrega no encontrada",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Carrito OPEN con ítems.</li><li><code>deliveryAddressId = &quot;addr-deleted&quot;</code> existe en CustomerAddress pero <code>deleted = true</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con <code>{ &quot;deliveryAddressId&quot;: &quot;addr-deleted&quot; }</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>404 Not Found</code></li><li>Body: <code>{ &quot;code&quot;: &quot;DELIVERY_ADDRESS_NOT_FOUND&quot; }</code></li><li>No se crea ningún pedido. Carrito permanece OPEN.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-012",
+                "title": "Checkout — producto no disponible en catálogo",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Carrito OPEN con ítems: <code>{ productId: &quot;p1&quot;, quantity: 1 }</code>.</li><li>Catalog devuelve: <code>p1 = DISCONTINUED</code> (no ACTIVE).</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>POST /api/orders/v1/carts/{cartId}/checkout</code> con dirección válida.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;PRODUCT_PRICE_UNAVAILABLE&quot; }</code></li><li>No se crea ningún pedido. Carrito permanece OPEN.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-006",
           "name": "GetCart",
           "actor": "customer",
           "type": "query",
+          "description": "Retrieves the current cart with all its items for the authenticated customer.",
           "triggerKind": "http",
           "triggerLabel": "GET /carts/{cartId}",
           "target": "Cart",
@@ -1807,13 +2153,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-013",
+                "title": "GetCart — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un carrito OPEN con 3 ítems.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/orders/v1/carts/{cartId}</code></li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body contiene el carrito con todos los ítems (id, productId, quantity).</li></ul>\n<h6 class=\"narrative-subheading\">Orders</h6>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-010",
           "name": "GetOrder",
           "actor": "customer",
           "type": "query",
+          "description": "Retrieves full order details including all order lines and the delivery address snapshot. Customers can only access their own orders; admins can access any order.\n",
           "triggerKind": "http",
           "triggerLabel": "GET /orders/{orderId}",
           "target": "Order",
@@ -1826,13 +2183,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-014",
+                "title": "GetOrder — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe un <code>Order</code> con <code>status = CONFIRMED</code> y 2 OrderLines.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/orders/v1/orders/{orderId}</code> (cliente propietario o admin).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body contiene <code>OrderDetail</code>: id, customerId, status, paymentMethod, total, deliveryAddress, lines, createdAt, updatedAt.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-011",
           "name": "ListOrders",
           "actor": "customer",
           "type": "query",
+          "description": "Returns a paginated list of orders. Customers see only their own orders (customerId injected from JWT). Admins can optionally filter by customerId or status to see any order in the system.\n",
           "triggerKind": "http",
           "triggerLabel": "GET /orders",
           "target": "Order",
@@ -1845,13 +2213,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-015",
+                "title": "ListOrders — customer filtra sus pedidos",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>El cliente tiene 3 pedidos: 2 CONFIRMED, 1 CANCELLED.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/orders/v1/orders?status=CONFIRMED</code></li></ul>\n<p>Header <code>Authorization: Bearer {token del cliente}</code>.</p>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body: página con 2 <code>OrderSummary</code> en estado CONFIRMED (solo los del cliente autenticado).</li></ul>\n<p><strong>DECISIÓN-002 (scaffold):</strong> El handler debe ignorar el query param <code>customerId</code> si el actor es ROLE_CUSTOMER e inyectar siempre <code>customerId = JWT.sub</code>.</p>"
+              },
+              {
+                "id": "FL-ORD-016",
+                "title": "ListOrders — admin lista todos los pedidos de un cliente",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>El cliente <code>c2</code> tiene 5 pedidos.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>GET /api/orders/v1/orders?customerId=c2</code> con token de ROLE_ADMIN.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>200 OK</code></li><li>Body: página con los 5 pedidos del cliente c2.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-012",
           "name": "CancelOrder",
           "actor": "customer",
           "type": "command",
+          "description": "Cancels an order that is in PENDING_PAYMENT or CONFIRMED status (ORD-RULE-005). Customers can only cancel their own orders; admins can cancel any order. Emits OrderCancelled consumed by delivery and payments for downstream compensation.\n",
           "triggerKind": "http",
           "triggerLabel": "PATCH /orders/{orderId}/cancel",
           "target": "Order.cancel",
@@ -1890,13 +2274,34 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-017",
+                "title": "CancelOrder — happy path (customer cancela pedido PENDING_PAYMENT)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code> del cliente autenticado.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>204 No Content</code></li><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-018",
+                "title": "CancelOrder — pedido ya DELIVERED (terminal state)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = DELIVERED</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>409 Conflict</code></li><li>Body: <code>{ &quot;code&quot;: &quot;ORDER_ALREADY_DELIVERED&quot; }</code></li></ul>"
+              },
+              {
+                "id": "FL-ORD-019",
+                "title": "CancelOrder — pedido IN_DELIVERY (no cancelable)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = IN_DELIVERY</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li><code>PATCH /api/orders/v1/orders/{orderId}/cancel</code></li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>HTTP <code>422 Unprocessable Entity</code></li><li>Body: <code>{ &quot;code&quot;: &quot;ORDER_CANNOT_BE_CANCELLED&quot; }</code></li></ul>\n<h6 class=\"narrative-subheading\">Saga Event Handlers</h6>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-020",
           "name": "ConfirmOrder",
           "actor": "system",
           "type": "command",
+          "description": "Confirms the order after receiving PaymentApproved (step 3 of CheckoutSaga). Transitions order from PENDING_PAYMENT to CONFIRMED. Emits OrderConfirmed to trigger DeliveryOrder creation (step 4). Idempotent via consumerIdempotency.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ PaymentApproved (payments · payments.payment.approved)",
           "target": "Order.confirm",
@@ -1923,13 +2328,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-020",
+                "title": "ConfirmOrder — happy path (PaymentApproved)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>PaymentApproved</code> con <code>orderId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El handler procesa el evento idempotentemente.</li><li>El pedido transiciona a <code>status = CONFIRMED</code>.</li><li>Se emite <code>OrderConfirmed</code> al outbox.</li></ul>\n<p><strong>DECISIÓN-003 (scaffold):</strong> Verificar ORD-RULE-008 antes de llamar <code>order.confirm()</code>. Si el pedido no está en PENDING_PAYMENT (ya fue confirmado — redelivery idempotente), loggear warn y marcar el evento como procesado sin lanzar excepción.</p>"
+              },
+              {
+                "id": "FL-ORD-021",
+                "title": "ConfirmOrder — evento duplicado (idempotencia)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = CONFIRMED</code> (evento fue procesado antes).</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega nuevamente <code>PaymentApproved</code> con mismo <code>orderId</code> (redelivery del broker).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El <code>consumerIdempotency</code> detecta el evento como ya procesado.</li><li>No se emite <code>OrderConfirmed</code> duplicado.</li><li>HTTP 200 si el broker recibe ACK correcto.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-021",
           "name": "CancelOrderOnStockFailed",
           "actor": "system",
           "type": "command",
+          "description": "Cancels the order when stock reservation fails (StockReservationFailed event from inventory — CheckoutSaga compensation path). Transitions order from PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ StockReservationFailed (inventory · inventory.stock.reservation.failed)",
           "target": "Order.cancel",
@@ -1952,13 +2373,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-022",
+                "title": "CancelOrderOnStockFailed — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>StockReservationFailed</code> con <code>orderId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-023",
+                "title": "CancelOrderOnStockFailed — pedido ya CANCELLED (idempotencia)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = CANCELLED</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega <code>StockReservationFailed</code> de nuevo (redelivery).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-007 detectan el estado terminal.</li><li>No se emite <code>OrderCancelled</code> duplicado. Evento procesado silenciosamente.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-022",
           "name": "CancelOrderOnPaymentFailed",
           "actor": "system",
           "type": "command",
+          "description": "Cancels the order when payment processing fails (PaymentFailed event from payments — CheckoutSaga compensation path). Transitions order from PENDING_PAYMENT to CANCELLED. Emits OrderCancelled.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ PaymentFailed (payments · payments.payment.failed)",
           "target": "Order.cancel",
@@ -1981,13 +2418,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-024",
+                "title": "CancelOrderOnPaymentFailed — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = PENDING_PAYMENT</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>PaymentFailed</code> con <code>orderId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El pedido transiciona a <code>status = CANCELLED</code>.</li><li>Se emite <code>OrderCancelled</code> al outbox (triggers refund check in payments if CARD).</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-023",
           "name": "SetOrderInDelivery",
           "actor": "system",
           "type": "command",
+          "description": "Transitions the order to IN_DELIVERY after DeliveryOrderCreated confirms a courier has been assigned (step 4 completion). Enforces ORD-RULE-009 (order must be CONFIRMED).\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ DeliveryOrderCreated (delivery · delivery.delivery.order.created)",
           "target": "Order.setInDelivery",
@@ -2010,13 +2458,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-025",
+                "title": "SetOrderInDelivery — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CONFIRMED</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>DeliveryOrderCreated</code> con <code>orderId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El pedido transiciona a <code>status = IN_DELIVERY</code>.</li><li>No se emite ningún evento adicional desde orders.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-026",
+                "title": "SetOrderInDelivery — pedido no CONFIRMED (idempotencia)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = IN_DELIVERY</code> (evento fue procesado antes).</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega <code>DeliveryOrderCreated</code> de nuevo (redelivery).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-009 detectan el estado incorrecto.</li><li>Evento procesado silenciosamente sin cambio de estado.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-024",
           "name": "CompleteDelivery",
           "actor": "system",
           "type": "command",
+          "description": "Transitions the order to DELIVERED after the courier confirms package delivery (DeliveryCompleted event from delivery BC). Enforces ORD-RULE-010.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ DeliveryCompleted (delivery · delivery.delivery.completed)",
           "target": "Order.complete",
@@ -2039,13 +2503,29 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-027",
+                "title": "CompleteDelivery — happy path",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = IN_DELIVERY</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>DeliveryCompleted</code> con <code>orderId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El pedido transiciona a <code>status = DELIVERED</code>.</li><li>El estado es terminal.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-028",
+                "title": "CompleteDelivery — pedido no IN_DELIVERY (idempotencia)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li><code>Order</code> <code>{orderId}</code> ya está en <code>status = DELIVERED</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega <code>DeliveryCompleted</code> de nuevo (redelivery).</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li><code>consumerIdempotency</code> o guard ORD-RULE-010 manejan el redelivery.</li><li>No hay cambio de estado. Evento procesado silenciosamente.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-025",
           "name": "AcknowledgeStockReleased",
           "actor": "system",
           "type": "command",
+          "description": "Idempotent acknowledgment when inventory confirms stock has been released (StockReleased compensation event). No state change in Order — the order is already CANCELLED at this point. Handler marks the event as processed for saga audit tracking via consumerIdempotency.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ StockReleased (inventory · inventory.stock.released)",
           "target": "Order",
@@ -2058,13 +2538,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-029",
+                "title": "AcknowledgeStockReleased — acuse de recibo de compensación",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CANCELLED</code> (ya cancelado por PaymentFailed).</li><li>El BC <code>inventory</code> ha liberado el stock y emite <code>StockReleased</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>StockReleased</code> con <code>orderId</code> y <code>reservationId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El handler carga el pedido (para log de auditoría).</li><li>El estado del pedido no cambia (ya es CANCELLED).</li><li>El evento queda marcado como procesado.</li><li>No se emite ningún evento nuevo.</li></ul>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-026",
           "name": "AcknowledgePaymentRefunded",
           "actor": "system",
           "type": "command",
+          "description": "Idempotent acknowledgment when payments confirms a card refund was processed (PaymentRefunded event). No state change in Order — the order is already CANCELLED. Handler marks the event as processed for saga audit tracking.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ PaymentRefunded (payments · payments.payment.refunded)",
           "target": "Order",
@@ -2077,13 +2568,24 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-030",
+                "title": "AcknowledgePaymentRefunded — acuse de recibo de reembolso",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>Order</code> <code>{orderId}</code> con <code>status = CANCELLED</code> (cancelado después de PaymentApproved — admin cancel o customer cancel de CONFIRMED).</li><li>El BC <code>payments</code> ha procesado el reembolso de tarjeta.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>PaymentRefunded</code> con <code>orderId</code> y <code>refundId</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El handler carga el pedido (para log de auditoría).</li><li>El estado del pedido no cambia (ya es CANCELLED).</li><li>El evento queda marcado como procesado.</li></ul>\n<h6 class=\"narrative-subheading\">CustomerAddress Sync</h6>"
+              }
+            ]
+          }
         },
         {
           "id": "UC-ORD-030",
           "name": "SyncCustomerAddress",
           "actor": "system",
           "type": "command",
+          "description": "Upserts the CustomerAddress local read model when a CustomerAddressUpdated event arrives from the customers BC. If the address is new, a new CustomerAddress record is inserted. If it already exists (by addressId), it is updated. The 'deleted' flag is preserved to support soft-deletion.\n",
           "triggerKind": "event",
           "triggerLabel": "⇠ CustomerAddressUpdated (customers · customers.customer.address.updated)",
           "target": "CustomerAddress.upsert",
@@ -2096,7 +2598,22 @@
           "cacheable": false,
           "async": false,
           "bulk": false,
-          "storageCalls": []
+          "storageCalls": [],
+          "narrative": {
+            "spec": null,
+            "flows": [
+              {
+                "id": "FL-ORD-031",
+                "title": "SyncCustomerAddress — nueva dirección (INSERT)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>No existe ningún <code>CustomerAddress</code> con <code>addressId = &quot;addr-new&quot;</code> en el LRM.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>CustomerAddressUpdated</code> con:</li></ul>\n<pre class=\"narrative-code\"><code>  {\n    &quot;addressId&quot;: &quot;addr-new&quot;,\n    &quot;customerId&quot;: &quot;c1&quot;,\n    &quot;street&quot;: &quot;Calle 123 #45-67&quot;,\n    &quot;city&quot;: &quot;Bogotá&quot;,\n    &quot;postalCode&quot;: &quot;110111&quot;,\n    &quot;reference&quot;: &quot;Apto 301&quot;,\n    &quot;deleted&quot;: false\n  }</code></pre>\n<p><strong>Then</strong>:</p>\n<ul><li>Se inserta un nuevo <code>CustomerAddress</code> con todos los campos.</li><li><code>deleted = false</code>.</li><li>El evento queda marcado como procesado.</li></ul>"
+              },
+              {
+                "id": "FL-ORD-032",
+                "title": "SyncCustomerAddress — dirección eliminada (soft-delete)",
+                "html": "<p><strong>Given</strong>:</p>\n<ul><li>Existe <code>CustomerAddress</code> con <code>addressId = &quot;addr-old&quot;</code>, <code>deleted = false</code>.</li></ul>\n<p><strong>When</strong>:</p>\n<ul><li>Llega evento <code>CustomerAddressUpdated</code> con <code>addressId = &quot;addr-old&quot;</code>, <code>deleted = true</code>.</li></ul>\n<p><strong>Then</strong>:</p>\n<ul><li>El registro <code>CustomerAddress</code> se actualiza: <code>deleted = true</code>.</li><li>Desde este momento, el checkout rechazará <code>deliveryAddressId = &quot;addr-old&quot;</code> con</li></ul>\n<p><code>DELIVERY_ADDRESS_NOT_FOUND</code>.</p>"
+              }
+            ]
+          }
         }
       ],
       "securityMatrix": [
@@ -2618,42 +3135,42 @@
         "consumed": [
           {
             "name": "PaymentApproved",
-            "sourceBc": "",
+            "sourceBc": "payments",
             "channel": "payments.payment.approved"
           },
           {
             "name": "PaymentFailed",
-            "sourceBc": "",
+            "sourceBc": "payments",
             "channel": "payments.payment.failed"
           },
           {
             "name": "PaymentRefunded",
-            "sourceBc": "",
+            "sourceBc": "payments",
             "channel": "payments.payment.refunded"
           },
           {
             "name": "StockReservationFailed",
-            "sourceBc": "",
+            "sourceBc": "inventory",
             "channel": "inventory.stock.reservation.failed"
           },
           {
             "name": "StockReleased",
-            "sourceBc": "",
+            "sourceBc": "inventory",
             "channel": "inventory.stock.released"
           },
           {
             "name": "DeliveryOrderCreated",
-            "sourceBc": "",
+            "sourceBc": "delivery",
             "channel": "delivery.delivery.order.created"
           },
           {
             "name": "DeliveryCompleted",
-            "sourceBc": "",
+            "sourceBc": "delivery",
             "channel": "delivery.delivery.completed"
           },
           {
             "name": "CustomerAddressUpdated",
-            "sourceBc": "",
+            "sourceBc": "customers",
             "channel": "customers.customer.address.updated"
           }
         ],
@@ -3951,6 +4468,307 @@
       "mermaid": "sequenceDiagram\n  autonumber\n  participant bc_orders as orders\n  participant bc_inventory as inventory\n  participant bc_payments as payments\n  participant bc_delivery as delivery\n  Note over bc_orders: trigger: OrderPlaced\n  bc_orders->>bc_inventory: 1. OrderPlaced\n  Note over bc_inventory: onFailure: StockReservationFailed / compensacion: StockReleased\n  bc_inventory->>bc_payments: 2. StockReserved\n  Note over bc_payments: onFailure: PaymentFailed / compensacion: PaymentRefunded\n  bc_payments->>bc_orders: 3. PaymentApproved [UC-ORD-020 ConfirmOrder]\n  bc_orders->>bc_delivery: 4. OrderConfirmed\n  Note over bc_delivery: ✓ DeliveryOrderCreated"
     }
   ],
+  "traceability": {
+    "useCases": {
+      "UC-CAT-001": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-005"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-001"
+      },
+      "UC-CAT-002": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-005"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-002"
+      },
+      "UC-CAT-003": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-006"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-003"
+      },
+      "UC-CAT-004": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-004"
+      },
+      "UC-CAT-005": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-005"
+      },
+      "UC-CAT-006": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-006"
+      },
+      "UC-CAT-007": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-002",
+          "CAT-RULE-008"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-007"
+      },
+      "UC-CAT-008": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-002",
+          "CAT-RULE-003",
+          "CAT-RULE-008"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-008"
+      },
+      "UC-CAT-009": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-001",
+          "CAT-RULE-002"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-009"
+      },
+      "UC-CAT-010": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-010"
+      },
+      "UC-CAT-011": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-003"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-011"
+      },
+      "UC-CAT-012": {
+        "bc": "catalog",
+        "rules": [
+          "CAT-RULE-003"
+        ],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-012"
+      },
+      "UC-CAT-013": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-013"
+      },
+      "UC-CAT-014": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-014"
+      },
+      "UC-CAT-015": {
+        "bc": "catalog",
+        "rules": [],
+        "saga": null,
+        "anchor": "catalog-review.html#uc-uc-cat-015"
+      },
+      "UC-ORD-001": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-004"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-001"
+      },
+      "UC-ORD-002": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-002"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-002"
+      },
+      "UC-ORD-003": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-002"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-003"
+      },
+      "UC-ORD-004": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-002"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-004"
+      },
+      "UC-ORD-005": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-001",
+          "ORD-RULE-002"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-005"
+      },
+      "UC-ORD-006": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-006"
+      },
+      "UC-ORD-010": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-010"
+      },
+      "UC-ORD-011": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-011"
+      },
+      "UC-ORD-012": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-005",
+          "ORD-RULE-006",
+          "ORD-RULE-007"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-012"
+      },
+      "UC-ORD-020": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-008"
+        ],
+        "saga": {
+          "name": "CheckoutSaga",
+          "order": 3
+        },
+        "anchor": "orders-review.html#uc-uc-ord-020"
+      },
+      "UC-ORD-021": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-005"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-021"
+      },
+      "UC-ORD-022": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-005"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-022"
+      },
+      "UC-ORD-023": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-009"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-023"
+      },
+      "UC-ORD-024": {
+        "bc": "orders",
+        "rules": [
+          "ORD-RULE-010"
+        ],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-024"
+      },
+      "UC-ORD-025": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-025"
+      },
+      "UC-ORD-026": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-026"
+      },
+      "UC-ORD-030": {
+        "bc": "orders",
+        "rules": [],
+        "saga": null,
+        "anchor": "orders-review.html#uc-uc-ord-030"
+      }
+    },
+    "events": {
+      "ProductActivated": {
+        "producer": "catalog",
+        "channel": "",
+        "anchor": "catalog-review.html#event-productactivated"
+      },
+      "ProductDiscontinued": {
+        "producer": "catalog",
+        "channel": "",
+        "anchor": "catalog-review.html#event-productdiscontinued"
+      },
+      "OrderPlaced": {
+        "producer": "orders",
+        "channel": "orders.order.placed",
+        "anchor": "orders-review.html#event-orderplaced"
+      },
+      "OrderConfirmed": {
+        "producer": "orders",
+        "channel": "orders.order.confirmed",
+        "anchor": "orders-review.html#event-orderconfirmed"
+      },
+      "OrderCancelled": {
+        "producer": "orders",
+        "channel": "orders.order.cancelled",
+        "anchor": "orders-review.html#event-ordercancelled"
+      }
+    },
+    "sagas": {
+      "CheckoutSaga": {
+        "trigger": {
+          "event": "OrderPlaced",
+          "bc": "orders"
+        },
+        "steps": [
+          {
+            "order": 1,
+            "bc": "inventory",
+            "implementedBy": null
+          },
+          {
+            "order": 2,
+            "bc": "payments",
+            "implementedBy": null
+          },
+          {
+            "order": 3,
+            "bc": "orders",
+            "implementedBy": "orders/UC-ORD-020"
+          },
+          {
+            "order": 4,
+            "bc": "delivery",
+            "implementedBy": null
+          }
+        ]
+      }
+    }
+  },
   "diagnostics": [
     {
       "code": "INT-007",

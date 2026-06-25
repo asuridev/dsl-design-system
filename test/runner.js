@@ -1548,6 +1548,84 @@ test('canasta familiar example validates and previews as an incremental design',
   });
 });
 
+test('dsl preview surfaces narrative, attention, traceability and iteration aids', async () => {
+  await withTempProject(async (projectDir) => {
+    await copyCanastaExample(projectDir);
+
+    // First run establishes a baseline review model for the diff on the next run.
+    let result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    // Second run should detect "no structural changes" since nothing changed.
+    result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+    const reviewDir = path.join(projectDir, 'arch', 'review');
+    const catalogReview = await fs.readFile(path.join(reviewDir, 'catalog-review.html'), 'utf8');
+    const ordersReview = await fs.readFile(path.join(reviewDir, 'orders-review.html'), 'utf8');
+    const indexHtml = await fs.readFile(path.join(reviewDir, 'index.html'), 'utf8');
+    const reviewModel = JSON.parse(await fs.readFile(path.join(reviewDir, 'review-model.json'), 'utf8'));
+
+    // Área 1 — plain-language narrative parsed from spec.md / flows.md.
+    assert.match(catalogReview, /class="narrative-flow/, 'Given/When/Then flow blocks rendered');
+    assert.match(catalogReview, /class="uc-detail-row"/, 'use case rows are expandable');
+    assert.match(catalogReview, /Given/, 'flow narrative text present');
+
+    // Área 2 — executive summary, attention panel and in-page navigation.
+    assert.match(catalogReview, /casos de uso \(\d+ comandos/, 'executive summary sentence rendered');
+    assert.match(catalogReview, /attention-card/, 'attention panel rendered');
+    assert.match(catalogReview, /class="review-nav/, 'in-page side navigation rendered');
+
+    // Área 3 — clickable traceability (links + review-model index).
+    assert.match(ordersReview, /href="[a-z]+-review\.html#event-/, 'consumed events link to producer');
+    assert.match(ordersReview, /id="event-orderplaced"/, 'published events carry anchors');
+    assert.ok(reviewModel.traceability && reviewModel.traceability.useCases['UC-ORD-020'], 'traceability indexes use cases');
+    assert.strictEqual(reviewModel.traceability.useCases['UC-ORD-020'].bc, 'orders');
+    assert.ok(reviewModel.traceability.events['OrderPlaced'], 'traceability indexes published events');
+    assert.strictEqual(reviewModel.traceability.events['OrderPlaced'].producer, 'orders');
+
+    // Área 4 — iteration loop: proposals page, copy buttons, diff banner.
+    assert.ok(await fs.pathExists(path.join(reviewDir, 'proposals.html')), 'proposals page generated');
+    const proposalsHtml = await fs.readFile(path.join(reviewDir, 'proposals.html'), 'utf8');
+    assert.match(proposalsHtml, /Propuestas de iteración/, 'proposals page titled');
+    assert.match(proposalsHtml, /data-copy-target/, 'copy-to-clipboard controls present');
+    assert.match(catalogReview, /class="btn btn-sm btn-outline-secondary copy-btn"/, 'decision cards expose copy buttons');
+    assert.match(indexHtml, /data-i18n="diff\.title"/, 'dashboard shows changes-since-last-run banner');
+    assert.match(indexHtml, /data-i18n="diff\.none"/, 'banner reports no structural changes on identical rerun');
+    assert.match(indexHtml, /data-i18n="ui\.openProposals"/, 'dashboard links the proposals page');
+  });
+});
+
+test('dsl preview narrative parser is dependency-free and id-keyed', () => {
+  const { parseBcNarrative, renderMarkdown } = require(path.join(ROOT, 'src', 'utils', 'narrative.js'));
+  const specMd = [
+    '### UC-CAT-001: CreateCategory',
+    '',
+    '**Precondiciones**:',
+    '- El `name` no existe.',
+    '',
+    '### UC-CAT-002: UpdateCategory',
+    '',
+    'Updates a category.',
+  ].join('\n');
+  const flowsMd = [
+    '| UC | Nombre | Impl | Flujo(s) |',
+    '|----|--------|------|----------|',
+    '| UC-CAT-001 | CreateCategory | scaffold | FL-CAT-001 |',
+    '',
+    '### FL-CAT-001: CreateCategory — happy path',
+    '',
+    '**Given**:',
+    '- nothing exists',
+  ].join('\n');
+
+  const narrative = parseBcNarrative(specMd, flowsMd);
+  assert.ok(narrative.get('UC-CAT-001'), 'spec section keyed by id');
+  assert.match(narrative.get('UC-CAT-001').spec.html, /<strong>Precondiciones<\/strong>/, 'markdown rendered to HTML');
+  assert.strictEqual(narrative.get('UC-CAT-001').flows.length, 1, 'flow linked via coverage matrix');
+  assert.strictEqual(narrative.get('UC-CAT-001').flows[0].id, 'FL-CAT-001');
+  assert.match(renderMarkdown('plain `code` and **bold**'), /<code>code<\/code>.*<strong>bold<\/strong>/);
+});
+
 test('published event payload docs do not whitelist auth-context', async () => {
   const files = [
     path.join(ROOT, 'README.md'),

@@ -1,0 +1,2917 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>catalog — REST API</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <style>
+    .topbar { display: none; }
+    .back-bar { background: #1b1b1b; color: #ccc; padding: 8px 20px; font-size: 13px; display: flex; align-items: center; gap: 12px; }
+    .back-bar a { color: #90caf9; text-decoration: none; }
+    .back-bar a:hover { text-decoration: underline; }
+    /* Basic dark theme for Swagger UI (no Bootstrap on this page). */
+    [data-bs-theme="dark"] body { background: #1a1a1a; }
+    [data-bs-theme="dark"] .swagger-ui,
+    [data-bs-theme="dark"] .swagger-ui .info .title,
+    [data-bs-theme="dark"] .swagger-ui .info li,
+    [data-bs-theme="dark"] .swagger-ui .info p,
+    [data-bs-theme="dark"] .swagger-ui .info a,
+    [data-bs-theme="dark"] .swagger-ui .opblock-tag,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-description,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary-path,
+    [data-bs-theme="dark"] .swagger-ui table thead tr td,
+    [data-bs-theme="dark"] .swagger-ui table thead tr th,
+    [data-bs-theme="dark"] .swagger-ui .parameter__name,
+    [data-bs-theme="dark"] .swagger-ui .parameter__type,
+    [data-bs-theme="dark"] .swagger-ui .response-col_status,
+    [data-bs-theme="dark"] .swagger-ui .response-col_description,
+    [data-bs-theme="dark"] .swagger-ui .model,
+    [data-bs-theme="dark"] .swagger-ui .model-title,
+    [data-bs-theme="dark"] .swagger-ui label { color: #e0e0e0; }
+    [data-bs-theme="dark"] .swagger-ui .scheme-container,
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-section-header { background: #2a2a2a; box-shadow: none; }
+    [data-bs-theme="dark"] .swagger-ui section.models,
+    [data-bs-theme="dark"] .swagger-ui .opblock { background: #232323; border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .opblock .opblock-summary { border-color: #3a3a3a; }
+    [data-bs-theme="dark"] .swagger-ui .model-box { background: rgba(255,255,255,.05); }
+    [data-bs-theme="dark"] .swagger-ui svg:not(:root) { fill: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="back-bar">
+    <a href="index.html">&#8592; <span data-i18n="nav.dashboard">Panel</span></a> &nbsp;/&nbsp; catalog — <span data-i18n="nav.restApi">API REST</span> 
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    SwaggerUIBundle({
+      spec: {
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Catalog BC — Public API",
+    "version": "1.0.0",
+    "description": "API pública del BC catalog de Canasta Familiar. Expone operaciones de consulta para clientes (sin autenticación) y operaciones de gestión para administradores (ROLE_ADMIN).\n"
+  },
+  "servers": [
+    {
+      "url": "/api/catalog/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "categories",
+      "description": "Gestión del ciclo de vida de categorías"
+    },
+    {
+      "name": "products",
+      "description": "Gestión del ciclo de vida de productos y sus imágenes"
+    }
+  ],
+  "paths": {
+    "/categories": {
+      "post": {
+        "operationId": "createCategory",
+        "summary": "Crear categoría",
+        "description": "Crea una nueva categoría con status ACTIVE. El nombre debe ser único.",
+        "tags": [
+          "categories"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Clave idempotente para prevenir duplicados en creación de recursos."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Nombre único de la categoría",
+                    "example": "Lácteos"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Descripción opcional de la categoría"
+                  },
+                  "parentCategoryId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "ID de la categoría padre para jerarquía. Null para categorías raíz."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Categoría creada exitosamente",
+            "headers": {
+              "Location": {
+                "description": "URL de la nueva categoría",
+                "schema": {
+                  "type": "string",
+                  "example": "/api/catalog/v1/categories/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Código de error de negocio",
+                      "example": "PRODUCT_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Descripción legible del error"
+                    },
+                    "details": {
+                      "type": "object",
+                      "description": "Contexto adicional del error (campo y valor que fallaron)"
+                    }
+                  }
+                },
+                "examples": {
+                  "category_not_active": {
+                    "value": {
+                      "code": "CATEGORY_NOT_ACTIVE",
+                      "message": "The specified category is not ACTIVE."
+                    }
+                  },
+                  "product_not_ready": {
+                    "value": {
+                      "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                      "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                    }
+                  },
+                  "category_has_products": {
+                    "value": {
+                      "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                      "message": "The category cannot be deactivated because it has active products assigned to it."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCategories",
+        "summary": "Listar categorías",
+        "description": "Retorna una lista paginada de categorías. Endpoint público.",
+        "tags": [
+          "categories"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "INACTIVE"
+              ],
+              "description": "Estado del ciclo de vida de una categoría"
+            }
+          },
+          {
+            "name": "parentCategoryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "createdAt",
+                "name_desc",
+                "createdAt_desc"
+              ],
+              "default": "name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de categorías",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "total",
+                    "page",
+                    "size",
+                    "pages"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "status"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "parentCategoryId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "nullable": true
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ACTIVE",
+                              "INACTIVE"
+                            ],
+                            "description": "Estado del ciclo de vida de una categoría"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "Total de registros que coinciden con los filtros"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "pages": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/categories/{id}": {
+      "get": {
+        "operationId": "getCategory",
+        "summary": "Obtener categoría por ID",
+        "description": "Retorna el detalle completo de una categoría. Endpoint público.",
+        "tags": [
+          "categories"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalle de la categoría",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "status",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "parentCategoryId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ACTIVE",
+                        "INACTIVE"
+                      ],
+                      "description": "Estado del ciclo de vida de una categoría"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCategory",
+        "summary": "Actualizar categoría",
+        "description": "Actualiza uno o más campos de una categoría existente.",
+        "tags": [
+          "categories"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Todos los campos son opcionales. Solo se actualizan los campos provistos.",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "parentCategoryId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Categoría actualizada"
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/categories/{id}/deactivate": {
+      "patch": {
+        "operationId": "deactivateCategory",
+        "summary": "Desactivar categoría",
+        "description": "Transiciona la categoría a estado INACTIVE. Requiere que no tenga productos ACTIVE.",
+        "tags": [
+          "categories"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Categoría desactivada"
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_active": {
+                    "value": {
+                      "code": "CATEGORY_NOT_ACTIVE",
+                      "message": "The specified category is not ACTIVE."
+                    }
+                  },
+                  "product_not_ready": {
+                    "value": {
+                      "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                      "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                    }
+                  },
+                  "category_has_products": {
+                    "value": {
+                      "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                      "message": "The category cannot be deactivated because it has active products assigned to it."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/categories/{id}/reactivate": {
+      "patch": {
+        "operationId": "reactivateCategory",
+        "summary": "Reactivar categoría",
+        "description": "Restaura la categoría al estado ACTIVE.",
+        "tags": [
+          "categories"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Categoría reactivada"
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products": {
+      "post": {
+        "operationId": "createProduct",
+        "summary": "Crear producto",
+        "description": "Crea un nuevo producto en estado DRAFT. El SKU debe ser único. La categoría asignada debe existir y estar en estado ACTIVE.\n",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Clave idempotente para prevenir duplicados en creación de recursos."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "sku",
+                  "price",
+                  "categoryId"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "example": "Leche Entera 1L"
+                  },
+                  "sku": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "example": "LAC-001"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Descripción completa del producto"
+                  },
+                  "price": {
+                    "type": "object",
+                    "description": "Monto monetario exacto con su código de moneda ISO 4217",
+                    "required": [
+                      "amount",
+                      "currency"
+                    ],
+                    "properties": {
+                      "amount": {
+                        "type": "string",
+                        "description": "Monto exacto en formato decimal con 4 decimales. Siempre positivo.",
+                        "example": "3500.0000",
+                        "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "Código de moneda ISO 4217",
+                        "minLength": 3,
+                        "maxLength": 3,
+                        "pattern": "^[A-Z]{3}$",
+                        "example": "COP"
+                      }
+                    }
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Producto creado exitosamente",
+            "headers": {
+              "Location": {
+                "description": "URL del nuevo producto",
+                "schema": {
+                  "type": "string",
+                  "example": "/api/catalog/v1/products/3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_active": {
+                    "value": {
+                      "code": "CATEGORY_NOT_ACTIVE",
+                      "message": "The specified category is not ACTIVE."
+                    }
+                  },
+                  "product_not_ready": {
+                    "value": {
+                      "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                      "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                    }
+                  },
+                  "category_has_products": {
+                    "value": {
+                      "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                      "message": "The category cannot be deactivated because it has active products assigned to it."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listProducts",
+        "summary": "Listar productos",
+        "description": "Retorna una lista paginada de productos con filtros opcionales. Endpoint público.",
+        "tags": [
+          "products"
+        ],
+        "parameters": [
+          {
+            "name": "categoryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "ACTIVE",
+                "DISCONTINUED"
+              ],
+              "description": "Estado del ciclo de vida de un producto"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Búsqueda por texto en nombre y SKU (LIKE_CONTAINS, case-insensitive)",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "name_desc",
+                "createdAt",
+                "createdAt_desc",
+                "price",
+                "price_desc"
+              ],
+              "default": "createdAt_desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de productos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "total",
+                    "page",
+                    "size",
+                    "pages"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "sku",
+                          "price",
+                          "status",
+                          "categoryId"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "sku": {
+                            "type": "string"
+                          },
+                          "price": {
+                            "type": "object",
+                            "description": "Monto monetario exacto con su código de moneda ISO 4217",
+                            "required": [
+                              "amount",
+                              "currency"
+                            ],
+                            "properties": {
+                              "amount": {
+                                "type": "string",
+                                "description": "Monto exacto en formato decimal con 4 decimales. Siempre positivo.",
+                                "example": "3500.0000",
+                                "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+                              },
+                              "currency": {
+                                "type": "string",
+                                "description": "Código de moneda ISO 4217",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "pattern": "^[A-Z]{3}$",
+                                "example": "COP"
+                              }
+                            }
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "DRAFT",
+                              "ACTIVE",
+                              "DISCONTINUED"
+                            ],
+                            "description": "Estado del ciclo de vida de un producto"
+                          },
+                          "categoryId": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "pages": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "operationId": "getProduct",
+        "summary": "Obtener producto por ID",
+        "description": "Retorna el detalle completo de un producto incluyendo todas sus imágenes. Endpoint público.",
+        "tags": [
+          "products"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalle del producto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "sku",
+                    "price",
+                    "status",
+                    "categoryId",
+                    "images",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "sku": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "price": {
+                      "type": "object",
+                      "description": "Monto monetario exacto con su código de moneda ISO 4217",
+                      "required": [
+                        "amount",
+                        "currency"
+                      ],
+                      "properties": {
+                        "amount": {
+                          "type": "string",
+                          "description": "Monto exacto en formato decimal con 4 decimales. Siempre positivo.",
+                          "example": "3500.0000",
+                          "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+                        },
+                        "currency": {
+                          "type": "string",
+                          "description": "Código de moneda ISO 4217",
+                          "minLength": 3,
+                          "maxLength": 3,
+                          "pattern": "^[A-Z]{3}$",
+                          "example": "COP"
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "DRAFT",
+                        "ACTIVE",
+                        "DISCONTINUED"
+                      ],
+                      "description": "Estado del ciclo de vida de un producto"
+                    },
+                    "categoryId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "url",
+                          "imageType",
+                          "displayOrder"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "altText": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "imageType": {
+                            "type": "string",
+                            "enum": [
+                              "MAIN",
+                              "GALLERY",
+                              "THUMBNAIL"
+                            ],
+                            "description": "Rol de visualización de una imagen de producto"
+                          },
+                          "displayOrder": {
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "description": "Imágenes ordenadas por displayOrder ASC"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateProduct",
+        "summary": "Actualizar producto",
+        "description": "Actualiza uno o más campos de un producto. No aplicable a productos DISCONTINUED.\n",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Todos los campos son opcionales. Solo se actualizan los campos provistos.",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "price": {
+                    "type": "object",
+                    "description": "Monto monetario exacto con su código de moneda ISO 4217",
+                    "required": [
+                      "amount",
+                      "currency"
+                    ],
+                    "properties": {
+                      "amount": {
+                        "type": "string",
+                        "description": "Monto exacto en formato decimal con 4 decimales. Siempre positivo.",
+                        "example": "3500.0000",
+                        "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "Código de moneda ISO 4217",
+                        "minLength": 3,
+                        "maxLength": 3,
+                        "pattern": "^[A-Z]{3}$",
+                        "example": "COP"
+                      }
+                    }
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Producto actualizado"
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_active": {
+                    "value": {
+                      "code": "CATEGORY_NOT_ACTIVE",
+                      "message": "The specified category is not ACTIVE."
+                    }
+                  },
+                  "product_not_ready": {
+                    "value": {
+                      "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                      "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                    }
+                  },
+                  "category_has_products": {
+                    "value": {
+                      "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                      "message": "The category cannot be deactivated because it has active products assigned to it."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}/activate": {
+      "patch": {
+        "operationId": "activateProduct",
+        "summary": "Activar producto",
+        "description": "Transiciona el producto de DRAFT a ACTIVE. Requiere que el producto tenga nombre, precio positivo y categoría ACTIVE.\n",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Producto activado"
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_active": {
+                    "value": {
+                      "code": "CATEGORY_NOT_ACTIVE",
+                      "message": "The specified category is not ACTIVE."
+                    }
+                  },
+                  "product_not_ready": {
+                    "value": {
+                      "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                      "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                    }
+                  },
+                  "category_has_products": {
+                    "value": {
+                      "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                      "message": "The category cannot be deactivated because it has active products assigned to it."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}/discontinue": {
+      "patch": {
+        "operationId": "discontinueProduct",
+        "summary": "Discontinuar producto",
+        "description": "Retira permanentemente el producto. Acción irreversible. Emite ProductDiscontinued.",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Producto discontinuado"
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}/images": {
+      "post": {
+        "operationId": "addProductImage",
+        "summary": "Agregar imagen al producto",
+        "description": "Sube una nueva imagen al gallery de un producto como multipart/form-data. El binario se almacena en el object store product-media y se persiste su URL pública. No aplicable a productos DISCONTINUED.\n",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "image",
+                  "imageType",
+                  "displayOrder"
+                ],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Archivo de imagen (PNG, JPEG o WebP, máx. 5MB)."
+                  },
+                  "altText": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Texto alternativo accesible."
+                  },
+                  "imageType": {
+                    "type": "string",
+                    "description": "Rol de la imagen dentro del gallery."
+                  },
+                  "displayOrder": {
+                    "type": "integer",
+                    "description": "Orden ascendente de aparición."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Imagen agregada exitosamente",
+            "headers": {
+              "Location": {
+                "description": "URL de la nueva imagen",
+                "schema": {
+                  "type": "string",
+                  "example": "/api/catalog/v1/products/3fa85f64/images/img-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud contiene parámetros inválidos o mal formados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}/images/{imageId}": {
+      "delete": {
+        "operationId": "removeProductImage",
+        "summary": "Eliminar imagen del producto",
+        "description": "Elimina una imagen del gallery de un producto. No aplicable a productos DISCONTINUED.",
+        "tags": [
+          "products"
+        ],
+        "security": [
+          {
+            "bearerAuth": [
+              "ROLE_ADMIN"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "imageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Imagen eliminada"
+          },
+          "401": {
+            "description": "Token de autenticación ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El usuario autenticado no tiene permisos para esta operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "category_not_found": {
+                    "value": {
+                      "code": "CATEGORY_NOT_FOUND",
+                      "message": "The requested category does not exist."
+                    }
+                  },
+                  "product_not_found": {
+                    "value": {
+                      "code": "PRODUCT_NOT_FOUND",
+                      "message": "The requested product does not exist."
+                    }
+                  },
+                  "image_not_found": {
+                    "value": {
+                      "code": "IMAGE_NOT_FOUND",
+                      "message": "The requested product image does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El recurso ya existe o el estado actual impide la operación",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "sku_exists": {
+                    "value": {
+                      "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                      "message": "A product with SKU 'LAC-001' already exists."
+                    }
+                  },
+                  "name_exists": {
+                    "value": {
+                      "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                      "message": "A category with name 'Lácteos' already exists."
+                    }
+                  },
+                  "product_discontinued": {
+                    "value": {
+                      "code": "PRODUCT_ALREADY_DISCONTINUED",
+                      "message": "The product has been permanently discontinued and cannot be modified."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "description": "Clave idempotente para prevenir duplicados en creación de recursos."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "La solicitud contiene parámetros inválidos o mal formados",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Token de autenticación ausente o inválido",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "El usuario autenticado no tiene permisos para esta operación",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "El recurso solicitado no existe",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "category_not_found": {
+                "value": {
+                  "code": "CATEGORY_NOT_FOUND",
+                  "message": "The requested category does not exist."
+                }
+              },
+              "product_not_found": {
+                "value": {
+                  "code": "PRODUCT_NOT_FOUND",
+                  "message": "The requested product does not exist."
+                }
+              },
+              "image_not_found": {
+                "value": {
+                  "code": "IMAGE_NOT_FOUND",
+                  "message": "The requested product image does not exist."
+                }
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "El recurso ya existe o el estado actual impide la operación",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "sku_exists": {
+                "value": {
+                  "code": "PRODUCT_SKU_ALREADY_EXISTS",
+                  "message": "A product with SKU 'LAC-001' already exists."
+                }
+              },
+              "name_exists": {
+                "value": {
+                  "code": "CATEGORY_NAME_ALREADY_EXISTS",
+                  "message": "A category with name 'Lácteos' already exists."
+                }
+              },
+              "product_discontinued": {
+                "value": {
+                  "code": "PRODUCT_ALREADY_DISCONTINUED",
+                  "message": "The product has been permanently discontinued and cannot be modified."
+                }
+              }
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "La solicitud es semánticamente inválida según las reglas de negocio",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "category_not_active": {
+                "value": {
+                  "code": "CATEGORY_NOT_ACTIVE",
+                  "message": "The specified category is not ACTIVE."
+                }
+              },
+              "product_not_ready": {
+                "value": {
+                  "code": "PRODUCT_NOT_READY_FOR_ACTIVATION",
+                  "message": "The product cannot be activated. Ensure it has a name, a positive price, and an ACTIVE category."
+                }
+              },
+              "category_has_products": {
+                "value": {
+                  "code": "CATEGORY_HAS_ACTIVE_PRODUCTS",
+                  "message": "The category cannot be deactivated because it has active products assigned to it."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CategoryStatus": {
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "INACTIVE"
+        ],
+        "description": "Estado del ciclo de vida de una categoría"
+      },
+      "ProductStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "DISCONTINUED"
+        ],
+        "description": "Estado del ciclo de vida de un producto"
+      },
+      "ImageType": {
+        "type": "string",
+        "enum": [
+          "MAIN",
+          "GALLERY",
+          "THUMBNAIL"
+        ],
+        "description": "Rol de visualización de una imagen de producto"
+      },
+      "Money": {
+        "type": "object",
+        "description": "Monto monetario exacto con su código de moneda ISO 4217",
+        "required": [
+          "amount",
+          "currency"
+        ],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Monto exacto en formato decimal con 4 decimales. Siempre positivo.",
+            "example": "3500.0000",
+            "pattern": "^[0-9]+\\.[0-9]{1,4}$"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Código de moneda ISO 4217",
+            "minLength": 3,
+            "maxLength": 3,
+            "pattern": "^[A-Z]{3}$",
+            "example": "COP"
+          }
+        }
+      },
+      "CreateCategoryRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Nombre único de la categoría",
+            "example": "Lácteos"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Descripción opcional de la categoría"
+          },
+          "parentCategoryId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID de la categoría padre para jerarquía. Null para categorías raíz."
+          }
+        }
+      },
+      "UpdateCategoryRequest": {
+        "type": "object",
+        "description": "Todos los campos son opcionales. Solo se actualizan los campos provistos.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "parentCategoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "CreateProductRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "sku",
+          "price",
+          "categoryId"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Leche Entera 1L"
+          },
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "LAC-001"
+          },
+          "description": {
+            "type": "string",
+            "description": "Descripción completa del producto"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "UpdateProductRequest": {
+        "type": "object",
+        "description": "Todos los campos son opcionales. Solo se actualizan los campos provistos.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CategoryResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "parentCategoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/CategoryStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CategorySummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentCategoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/CategoryStatus"
+          }
+        }
+      },
+      "CategoryPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "page",
+          "size",
+          "pages"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategorySummary"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total de registros que coinciden con los filtros"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        }
+      },
+      "ProductImageSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "imageType",
+          "displayOrder"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "altText": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageType": {
+            "$ref": "#/components/schemas/ImageType"
+          },
+          "displayOrder": {
+            "type": "integer"
+          }
+        }
+      },
+      "ProductSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "sku",
+          "price",
+          "status",
+          "categoryId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ProductDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "sku",
+          "price",
+          "status",
+          "categoryId",
+          "images",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductImageSummary"
+            },
+            "description": "Imágenes ordenadas por displayOrder ASC"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProductSummaryPage": {
+        "type": "object",
+        "required": [
+          "data",
+          "total",
+          "page",
+          "size",
+          "pages"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductSummary"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Código de error de negocio",
+            "example": "PRODUCT_NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "description": "Descripción legible del error"
+          },
+          "details": {
+            "type": "object",
+            "description": "Contexto adicional del error (campo y valor que fallaron)"
+          }
+        }
+      }
+    }
+  }
+},
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+      deepLinking: true,
+      tryItOutEnabled: false,
+      validatorUrl: null,
+    });
+  </script>
+</body>
+</html>

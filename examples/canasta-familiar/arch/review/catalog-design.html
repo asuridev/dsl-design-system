@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>catalog — Diagramas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    body { background: var(--bs-secondary-bg); }
+    .diagram-wrap {
+      background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color);
+      border-radius: .5rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      overflow: auto;
+      min-height: 280px;
+      position: relative;
+    }
+    .seq-wrap { text-align: left; }
+    .diag-target { display: inline-block; max-width: none; transform-origin: 0 0; cursor: grab; }
+    .diag-target.dragging { cursor: grabbing; }
+    .seq-wrap .diag-target { display: block; min-width: 600px; }
+    .diagram-toolbar { display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap; margin-bottom: .5rem; position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); padding-bottom: .25rem; }
+    .diagram-hint { text-align: right; margin-bottom: .75rem; }
+    .diag-error pre {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: .4rem;
+      padding: 1rem; font-size: .78rem; text-align: left; white-space: pre-wrap; margin: 0;
+    }
+    .diag-error .error-message { background: #fff3cd; border: 1px solid #ffecb5; border-radius: .4rem; padding: .75rem; text-align: left; margin-bottom: .75rem; }
+    .line-no { color: var(--bs-secondary-color); user-select: none; display: inline-block; width: 3.5rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; text-align: left; }
+    .diagram-title { color: var(--bs-secondary-color); font-size: .85rem; font-weight: 600; margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .04em; }
+    .nav-tabs .nav-link { font-size: .9rem; }
+    .loading-spinner { color: #adb5bd; font-size: .85rem; padding: 2rem; }
+    .diag-target svg { display: block; max-width: none; height: auto; }
+    [data-bs-theme="dark"] .diag-error pre { background: #2a2410; border-color: #5c4d12; color: #e8dca6; }
+    [data-bs-theme="dark"] .diag-error .error-message { background: #322a0c; border-color: #5c4d12; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">Panel</span></a>
+        <span class="navbar-brand fw-bold mb-0">catalog — <span data-i18n="nav.diagrams">Diagramas</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><a href="catalog-openapi.html" class="btn btn-sm btn-outline-success" data-i18n="nav.restApi">API REST</a><a href="catalog-asyncapi.html" class="btn btn-sm btn-outline-primary" data-i18n="nav.events">Eventos</a>
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div></div>
+    </div>
+  </nav>
+
+  <div class="container-xl pb-5">
+    <ul class="nav nav-tabs mb-4" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-overview" data-bs-toggle="tab"
+          data-bs-target="#pane-overview" type="button" role="tab">Vista general</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-domain" data-bs-toggle="tab"
+          data-bs-target="#pane-domain" type="button" role="tab">Modelo de dominio</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-states" data-bs-toggle="tab"
+          data-bs-target="#pane-states" type="button" role="tab">Estados <span class="badge bg-secondary ms-1">2</span></button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-seq" data-bs-toggle="tab"
+          data-bs-target="#pane-seq" type="button" role="tab">Secuencias <span class="badge bg-secondary ms-1">2</span></button>
+      </li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="pane-overview" role="tabpanel">
+        <div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-0">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-0" class="diag-target"><pre class="mermaid" data-diagram-id="diag-0">flowchart TD
+    subgraph ADMIN[&quot;👤 Admin&quot;]
+        A1[&quot;CreateCategory UC-CAT-001&quot;]
+        A2[&quot;UpdateCategory UC-CAT-002&quot;]
+        A3[&quot;DeactivateCategory UC-CAT-003&quot;]
+        A4[&quot;ReactivateCategory UC-CAT-004&quot;]
+        A7[&quot;CreateProduct UC-CAT-007&quot;]
+        A8[&quot;UpdateProduct UC-CAT-008&quot;]
+        A9[&quot;ActivateProduct UC-CAT-009&quot;]
+        A10[&quot;DiscontinueProduct UC-CAT-010&quot;]
+        A11[&quot;AddProductImage UC-CAT-011&quot;]
+        A12[&quot;RemoveProductImage UC-CAT-012&quot;]
+    end
+
+    subgraph CUSTOMER[&quot;🛍️ Customer (Public)&quot;]
+        C5[&quot;GetCategory UC-CAT-005&quot;]
+        C6[&quot;ListCategories UC-CAT-006&quot;]
+        C13[&quot;GetProduct UC-CAT-013&quot;]
+        C14[&quot;ListProducts UC-CAT-014&quot;]
+    end
+
+    subgraph SYSTEM[&quot;⚙️ System (orders BC)&quot;]
+        S15[&quot;ValidateProductsAndPrices UC-CAT-015&quot;]
+    end
+
+    subgraph CATALOG[&quot;📦 Catalog BC&quot;]
+        CAT[&quot;Category Aggregate&quot;]
+        PRD[&quot;Product Aggregate&quot;]
+        IMG[&quot;ProductImage Entity&quot;]
+    end
+
+    subgraph EVENTS[&quot;📨 Domain Events&quot;]
+        E1[&quot;ProductActivated → inventory&quot;]
+        E2[&quot;ProductDiscontinued → inventory&quot;]
+    end
+
+    ADMIN --&gt; CAT
+    ADMIN --&gt; PRD
+    ADMIN --&gt; IMG
+    CUSTOMER --&gt; CAT
+    CUSTOMER --&gt; PRD
+    SYSTEM --&gt; PRD
+
+    A9 --&gt; E1
+    A10 --&gt; E2</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-domain" role="tabpanel">
+        <div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-1">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-1" class="diag-target"><pre class="mermaid" data-diagram-id="diag-1">classDiagram
+    class Category {
+        +Uuid id
+        +String name
+        +String description
+        +Uuid parentCategoryId
+        +CategoryStatus status
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(name, description, parentCategoryId) Category
+        +update(name, description, parentCategoryId) void
+        +deactivate() void
+        +reactivate() void
+    }
+
+    class CategoryStatus {
+        &lt;&lt;enumeration&gt;&gt;
+        ACTIVE
+        INACTIVE
+    }
+
+    class Product {
+        +Uuid id
+        +String name
+        +String sku
+        +Text description
+        +Money price
+        +Uuid categoryId
+        +ProductStatus status
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(name, sku, description, price, categoryId) Product
+        +update(name, description, price, categoryId) void
+        +activate() void
+        +discontinue() void
+        +addImage(url, altText, imageType, displayOrder) void
+        +removeImage(imageId) void
+    }
+
+    class ProductStatus {
+        &lt;&lt;enumeration&gt;&gt;
+        DRAFT
+        ACTIVE
+        DISCONTINUED
+    }
+
+    class ProductImage {
+        +Uuid id
+        +Url url
+        +String altText
+        +ImageType imageType
+        +Integer displayOrder
+    }
+
+    class ImageType {
+        &lt;&lt;enumeration&gt;&gt;
+        MAIN
+        GALLERY
+        THUMBNAIL
+    }
+
+    class Money {
+        &lt;&lt;valueObject&gt;&gt;
+        +Decimal amount
+        +String currency
+    }
+
+    class ProductActivated {
+        &lt;&lt;domainEvent&gt;&gt;
+        +Uuid productId
+        +String sku
+        +String name
+        +Uuid categoryId
+    }
+
+    class ProductDiscontinued {
+        &lt;&lt;domainEvent&gt;&gt;
+        +Uuid productId
+        +String sku
+    }
+
+    Category &quot;1&quot; --&gt; &quot;0..*&quot; Category : parentCategoryId
+    Category --&gt; CategoryStatus
+    Product --&gt; ProductStatus
+    Product --&gt; Money : price
+    Product &quot;1&quot; *-- &quot;0..*&quot; ProductImage : images
+    ProductImage --&gt; ImageType
+    Product --&gt; Category : categoryId
+    Product ..&gt; ProductActivated : emits on activate
+    Product ..&gt; ProductDiscontinued : emits on discontinue</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-states" role="tabpanel">
+        <h6 class="diagram-title">Category States</h6><div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-2">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-2" class="diag-target"><pre class="mermaid" data-diagram-id="diag-2">stateDiagram-v2
+    [*] --&gt; ACTIVE : UC-CAT-001 CreateCategory (defaults to ACTIVE)
+
+    ACTIVE --&gt; INACTIVE : UC-CAT-003 DeactivateCategory [CAT-RULE-006: no active products assigned]
+
+    INACTIVE --&gt; ACTIVE : UC-CAT-004 ReactivateCategory</pre></div>
+    </div><h6 class="diagram-title">Product States</h6><div class="diagram-wrap" tabindex="0" data-diagram-wrap="diag-3">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-3" class="diag-target"><pre class="mermaid" data-diagram-id="diag-3">stateDiagram-v2
+    [*] --&gt; DRAFT : UC-CAT-007 CreateProduct
+
+    DRAFT --&gt; ACTIVE : UC-CAT-009 ActivateProduct [CAT-RULE-001: product ready + category ACTIVE] emits ProductActivated
+
+    DRAFT --&gt; DISCONTINUED : UC-CAT-010 DiscontinueProduct emits ProductDiscontinued
+
+    ACTIVE --&gt; DISCONTINUED : UC-CAT-010 DiscontinueProduct emits ProductDiscontinued
+
+    DISCONTINUED --&gt; [*] : Terminal state No further transitions</pre></div>
+    </div>
+      </div>
+      <div class="tab-pane fade" id="pane-seq" role="tabpanel">
+        <h6 class="diagram-title">Product Activated</h6><div class="diagram-wrap seq-wrap" tabindex="0" data-diagram-wrap="diag-4">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-4" class="diag-target"><pre class="mermaid" data-diagram-id="diag-4">sequenceDiagram
+    participant Admin
+    participant CatalogAPI as Catalog API
+    participant ProductAggregate as Product Aggregate
+    participant Outbox
+    participant Broker as Message Broker
+    participant Inventory as Inventory BC
+
+    Admin-&gt;&gt;CatalogAPI: PATCH /products/{id}/activate
+    CatalogAPI-&gt;&gt;ProductAggregate: load Product by id
+    CatalogAPI-&gt;&gt;CatalogAPI: load Category by product.categoryId
+    CatalogAPI-&gt;&gt;CatalogAPI: validate CAT-RULE-001 (name not empty, price &gt; 0, category ACTIVE)
+    CatalogAPI-&gt;&gt;ProductAggregate: activate()
+    ProductAggregate--&gt;&gt;CatalogAPI: status = ACTIVE, event ProductActivated raised
+    CatalogAPI-&gt;&gt;Outbox: persist ProductActivated { productId, sku, name, categoryId }
+    CatalogAPI--&gt;&gt;Admin: 204 No Content
+
+    Outbox-&gt;&gt;Broker: publish to catalog.product.activated
+    Broker-&gt;&gt;Inventory: deliver ProductActivated
+    Inventory-&gt;&gt;Inventory: create StockItem for productId</pre></div>
+    </div><h6 class="diagram-title">Product Discontinued</h6><div class="diagram-wrap seq-wrap" tabindex="0" data-diagram-wrap="diag-5">
+      <div class="diagram-toolbar" aria-label="Diagram controls">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="in" data-i18n-title="diagram.zoomIn" title="Acercar">+</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="out" data-i18n-title="diagram.zoomOut" title="Alejar">-</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="fit" data-i18n="diagram.fitWidth">Ajustar ancho</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-zoom="reset" data-i18n="diagram.reset">Restablecer</button>
+      </div>
+      <div class="diagram-hint small text-muted" data-i18n="diagram.dragHint">Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.</div>
+      <div id="diag-5" class="diag-target"><pre class="mermaid" data-diagram-id="diag-5">sequenceDiagram
+    participant Admin
+    participant CatalogAPI as Catalog API
+    participant ProductAggregate as Product Aggregate
+    participant Outbox
+    participant Broker as Message Broker
+    participant Inventory as Inventory BC
+
+    Admin-&gt;&gt;CatalogAPI: PATCH /products/{id}/discontinue
+    CatalogAPI-&gt;&gt;ProductAggregate: load Product by id
+    CatalogAPI-&gt;&gt;ProductAggregate: discontinue()
+    ProductAggregate--&gt;&gt;CatalogAPI: status = DISCONTINUED, event ProductDiscontinued raised
+    CatalogAPI-&gt;&gt;Outbox: persist ProductDiscontinued { productId, sku }
+    CatalogAPI--&gt;&gt;Admin: 204 No Content
+
+    Outbox-&gt;&gt;Broker: publish to catalog.product.discontinued
+    Broker-&gt;&gt;Inventory: deliver ProductDiscontinued
+    Inventory-&gt;&gt;Inventory: permanently close StockItem for productId</pre></div>
+    </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    const DIAGRAMS = [{"id":"diag-0","title":"Overview","fileName":"catalog-diagram.mmd","kind":"overview","source":"flowchart TD\n    subgraph ADMIN[\"👤 Admin\"]\n        A1[\"CreateCategory UC-CAT-001\"]\n        A2[\"UpdateCategory UC-CAT-002\"]\n        A3[\"DeactivateCategory UC-CAT-003\"]\n        A4[\"ReactivateCategory UC-CAT-004\"]\n        A7[\"CreateProduct UC-CAT-007\"]\n        A8[\"UpdateProduct UC-CAT-008\"]\n        A9[\"ActivateProduct UC-CAT-009\"]\n        A10[\"DiscontinueProduct UC-CAT-010\"]\n        A11[\"AddProductImage UC-CAT-011\"]\n        A12[\"RemoveProductImage UC-CAT-012\"]\n    end\n\n    subgraph CUSTOMER[\"🛍️ Customer (Public)\"]\n        C5[\"GetCategory UC-CAT-005\"]\n        C6[\"ListCategories UC-CAT-006\"]\n        C13[\"GetProduct UC-CAT-013\"]\n        C14[\"ListProducts UC-CAT-014\"]\n    end\n\n    subgraph SYSTEM[\"⚙️ System (orders BC)\"]\n        S15[\"ValidateProductsAndPrices UC-CAT-015\"]\n    end\n\n    subgraph CATALOG[\"📦 Catalog BC\"]\n        CAT[\"Category Aggregate\"]\n        PRD[\"Product Aggregate\"]\n        IMG[\"ProductImage Entity\"]\n    end\n\n    subgraph EVENTS[\"📨 Domain Events\"]\n        E1[\"ProductActivated → inventory\"]\n        E2[\"ProductDiscontinued → inventory\"]\n    end\n\n    ADMIN --> CAT\n    ADMIN --> PRD\n    ADMIN --> IMG\n    CUSTOMER --> CAT\n    CUSTOMER --> PRD\n    SYSTEM --> PRD\n\n    A9 --> E1\n    A10 --> E2","isSeq":false},{"id":"diag-1","title":"Domain Model","fileName":"catalog-diagram-domain-model.mmd","kind":"domain-model","source":"classDiagram\n    class Category {\n        +Uuid id\n        +String name\n        +String description\n        +Uuid parentCategoryId\n        +CategoryStatus status\n        +DateTime createdAt\n        +DateTime updatedAt\n        +create(name, description, parentCategoryId) Category\n        +update(name, description, parentCategoryId) void\n        +deactivate() void\n        +reactivate() void\n    }\n\n    class CategoryStatus {\n        <<enumeration>>\n        ACTIVE\n        INACTIVE\n    }\n\n    class Product {\n        +Uuid id\n        +String name\n        +String sku\n        +Text description\n        +Money price\n        +Uuid categoryId\n        +ProductStatus status\n        +DateTime createdAt\n        +DateTime updatedAt\n        +create(name, sku, description, price, categoryId) Product\n        +update(name, description, price, categoryId) void\n        +activate() void\n        +discontinue() void\n        +addImage(url, altText, imageType, displayOrder) void\n        +removeImage(imageId) void\n    }\n\n    class ProductStatus {\n        <<enumeration>>\n        DRAFT\n        ACTIVE\n        DISCONTINUED\n    }\n\n    class ProductImage {\n        +Uuid id\n        +Url url\n        +String altText\n        +ImageType imageType\n        +Integer displayOrder\n    }\n\n    class ImageType {\n        <<enumeration>>\n        MAIN\n        GALLERY\n        THUMBNAIL\n    }\n\n    class Money {\n        <<valueObject>>\n        +Decimal amount\n        +String currency\n    }\n\n    class ProductActivated {\n        <<domainEvent>>\n        +Uuid productId\n        +String sku\n        +String name\n        +Uuid categoryId\n    }\n\n    class ProductDiscontinued {\n        <<domainEvent>>\n        +Uuid productId\n        +String sku\n    }\n\n    Category \"1\" --> \"0..*\" Category : parentCategoryId\n    Category --> CategoryStatus\n    Product --> ProductStatus\n    Product --> Money : price\n    Product \"1\" *-- \"0..*\" ProductImage : images\n    ProductImage --> ImageType\n    Product --> Category : categoryId\n    Product ..> ProductActivated : emits on activate\n    Product ..> ProductDiscontinued : emits on discontinue","isSeq":false},{"id":"diag-2","title":"Category States","fileName":"catalog-diagram-category-states.mmd","kind":"states","source":"stateDiagram-v2\n    [*] --> ACTIVE : UC-CAT-001 CreateCategory (defaults to ACTIVE)\n\n    ACTIVE --> INACTIVE : UC-CAT-003 DeactivateCategory [CAT-RULE-006: no active products assigned]\n\n    INACTIVE --> ACTIVE : UC-CAT-004 ReactivateCategory","isSeq":false},{"id":"diag-3","title":"Product States","fileName":"catalog-diagram-product-states.mmd","kind":"states","source":"stateDiagram-v2\n    [*] --> DRAFT : UC-CAT-007 CreateProduct\n\n    DRAFT --> ACTIVE : UC-CAT-009 ActivateProduct [CAT-RULE-001: product ready + category ACTIVE] emits ProductActivated\n\n    DRAFT --> DISCONTINUED : UC-CAT-010 DiscontinueProduct emits ProductDiscontinued\n\n    ACTIVE --> DISCONTINUED : UC-CAT-010 DiscontinueProduct emits ProductDiscontinued\n\n    DISCONTINUED --> [*] : Terminal state No further transitions","isSeq":false},{"id":"diag-4","title":"Product Activated","fileName":"catalog-diagram-product-activated-seq.mmd","kind":"sequence","source":"sequenceDiagram\n    participant Admin\n    participant CatalogAPI as Catalog API\n    participant ProductAggregate as Product Aggregate\n    participant Outbox\n    participant Broker as Message Broker\n    participant Inventory as Inventory BC\n\n    Admin->>CatalogAPI: PATCH /products/{id}/activate\n    CatalogAPI->>ProductAggregate: load Product by id\n    CatalogAPI->>CatalogAPI: load Category by product.categoryId\n    CatalogAPI->>CatalogAPI: validate CAT-RULE-001 (name not empty, price > 0, category ACTIVE)\n    CatalogAPI->>ProductAggregate: activate()\n    ProductAggregate-->>CatalogAPI: status = ACTIVE, event ProductActivated raised\n    CatalogAPI->>Outbox: persist ProductActivated { productId, sku, name, categoryId }\n    CatalogAPI-->>Admin: 204 No Content\n\n    Outbox->>Broker: publish to catalog.product.activated\n    Broker->>Inventory: deliver ProductActivated\n    Inventory->>Inventory: create StockItem for productId","isSeq":true},{"id":"diag-5","title":"Product Discontinued","fileName":"catalog-diagram-product-discontinued-seq.mmd","kind":"sequence","source":"sequenceDiagram\n    participant Admin\n    participant CatalogAPI as Catalog API\n    participant ProductAggregate as Product Aggregate\n    participant Outbox\n    participant Broker as Message Broker\n    participant Inventory as Inventory BC\n\n    Admin->>CatalogAPI: PATCH /products/{id}/discontinue\n    CatalogAPI->>ProductAggregate: load Product by id\n    CatalogAPI->>ProductAggregate: discontinue()\n    ProductAggregate-->>CatalogAPI: status = DISCONTINUED, event ProductDiscontinued raised\n    CatalogAPI->>Outbox: persist ProductDiscontinued { productId, sku }\n    CatalogAPI-->>Admin: 204 No Content\n\n    Outbox->>Broker: publish to catalog.product.discontinued\n    Broker->>Inventory: deliver ProductDiscontinued\n    Inventory->>Inventory: permanently close StockItem for productId","isSeq":true}];
+    mermaid.initialize({ startOnLoad: false, theme: (window.__dslPreviewTheme === 'dark' ? 'dark' : 'default') });
+
+    const rendered = new Set(); // ids successfully rendered
+    const failed  = new Set(); // ids that threw — no retry
+
+    function escapeText(value) {
+      return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function numberedSource(source) {
+      return String(source || '').split('\n').map((line, index) =>
+        '<span class="line-no">' + String(index + 1).padStart(3, ' ') + '</span>' + escapeText(line)
+      ).join('\n');
+    }
+
+    function setupPanZoom(target) {
+      const wrap = target.closest('.diagram-wrap');
+      const svg = target.querySelector('svg');
+      if (!wrap || !svg || target.dataset.panZoomReady) return;
+      target.dataset.panZoomReady = 'true';
+      let scale = 1;
+      let x = 0;
+      let y = 0;
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+
+      // Return the current SVG's natural width from its viewBox.
+      // This is evaluated lazily so it still works if Mermaid finishes its
+      // async render passes (and sets the viewBox) after setupPanZoom runs.
+      function getNatWidth() {
+        const cur = target.querySelector('svg');
+        if (cur && cur.viewBox && cur.viewBox.baseVal.width > 1) return cur.viewBox.baseVal.width;
+        // Fallback: captured value from setup time
+        return (svg.viewBox && svg.viewBox.baseVal.width > 1)
+          ? svg.viewBox.baseVal.width
+          : (svg.getBoundingClientRect().width || 300);
+      }
+
+      function apply() {
+        // Re-query the SVG each time — Mermaid may have replaced the original
+        // SVG element during its async rendering pipeline (stale-reference guard).
+        const currentSvg = target.querySelector('svg');
+        if (!currentSvg) return;
+        const natW = getNatWidth();
+        // Set an explicit pixel width on the SVG so the layout box reflects
+        // the scaled size (transforms don't affect layout, but width does).
+        currentSvg.style.width = Math.round(natW * scale) + 'px';
+        currentSvg.style.height = 'auto';
+        currentSvg.style.maxWidth = 'none';
+        target.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+      }
+      function zoom(delta) {
+        scale = Math.min(4, Math.max(0.25, Math.round((scale + delta) * 100) / 100));
+        apply();
+      }
+      function reset() {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+      }
+      function fit() {
+        const available = Math.max(240, wrap.clientWidth - 48);
+        const natW = getNatWidth();
+        // No hard minimum so fit-to-width always fills the container exactly.
+        scale = Math.min(2.5, Math.max(0.05, available / natW));
+        x = 0;
+        y = 0;
+        apply();
+      }
+
+      wrap.querySelectorAll('[data-zoom]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const action = btn.getAttribute('data-zoom');
+          if (action === 'in') zoom(0.15);
+          if (action === 'out') zoom(-0.15);
+          if (action === 'reset') reset();
+          if (action === 'fit') fit();
+        });
+      });
+      wrap.addEventListener('keydown', (event) => {
+        if (event.key === '+') { event.preventDefault(); zoom(0.15); }
+        if (event.key === '-') { event.preventDefault(); zoom(-0.15); }
+        if (event.key === '0') { event.preventDefault(); reset(); }
+      });
+      target.addEventListener('pointerdown', (event) => {
+        dragging = true;
+        target.classList.add('dragging');
+        startX = event.clientX - x;
+        startY = event.clientY - y;
+        target.setPointerCapture(event.pointerId);
+      });
+      target.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        x = event.clientX - startX;
+        y = event.clientY - startY;
+        apply();
+      });
+      target.addEventListener('pointerup', (event) => {
+        dragging = false;
+        target.classList.remove('dragging');
+        target.releasePointerCapture(event.pointerId);
+      });
+      // Auto-fit after SVG is painted. Two RAF passes give Mermaid's async
+      // rendering pipeline time to complete before we read the viewBox and apply.
+      requestAnimationFrame(() => requestAnimationFrame(() => fit()));
+    }
+
+    function showError(el, d, errorMessage) {
+      el.className = 'diag-error';
+      const prompt = (window.dslT ? window.dslT('diagram.correctPrompt') : 'Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.') + '\n\nDiagram: ' + (d.fileName || d.title || d.id) + '\nKind: ' + (d.kind || 'unknown') + '\nError: ' + errorMessage;
+      el.innerHTML =
+        '<div class="error-message">' +
+        '<div class="text-warning small mb-2 fw-semibold">&#9888; <span data-i18n="diagram.syntaxError">' + (window.dslT ? window.dslT('diagram.syntaxError') : 'Error de sintaxis del diagrama') + '</span></div>' +
+        '<p class="small mb-1"><strong>' + escapeText(d.fileName || d.title || d.id) + '</strong></p>' +
+        '<p class="small mb-0"><span data-i18n="diagram.errorMessage">' + (window.dslT ? window.dslT('diagram.errorMessage') : 'Mensaje de Mermaid') + '</span>: ' + escapeText(errorMessage) + '</p>' +
+        '</div>' +
+        '<details class="mb-3"><summary class="small fw-semibold" data-i18n="diagram.promptTitle">' + (window.dslT ? window.dslT('diagram.promptTitle') : 'Prompt para el agente') + '</summary><pre class="prompt-box"><code>' + escapeText(prompt) + '</code></pre></details>' +
+        '<div class="text-muted small mb-2 fw-semibold" data-i18n="diagram.rawSource">' + (window.dslT ? window.dslT('diagram.rawSource') : 'Fuente original') + '</div>' +
+        '<pre>' + numberedSource(d.source) + '</pre>';
+    }
+
+    // Apply pan/zoom as soon as Mermaid marks an element as processed.
+    const panZoomObserver = new MutationObserver((mutations) => {
+      for (const mut of mutations) {
+        if (mut.attributeName === 'data-processed') {
+          const preEl = mut.target;
+          if (preEl.getAttribute('data-processed') === 'true') {
+            const diagTarget = preEl.closest('.diag-target');
+            if (diagTarget) setupPanZoom(diagTarget);
+          }
+        }
+      }
+    });
+    document.querySelectorAll('.mermaid').forEach((el) =>
+      panZoomObserver.observe(el, { attributes: true, attributeFilter: ['data-processed'] })
+    );
+    // Fallback: if Mermaid's startOnLoad already processed elements before the
+    // observer was attached, set up pan/zoom for them now.
+    document.querySelectorAll('.mermaid[data-processed="true"]').forEach((preEl) => {
+      const diagTarget = preEl.closest('.diag-target');
+      if (diagTarget) setupPanZoom(diagTarget);
+    });
+
+    // Render only diagrams inside the given Bootstrap tab pane.
+    // We call mermaid.parse() first — mermaid.run() with suppressErrors:true
+    // renders the bomb icon without throwing, so parse() is the only reliable
+    // way to detect syntax errors and show our own error panel.
+    async function renderDiagramsInPane(pane) {
+      for (const d of DIAGRAMS) {
+        if (rendered.has(d.id) || failed.has(d.id)) continue;
+        const el = document.getElementById(d.id);
+        if (!el || !pane.contains(el)) continue;
+        const preEl = el.querySelector('.mermaid');
+        if (!preEl) continue;
+        // If Mermaid already rendered this element (e.g. via startOnLoad default),
+        // just mark it rendered and set up pan/zoom without re-running mermaid.
+        if (preEl.getAttribute('data-processed') === 'true') {
+          rendered.add(d.id);
+          setupPanZoom(el);
+          continue;
+        }
+        // textContent gives decoded text (HTML entities resolved by the browser)
+        const source = preEl.textContent.trim();
+        try {
+          await mermaid.parse(source); // throws ParseError on invalid syntax
+        } catch (parseErr) {
+          failed.add(d.id);
+          showError(el, d, parseErr.message || String(parseErr));
+          continue;
+        }
+        try {
+          await mermaid.run({ nodes: [preEl], suppressErrors: true });
+          rendered.add(d.id);
+          // Call setupPanZoom directly — the SVG is guaranteed to be in the DOM
+          // now that mermaid.run() has resolved. The MutationObserver alone is
+          // unreliable because Mermaid may set data-processed before inserting
+          // the SVG, causing the observer to fire when querySelector('svg') is null.
+          setupPanZoom(el);
+        } catch (runErr) {
+          failed.add(d.id);
+          showError(el, d, runErr.message || String(runErr));
+        }
+      }
+    }
+
+    // On tab switch, render the newly visible pane.
+    document.querySelectorAll('[data-bs-toggle="tab"]').forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', () => {
+        const paneId = btn.getAttribute('data-bs-target');
+        const pane = document.querySelector(paneId);
+        if (pane) renderDiagramsInPane(pane);
+      });
+    });
+
+    // Initial render: only the active pane. Deferred one tick so Mermaid
+    // completes its internal async initialization first.
+    setTimeout(() => {
+      const activePane = document.querySelector('.tab-pane.show.active');
+      if (activePane) renderDiagramsInPane(activePane);
+    }, 0);
+  </script>
+</body>
+</html>

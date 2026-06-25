@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>canasta-familiar — Propuestas de iteración</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('dsl-preview-theme');
+          var theme = (stored === 'dark' || stored === 'light')
+            ? stored
+            : ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (e) { window.__dslPreviewTheme = 'light'; }
+      })();
+    </script>
+  <style>
+    body { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    [data-bs-theme="dark"] .btn-dark {
+      --bs-btn-color: #212529; --bs-btn-bg: #e9ecef; --bs-btn-border-color: #e9ecef;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #f8f9fa; --bs-btn-hover-border-color: #f8f9fa;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #f8f9fa; --bs-btn-active-border-color: #f8f9fa;
+    }
+    [data-bs-theme="dark"] .btn-outline-dark {
+      --bs-btn-color: #dee2e6; --bs-btn-border-color: #6c757d;
+      --bs-btn-hover-color: #212529; --bs-btn-hover-bg: #dee2e6; --bs-btn-hover-border-color: #dee2e6;
+      --bs-btn-active-color: #212529; --bs-btn-active-bg: #dee2e6; --bs-btn-active-border-color: #dee2e6;
+    }
+    .bg-purple { background-color: #6f42c1 !important; }
+    .metric-tile, .decision-card, .detail-card, .saga-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
+    .detail-card { margin-bottom: 1.25rem; }
+    .metric-value { font-size: 1.45rem; font-weight: 700; line-height: 1; }
+    .metric-label { font-size: .8rem; color: var(--bs-secondary-color); margin-top: .35rem; }
+    .metric-detail { font-size: .72rem; color: var(--bs-tertiary-color); margin-top: .2rem; }
+    .decision-card { margin-bottom: 1rem; }
+    .decision-id { font-size: .72rem; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .04em; }
+    .option-row { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .prompt-box { background: #111827; color: #e5e7eb; border-radius: .4rem; padding: .9rem; margin-top: .5rem; white-space: pre-wrap; font-size: .78rem; }
+    .diagnostic-list code { white-space: normal; }
+    .saga-diagram { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem; overflow: auto; text-align: center; }
+    /* Expandable use-case narrative */
+    .uc-row { cursor: pointer; }
+    .uc-toggle { color: var(--bs-secondary-color); text-decoration: none; }
+    .uc-caret { display: inline-block; transition: transform .15s; }
+    .uc-toggle[aria-expanded="true"] .uc-caret { transform: rotate(90deg); }
+    .uc-detail { padding: .5rem .25rem; font-size: .9rem; }
+    .uc-detail .narrative-quote { border-left: 3px solid var(--bs-border-color); padding-left: .75rem; color: var(--bs-secondary-color); margin: .5rem 0; }
+    .uc-detail .narrative-code { background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: .35rem; padding: .6rem; font-size: .8rem; overflow:auto; }
+    .uc-detail .narrative-table { font-size: .82rem; }
+    .uc-detail .narrative-flow > summary { cursor: pointer; }
+    .uc-detail .narrative-subheading { text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); margin-top: .75rem; }
+    /* Copy-to-clipboard control */
+    .copy-btn { font-size: .72rem; }
+    .copy-btn.copied { color: var(--bs-success); border-color: var(--bs-success); }
+    /* Sticky in-page navigation */
+    .review-nav { position: sticky; top: 1rem; font-size: .82rem; }
+    .review-nav a { display: block; padding: .2rem .5rem; border-left: 2px solid transparent; color: var(--bs-secondary-color); text-decoration: none; border-radius: 0 .25rem .25rem 0; }
+    .review-nav a:hover { background: var(--bs-tertiary-bg); color: var(--bs-body-color); }
+    .review-nav a.active { border-left-color: var(--bs-primary); color: var(--bs-body-color); font-weight: 600; }
+    /* Attention panel + cross-link target highlight */
+    .attention-card { border-left: 4px solid var(--bs-warning); }
+    .attention-card.is-error { border-left-color: var(--bs-danger); }
+    .attention-card.is-ok { border-left-color: var(--bs-success); }
+    :target { scroll-margin-top: 4.5rem; }
+    .xref-flash { animation: xrefFlash 1.4s ease-out; }
+    @keyframes xrefFlash { 0% { background: rgba(255,193,7,.45); } 100% { background: transparent; } }
+    .collapsible-section > .section-toggle { cursor: pointer; user-select: none; }
+    .collapsible-section > .section-toggle .uc-caret { transform: rotate(90deg); }
+    .collapsible-section.collapsed > .section-toggle .uc-caret { transform: rotate(0deg); }
+    .collapsible-section.collapsed > .section-body { display: none; }</style>
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container-xl d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="index.html" class="text-white-50 text-decoration-none small">&#8592; <span data-i18n="nav.dashboard">Panel</span></a>
+        <span class="navbar-brand fw-bold mb-0">canasta-familiar — <span data-i18n="prop.title">Propuestas de iteración</span></span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap"><span class="text-muted small">24/6/2026, 6:48:44 p. m.</span>
+    <button type="button" class="btn btn-sm btn-outline-light" data-theme-toggle
+      title="Cambiar tema" data-i18n-title="theme.toggle" aria-label="Cambiar tema" aria-pressed="false"
+      onclick="dslToggleTheme()"><span data-theme-icon aria-hidden="true">&#127769;</span></button>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Language">
+      <button type="button" class="btn btn-outline-light active" data-locale="es" onclick="dslSetLocale('es')">ES</button>
+      <button type="button" class="btn btn-outline-light" data-locale="en" onclick="dslSetLocale('en')">EN</button>
+    </div></div>
+    </div>
+  </nav>
+  <main class="container-xl pb-5">
+    <p class="text-body-secondary" data-i18n="prop.intro">Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.</p>
+    
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-001</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;PaymentApproved&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[0]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-001-0" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-001-0">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;PaymentApproved&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[0] Relevant files: orders.yaml#/domainEvents/consumed[0]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-002</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;PaymentFailed&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[1]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-002-1" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-002-1">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;PaymentFailed&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[1] Relevant files: orders.yaml#/domainEvents/consumed[1]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-003</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;PaymentRefunded&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[2]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-003-2" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-003-2">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;PaymentRefunded&quot; from &quot;payments&quot; which is declared in system.yaml but not yet designed (no payments.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[2] Relevant files: orders.yaml#/domainEvents/consumed[2]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-004</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;StockReservationFailed&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[3]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-004-3" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-004-3">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;StockReservationFailed&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[3] Relevant files: orders.yaml#/domainEvents/consumed[3]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-005</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;StockReleased&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[4]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-005-4" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-005-4">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;StockReleased&quot; from &quot;inventory&quot; which is declared in system.yaml but not yet designed (no inventory.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[4] Relevant files: orders.yaml#/domainEvents/consumed[4]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-006</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;DeliveryOrderCreated&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[5]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-006-5" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-006-5">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;DeliveryOrderCreated&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[5] Relevant files: orders.yaml#/domainEvents/consumed[5]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-007</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;DeliveryCompleted&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[6]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-007-6" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-007-6">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;DeliveryCompleted&quot; from &quot;delivery&quot; which is declared in system.yaml but not yet designed (no delivery.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[6] Relevant files: orders.yaml#/domainEvents/consumed[6]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-008</span>
+          <h6 class="mb-1">[INT-007] orders consumes event &quot;CustomerAddressUpdated&quot; from &quot;customers&quot; which is declared in system.yaml but not yet designed (no customers.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">orders.yaml#/domainEvents/consumed[7]</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-008-7" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-008-7">Review the DSL design decision &quot;[INT-007] orders consumes event &quot;CustomerAddressUpdated&quot; from &quot;customers&quot; which is declared in system.yaml but not yet designed (no customers.yaml in arch/).&quot;. Context: orders.yaml#/domainEvents/consumed[7] Relevant files: orders.yaml#/domainEvents/consumed[7]. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-009</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 1: onSuccess &quot;StockReserved&quot; is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[0]/onSuccess</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-009-8" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-009-8">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 1: onSuccess &quot;StockReserved&quot; is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[0]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[0]/onSuccess. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-010</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 1: onFailure &quot;StockReservationFailed&quot; is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[0]/onFailure</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-010-9" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-010-9">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 1: onFailure &quot;StockReservationFailed&quot; is not published by inventory.yaml (BC not yet designed — no inventory.yaml in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[0]/onFailure Relevant files: system.yaml#/sagas[0]/steps[0]/onFailure. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-011</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 1: compensation &quot;StockReleased&quot; is not published by any designed BC yet (producer BC not yet in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[0]/compensation</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-011-10" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-011-10">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 1: compensation &quot;StockReleased&quot; is not published by any designed BC yet (producer BC not yet in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[0]/compensation Relevant files: system.yaml#/sagas[0]/steps[0]/compensation. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-012</span>
+          <h6 class="mb-1">[INT-012] Saga &quot;CheckoutSaga&quot; step 2: triggeredBy &quot;StockReserved&quot; would be published by an undesigned BC (not yet in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[1]/triggeredBy</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-012-11" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-012-11">Review the DSL design decision &quot;[INT-012] Saga &quot;CheckoutSaga&quot; step 2: triggeredBy &quot;StockReserved&quot; would be published by an undesigned BC (not yet in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[1]/triggeredBy Relevant files: system.yaml#/sagas[0]/steps[1]/triggeredBy. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-013</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 2: onSuccess &quot;PaymentApproved&quot; is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[1]/onSuccess</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-013-12" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-013-12">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 2: onSuccess &quot;PaymentApproved&quot; is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[1]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[1]/onSuccess. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-014</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 2: onFailure &quot;PaymentFailed&quot; is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[1]/onFailure</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-014-13" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-014-13">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 2: onFailure &quot;PaymentFailed&quot; is not published by payments.yaml (BC not yet designed — no payments.yaml in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[1]/onFailure Relevant files: system.yaml#/sagas[0]/steps[1]/onFailure. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-015</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 2: compensation &quot;PaymentRefunded&quot; is not published by any designed BC yet (producer BC not yet in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[1]/compensation</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-015-14" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-015-14">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 2: compensation &quot;PaymentRefunded&quot; is not published by any designed BC yet (producer BC not yet in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[1]/compensation Relevant files: system.yaml#/sagas[0]/steps[1]/compensation. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-016</span>
+          <h6 class="mb-1">[INT-012] Saga &quot;CheckoutSaga&quot; step 3: triggeredBy &quot;PaymentApproved&quot; would be published by an undesigned BC (not yet in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[2]/triggeredBy</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-016-15" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-016-15">Review the DSL design decision &quot;[INT-012] Saga &quot;CheckoutSaga&quot; step 3: triggeredBy &quot;PaymentApproved&quot; would be published by an undesigned BC (not yet in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[2]/triggeredBy Relevant files: system.yaml#/sagas[0]/steps[2]/triggeredBy. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="warning">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">DIAG-017</span>
+          <h6 class="mb-1">[INT-014] Saga &quot;CheckoutSaga&quot; step 4: onSuccess &quot;DeliveryOrderCreated&quot; is not published by delivery.yaml (BC not yet designed — no delivery.yaml in arch/).</h6>
+        </div>
+        <span class="badge bg-warning text-dark" data-i18n="prop.warning">advertencia</span>
+      </div>
+      <p class="small text-muted mb-2">Validation found a design inconsistency that should be reviewed before generation.</p>
+      <p class="small mb-2">Ask the design agent to inspect the referenced YAML path and update the canonical artifacts consistently.</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">system.yaml#/sagas[0]/steps[3]/onSuccess</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-diag-017-16" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-diag-017-16">Review the DSL design decision &quot;[INT-014] Saga &quot;CheckoutSaga&quot; step 4: onSuccess &quot;DeliveryOrderCreated&quot; is not published by delivery.yaml (BC not yet designed — no delivery.yaml in arch/).&quot;. Context: system.yaml#/sagas[0]/steps[3]/onSuccess Relevant files: system.yaml#/sagas[0]/steps[3]/onSuccess. Task: Fix this validation diagnostic by updating the canonical design artifacts and any related contract files. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">catalog-UC-003</span>
+          <h6 class="mb-1">Lookup and FK validation routes</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">These choices decide where referential integrity is checked and which dependencies appear.</p>
+      <p class="small mb-2">Review options: notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/catalog/catalog.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-catalog-uc-003-17" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-catalog-uc-003-17">Review the DSL design decision &quot;Lookup and FK validation routes&quot;. Context: 4 FK validation(s), 0 use case(s) with lookups Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">catalog-EV-001</span>
+          <h6 class="mb-1">Events and Local Read Models</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">Event and LRM decisions control coupling, availability and eventual consistency trade-offs.</p>
+      <p class="small mb-2">Review options: publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/catalog/catalog.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-catalog-ev-001-18" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-catalog-ev-001-18">Review the DSL design decision &quot;Events and Local Read Models&quot;. Context: 2 published event(s), 0 consumed event(s), 0 local read model(s) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">catalog-INT-001</span>
+          <h6 class="mb-1">Integration points</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">Integration declarations must align with system.yaml and contract artifacts.</p>
+      <p class="small mb-2">Review options: outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/catalog/catalog.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-catalog-int-001-19" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-catalog-int-001-19">Review the DSL design decision &quot;Integration points&quot;. Context: outbound: 1 (event/message-broker: 1); inbound: 1 (customer-supplier/http: 1) Relevant files: arch/catalog/catalog.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-UC-003</span>
+          <h6 class="mb-1">Lookup and FK validation routes</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">These choices decide where referential integrity is checked and which dependencies appear.</p>
+      <p class="small mb-2">Review options: notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/orders/orders.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-orders-uc-003-20" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-orders-uc-003-20">Review the DSL design decision &quot;Lookup and FK validation routes&quot;. Context: 1 FK validation(s), 0 use case(s) with lookups Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (notFoundError | lookups[] | same-BC fkValidation | Local Read Model lookup | external ServicePort) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-EV-001</span>
+          <h6 class="mb-1">Events and Local Read Models</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">Event and LRM decisions control coupling, availability and eventual consistency trade-offs.</p>
+      <p class="small mb-2">Review options: publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/orders/orders.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-orders-ev-001-21" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-orders-ev-001-21">Review the DSL design decision &quot;Events and Local Read Models&quot;. Context: 3 published event(s), 8 consumed event(s), 1 local read model(s) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (publish event | consume event | listenerRequired false | persistent projection | readModel aggregate | HTTP sync instead of LRM) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+    <article class="decision-card" data-severity="review">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+        <div>
+          <span class="decision-id">orders-INT-001</span>
+          <h6 class="mb-1">Integration points</h6>
+        </div>
+        <span class="badge bg-secondary" data-i18n="prop.review">revisión</span>
+      </div>
+      <p class="small text-muted mb-2">Integration declarations must align with system.yaml and contract artifacts.</p>
+      <p class="small mb-2">Review options: outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override</p>
+      <p class="small mb-2"><strong data-i18n="prop.affects">Afecta</strong>: <code class="small">arch/orders/orders.yaml</code></p>
+      <details>
+        <summary class="small fw-semibold d-inline-flex align-items-center gap-2">
+          <span data-i18n="ui.promptForAgent">Prompt para el agente</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary copy-btn" data-copy-target="#prop-prompt-orders-int-001-22" data-i18n="ui.copyPrompt">Copiar prompt</button>
+        </summary>
+        <pre class="prompt-box"><code id="prop-prompt-orders-int-001-22">Review the DSL design decision &quot;Integration points&quot;. Context: outbound: 5 (customer-supplier/http: 1, event/message-broker: 4); inbound: 4 (event/message-broker: 4) Relevant files: arch/orders/orders.yaml. Task: Evaluate the available options (outbound HTTP | inbound HTTP | event subscription | external ACL | resilience override | auth override) and update the design only if the current decision should change. Keep the artifacts technology-agnostic and run the DSL validation/refinement checks after proposing changes.</code></pre>
+      </details>
+    </article>
+  </main>
+  
+    <script>
+      window.DSL_I18N = {"locale":"es","catalogs":{"en":{"nav.dashboard":"Dashboard","nav.review":"Review","nav.diagrams":"Diagrams","nav.events":"Events","nav.restApi":"REST API","nav.internalApi":"Internal API","nav.backDashboard":"Back to dashboard","ui.designReview":"Design Review","ui.decisionReview":"Decision Review","ui.designDecisions":"Design Decisions","ui.validationHealth":"Validation Health","ui.systemArchitecture":"System Architecture","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"System Decisions","ui.patchProposals":"Patch proposals","ui.promptForAgent":"Prompt for agent","ui.noDecisions":"No design decisions were extracted for this scope.","ui.noDiagnostics":"No diagnostics for this scope.","ui.noPurpose":"No purpose provided.","ui.pendingTactical":"Pending tactical design","ui.designedNoContracts":"Designed - no API contracts","ui.errorsWarnings":"{errors} errors / {warnings} warnings","ui.generatedAt":"Generated at","ui.current":"Current","ui.aggregates":"Aggregates","ui.useCases":"Use cases","ui.events":"Events","ui.integrations":"Integrations","ui.readModels":"Read models","ui.diagnostics":"Diagnostics","ui.externalSystems":"External systems","ui.sagas":"Sagas","ui.decisions":"Decisions","nav.decisions":"Decisions","ui.decisionsExplorer":"Decision Explorer","ui.useCaseCatalog":"Use case catalog","ui.endpointSecurity":"Endpoint security","ui.operationalBehavior":"Operational behavior","ui.systemSagas":"System sagas","ui.sagaParticipation":"Saga participation","ui.eventsReadModels":"Events and read models","ui.httpTriggered":"HTTP-triggered","ui.eventTriggered":"Event-triggered","ui.noUseCases":"No use cases defined for this scope.","ui.noEndpoints":"No HTTP endpoints defined for this scope.","ui.noSagas":"No sagas defined in the system.","ui.noEvents":"No events or read models for this scope.","ui.noSagaParticipation":"This bounded context does not take part in any saga.","ui.viewInExplorer":"View in decision explorer","ui.filterByBc":"Filter by BC","ui.filterByCategory":"Filter by category","ui.all":"All","uc.id":"ID","uc.name":"Name","uc.actor":"Actor","uc.type":"Type","uc.trigger":"Trigger","uc.target":"Aggregate · method","uc.rules":"Rules","uc.saga":"Saga","uc.ruleNotFound":"Rule not declared in any aggregate's domainRules — possible dangling reference","sec.endpoint":"Endpoint","sec.access":"Access","sec.roles":"Roles","sec.permissions":"Permissions","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"public","sec.protected":"protected","sec.unprotected":"unprotected","sec.unprotectedWarn":"Endpoint with no authorization and not marked public — review in session","ops.endpoint":"Endpoint / trigger","ops.idempotency":"Idempotency","ops.cache":"Cache","ops.async":"Async","ops.bulk":"Bulk","ops.pagination":"Pagination","ops.implementation":"Implementation","ops.dependencies":"Dependencies","ops.idempotentHint":"Idempotent command (Idempotency-Key)","ops.cacheableHint":"Cacheable query","ops.asyncHint":"Asynchronous execution","ops.bulkHint":"Bulk operation","ops.scaffoldHint":"Scaffold implementation — handler has TODO extension points","saga.trigger":"Trigger","saga.step":"Step","saga.bc":"BC","saga.triggeredBy":"Triggered by","saga.onSuccess":"Success","saga.onFailure":"Failure","saga.compensation":"Compensation","saga.implementedBy":"Implemented by","events.published":"Published","events.consumed":"Consumed","events.readModels":"Read models","events.name":"Name","events.channel":"Channel","events.scope":"Scope","events.payload":"Payload","events.sourceBc":"Source BC","events.from":"From","events.event":"Source event","events.keyBy":"Key by","events.upsert":"Upsert strategy","ui.storageBuckets":"Storage Buckets","ui.noStorageBuckets":"This BC has no object storage interactions.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibility","storage.urlAccess":"URL Access","storage.ownedBy":"Owned By","storage.operations":"Operations","ui.directIntegrations":"Direct integrations","int.contextMap":"Context map","int.outbound":"Outbound (depends on)","int.inbound":"Inbound (depended on by)","int.partner":"Counterpart","int.strategy":"Strategy","int.channel":"Channel","int.contracts":"Contracts","int.triggers":"Triggers","int.auth":"Authentication","int.resilience":"Resilience","int.necessity":"Necessity","int.external":"external","int.noIntegrations":"This bounded context declares no direct integrations.","int.missingRationale":"Rationale missing","diagram.overview":"Overview","diagram.domainModel":"Domain Model","diagram.states":"States","diagram.sequences":"Sequences","diagram.rendering":"Rendering...","diagram.syntaxError":"Diagram syntax error","diagram.rawSource":"Raw source","diagram.errorMessage":"Mermaid message","diagram.promptTitle":"Prompt for agent","diagram.zoomIn":"Zoom in","diagram.zoomOut":"Zoom out","diagram.reset":"Reset","diagram.fitWidth":"Fit width","diagram.dragHint":"Drag to pan. Use +, -, and 0 when focused.","diagram.correctPrompt":"Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.","async.channels":"Channels","async.publish":"PUBLISH - BC emits","async.subscribe":"SUBSCRIBE - BC receives","async.message":"Message","schema.noSchema":"No schema available.","schema.field":"Field","schema.type":"Type","schema.description":"Description","cli.reading":"Reading design artifacts...","cli.validating":"Validating design artifacts...","cli.generating":"Generating viewer files...","cli.generated":"Review generated -> {path}","cli.opened":"Opened in default browser.","cli.openFailed":"Could not open browser automatically.","cli.openManual":"Open manually: {path}","cli.diagnostics":"Diagnostics: {errors} error(s), {warnings} warning(s).","cli.unsupportedFormat":"Unsupported preview format: {format}. Use html, json, or all.","cli.archNotFound":"ERROR arch directory not found: {path}","cli.bcNotFound":"BC \"{bc}\" not found in {path}","cli.invalidLocale":"Unsupported locale \"{locale}\". Use es or en.","theme.toggle":"Toggle theme","theme.light":"Light","theme.dark":"Dark","ui.flows":"Flows (Given / When / Then)","ui.expandDetail":"Show detail","ui.copied":"Copied","ui.copyPrompt":"Copy prompt","ui.onThisPage":"On this page","ui.summary":"Summary","ui.attentionRequired":"Needs your attention","ui.recommended":"current","ui.viewAll":"View all","ui.openProposals":"Open proposals","bc.summary":"{type} · {ucTotal} use cases ({commands} commands / {queries} queries) · {published} published events · {integrations} direct integrations","attention.errors":"{count} validation error(s)","attention.warnings":"{count} validation warning(s)","attention.securityGaps":"{count} unprotected endpoint(s)","attention.scaffolds":"{count} scaffold use case(s)","attention.openDecisions":"{count} decision(s) to confirm","attention.allClear":"Nothing needs immediate attention.","diff.title":"Changes since last review","diff.none":"No structural changes since the last run.","diff.newDecisions":"{count} new decision(s)","diff.resolvedDecisions":"{count} resolved decision(s)","diff.newDiagnostics":"{count} new diagnostic(s)","diff.resolvedDiagnostics":"{count} resolved diagnostic(s)","diff.newUseCases":"{count} new use case(s)","diff.removedUseCases":"{count} removed use case(s)","prop.title":"Iteration proposals","prop.intro":"Open decisions, gaps and diagnostics, prioritized. Copy the prompt and ask the agent to iterate the design.","prop.none":"No open proposals. The design is ready for human review.","prop.severity":"Severity","prop.affects":"Affects","prop.error":"error","prop.warning":"warning","prop.review":"review"},"es":{"nav.dashboard":"Panel","nav.review":"Revisión","nav.diagrams":"Diagramas","nav.events":"Eventos","nav.restApi":"API REST","nav.internalApi":"API interna","nav.backDashboard":"Volver al panel","ui.designReview":"Revisión de diseño","ui.decisionReview":"Revisión de decisiones","ui.designDecisions":"Decisiones de diseño","ui.validationHealth":"Salud de validación","ui.systemArchitecture":"Arquitectura del sistema","ui.boundedContexts":"Bounded Contexts","ui.systemDecisions":"Decisiones del sistema","ui.patchProposals":"Propuestas de ajuste","ui.promptForAgent":"Prompt para el agente","ui.noDecisions":"No se extrajeron decisiones de diseño para este alcance.","ui.noDiagnostics":"No hay diagnósticos para este alcance.","ui.noPurpose":"No se proporcionó propósito.","ui.pendingTactical":"Diseño táctico pendiente","ui.designedNoContracts":"Diseñado - sin contratos de API","ui.errorsWarnings":"{errors} errores / {warnings} advertencias","ui.generatedAt":"Generado en","ui.current":"Actual","ui.aggregates":"Agregados","ui.useCases":"Casos de uso","ui.events":"Eventos","ui.integrations":"Integraciones","ui.readModels":"Read models","ui.diagnostics":"Diagnósticos","ui.externalSystems":"Sistemas externos","ui.sagas":"Sagas","ui.decisions":"Decisiones","nav.decisions":"Decisiones","ui.decisionsExplorer":"Explorador de decisiones","ui.useCaseCatalog":"Catálogo de casos de uso","ui.endpointSecurity":"Seguridad de endpoints","ui.operationalBehavior":"Comportamiento operacional","ui.systemSagas":"Sagas del sistema","ui.sagaParticipation":"Participación en sagas","ui.eventsReadModels":"Eventos y read models","ui.httpTriggered":"Disparados por HTTP","ui.eventTriggered":"Disparados por eventos","ui.noUseCases":"No hay casos de uso definidos para este alcance.","ui.noEndpoints":"No hay endpoints HTTP definidos para este alcance.","ui.noSagas":"No hay sagas definidas en el sistema.","ui.noEvents":"No hay eventos ni read models para este alcance.","ui.noSagaParticipation":"Este bounded context no participa en ninguna saga.","ui.viewInExplorer":"Ver en el explorador de decisiones","ui.filterByBc":"Filtrar por BC","ui.filterByCategory":"Filtrar por categoría","ui.all":"Todos","uc.id":"ID","uc.name":"Nombre","uc.actor":"Actor","uc.type":"Tipo","uc.trigger":"Disparador","uc.target":"Agregado · método","uc.rules":"Reglas","uc.saga":"Saga","uc.ruleNotFound":"Regla no declarada en los domainRules de ningún agregado — posible referencia colgante","sec.endpoint":"Endpoint","sec.access":"Acceso","sec.roles":"Roles","sec.permissions":"Permisos","sec.scopes":"Scopes","sec.ownership":"Ownership","sec.public":"público","sec.protected":"protegido","sec.unprotected":"sin protección","sec.unprotectedWarn":"Endpoint sin autorización ni marca pública — revisar en sesión","ops.endpoint":"Endpoint / disparador","ops.idempotency":"Idempotencia","ops.cache":"Caché","ops.async":"Async","ops.bulk":"Lote","ops.pagination":"Paginación","ops.implementation":"Implementación","ops.dependencies":"Dependencias","ops.idempotentHint":"Command idempotente (Idempotency-Key)","ops.cacheableHint":"Query cacheable","ops.asyncHint":"Ejecución asíncrona","ops.bulkHint":"Operación en lote","ops.scaffoldHint":"Implementación scaffold — el handler tiene puntos de extensión TODO","saga.trigger":"Disparador","saga.step":"Paso","saga.bc":"BC","saga.triggeredBy":"Disparado por","saga.onSuccess":"Éxito","saga.onFailure":"Fallo","saga.compensation":"Compensación","saga.implementedBy":"Implementado por","events.published":"Publicados","events.consumed":"Consumidos","events.readModels":"Read models","events.name":"Nombre","events.channel":"Canal","events.scope":"Alcance","events.payload":"Payload","events.sourceBc":"BC origen","events.from":"Origen","events.event":"Evento origen","events.keyBy":"Clave","events.upsert":"Estrategia upsert","ui.storageBuckets":"Buckets de almacenamiento","ui.noStorageBuckets":"Este BC no interactúa con ningún bucket de almacenamiento.","ui.storages":"Storage","storage.store":"Store","storage.visibility":"Visibilidad","storage.urlAccess":"Acceso URL","storage.ownedBy":"Propietario","storage.operations":"Operaciones","ui.directIntegrations":"Integraciones directas","int.contextMap":"Mapa de contexto","int.outbound":"Salientes (de qué depende)","int.inbound":"Entrantes (quién depende de él)","int.partner":"Contraparte","int.strategy":"Estrategia","int.channel":"Canal","int.contracts":"Contratos","int.triggers":"Disparadores","int.auth":"Autenticación","int.resilience":"Resiliencia","int.necessity":"Necesidad","int.external":"externo","int.noIntegrations":"Este bounded context no declara integraciones directas.","int.missingRationale":"Falta justificar","diagram.overview":"Vista general","diagram.domainModel":"Modelo de dominio","diagram.states":"Estados","diagram.sequences":"Secuencias","diagram.rendering":"Renderizando...","diagram.syntaxError":"Error de sintaxis del diagrama","diagram.rawSource":"Fuente original","diagram.errorMessage":"Mensaje de Mermaid","diagram.promptTitle":"Prompt para el agente","diagram.zoomIn":"Acercar","diagram.zoomOut":"Alejar","diagram.reset":"Restablecer","diagram.fitWidth":"Ajustar ancho","diagram.dragHint":"Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.","diagram.correctPrompt":"Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.","async.channels":"Canales","async.publish":"PUBLICA - el BC emite","async.subscribe":"SUSCRIBE - el BC recibe","async.message":"Mensaje","schema.noSchema":"No hay schema disponible.","schema.field":"Campo","schema.type":"Tipo","schema.description":"Descripción","cli.reading":"Leyendo artefactos de diseño...","cli.validating":"Validando artefactos de diseño...","cli.generating":"Generando archivos de revisión...","cli.generated":"Revisión generada -> {path}","cli.opened":"Abierto en el navegador predeterminado.","cli.openFailed":"No se pudo abrir el navegador automáticamente.","cli.openManual":"Abrir manualmente: {path}","cli.diagnostics":"Diagnósticos: {errors} error(es), {warnings} advertencia(s).","cli.unsupportedFormat":"Formato de preview no soportado: {format}. Usa html, json o all.","cli.archNotFound":"ERROR no se encontró el directorio arch: {path}","cli.bcNotFound":"No se encontró el BC \"{bc}\" en {path}","cli.invalidLocale":"Locale no soportado \"{locale}\". Usa es o en.","theme.toggle":"Cambiar tema","theme.light":"Claro","theme.dark":"Oscuro","ui.flows":"Flujos (Given / When / Then)","ui.expandDetail":"Ver detalle","ui.copied":"Copiado","ui.copyPrompt":"Copiar prompt","ui.onThisPage":"En esta página","ui.summary":"Resumen","ui.attentionRequired":"Requiere tu atención","ui.recommended":"actual","ui.viewAll":"Ver todos","ui.openProposals":"Propuestas abiertas","bc.summary":"{type} · {ucTotal} casos de uso ({commands} comandos / {queries} consultas) · {published} eventos publicados · {integrations} integraciones directas","attention.errors":"{count} error(es) de validación","attention.warnings":"{count} advertencia(s) de validación","attention.securityGaps":"{count} endpoint(s) sin autorización","attention.scaffolds":"{count} caso(s) de uso en scaffold","attention.openDecisions":"{count} decisión(es) por confirmar","attention.allClear":"Sin elementos que requieran atención inmediata.","diff.title":"Cambios desde la última revisión","diff.none":"Sin cambios estructurales desde la última corrida.","diff.newDecisions":"{count} decisión(es) nueva(s)","diff.resolvedDecisions":"{count} decisión(es) resuelta(s)","diff.newDiagnostics":"{count} diagnóstico(s) nuevo(s)","diff.resolvedDiagnostics":"{count} diagnóstico(s) resuelto(s)","diff.newUseCases":"{count} caso(s) de uso nuevo(s)","diff.removedUseCases":"{count} caso(s) de uso eliminado(s)","prop.title":"Propuestas de iteración","prop.intro":"Decisiones abiertas, gaps y diagnósticos priorizados. Copia el prompt y pídeselo al agente para iterar el diseño.","prop.none":"No hay propuestas abiertas. El diseño está listo para revisión humana.","prop.severity":"Severidad","prop.affects":"Afecta","prop.error":"error","prop.warning":"advertencia","prop.review":"revisión"}}};
+      (function () {
+        const state = window.DSL_I18N || { locale: 'es', catalogs: {} };
+        const stored = localStorage.getItem('dsl-preview-locale');
+        let current = state.catalogs[stored] ? stored : state.locale;
+        function translate() {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          document.documentElement.lang = current;
+          document.querySelectorAll('[data-i18n]').forEach((el) => {
+            const key = el.getAttribute('data-i18n');
+            if (catalog[key]) el.textContent = catalog[key];
+          });
+          document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (catalog[key]) el.setAttribute('title', catalog[key]);
+          });
+          document.querySelectorAll('[data-locale]').forEach((btn) => {
+            btn.classList.toggle('active', btn.getAttribute('data-locale') === current);
+            btn.setAttribute('aria-pressed', btn.getAttribute('data-locale') === current ? 'true' : 'false');
+          });
+        }
+        window.dslSetLocale = function (locale) {
+          if (!state.catalogs[locale]) return;
+          current = locale;
+          localStorage.setItem('dsl-preview-locale', locale);
+          translate();
+        };
+        window.dslT = function (key) {
+          const catalog = state.catalogs[current] || state.catalogs.es || state.catalogs.en || {};
+          return catalog[key] || key;
+        };
+        window.addEventListener('DOMContentLoaded', translate);
+      })();
+    </script>
+  
+    <script>
+      (function () {
+        var KEY = 'dsl-preview-theme';
+        function resolve() {
+          var s = localStorage.getItem(KEY);
+          if (s === 'dark' || s === 'light') return s;
+          return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        var current = window.__dslPreviewTheme || resolve();
+        function syncButtons() {
+          document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+            var icon = btn.querySelector('[data-theme-icon]');
+            if (icon) icon.textContent = current === 'dark' ? '☀️' : '🌙';
+          });
+        }
+        function applyTheme(theme) {
+          current = theme;
+          window.__dslPreviewTheme = theme;
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          syncButtons();
+        }
+        window.dslToggleTheme = function () {
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem(KEY, next);
+          applyTheme(next);
+          if (typeof mermaid !== 'undefined' && document.querySelector('.mermaid')) {
+            location.reload();
+          }
+        };
+        syncButtons();
+        window.addEventListener('DOMContentLoaded', syncButtons);
+      })();
+    </script>
+  <script>
+    (function () {
+      // Expand / collapse use-case narrative rows.
+      document.addEventListener('click', function (ev) {
+        var trigger = ev.target.closest('[data-uc-toggle]');
+        if (trigger) {
+          if (ev.target.closest('a, button.copy-btn, summary')) return;
+          var id = trigger.getAttribute('data-uc-toggle');
+          var detail = document.getElementById(id);
+          if (detail) {
+            var open = detail.hasAttribute('hidden');
+            if (open) { detail.removeAttribute('hidden'); } else { detail.setAttribute('hidden', ''); }
+            document.querySelectorAll('[data-uc-toggle="' + id + '"] .uc-toggle, .uc-toggle[data-uc-toggle="' + id + '"]').forEach(function (b) {
+              b.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+            var btn = trigger.matches('.uc-toggle') ? trigger : trigger.querySelector('.uc-toggle');
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          }
+          return;
+        }
+        // Copy-to-clipboard buttons.
+        var copy = ev.target.closest('.copy-btn');
+        if (copy) {
+          ev.preventDefault();
+          var sel = copy.getAttribute('data-copy-target');
+          var src = sel ? document.querySelector(sel) : null;
+          var text = src ? src.textContent : (copy.getAttribute('data-copy-text') || '');
+          var done = function () {
+            copy.classList.add('copied');
+            var prev = copy.textContent;
+            copy.textContent = (window.dslT ? dslT('ui.copied') : 'Copied');
+            setTimeout(function () { copy.classList.remove('copied'); copy.textContent = prev; }, 1600);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, done);
+          } else {
+            var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+            ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done();
+          }
+          return;
+        }
+        // Collapsible section headers.
+        var st = ev.target.closest('.section-toggle');
+        if (st) {
+          var sec = st.closest('.collapsible-section');
+          if (sec) sec.classList.toggle('collapsed');
+        }
+      });
+
+      // Flash highlight when navigating to an in-page anchor (traceability links).
+      function flashTarget() {
+        if (!location.hash) return;
+        var el = document.getElementById(location.hash.slice(1));
+        if (!el) return;
+        // If the target is a hidden narrative detail row, reveal it.
+        if (el.hasAttribute && el.hasAttribute('hidden')) el.removeAttribute('hidden');
+        el.classList.remove('xref-flash');
+        void el.offsetWidth;
+        el.classList.add('xref-flash');
+      }
+      window.addEventListener('hashchange', flashTarget);
+      window.addEventListener('DOMContentLoaded', flashTarget);
+
+      // Scroll-spy for the in-page nav.
+      window.addEventListener('DOMContentLoaded', function () {
+        var links = Array.prototype.slice.call(document.querySelectorAll('.review-nav a[href^="#"]'));
+        if (!links.length || !('IntersectionObserver' in window)) return;
+        var map = {};
+        var targets = [];
+        links.forEach(function (a) {
+          var t = document.getElementById(a.getAttribute('href').slice(1));
+          if (t) { map[t.id] = a; targets.push(t); }
+        });
+        var obs = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) {
+              links.forEach(function (a) { a.classList.remove('active'); });
+              if (map[e.target.id]) map[e.target.id].classList.add('active');
+            }
+          });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        targets.forEach(function (t) { obs.observe(t); });
+      });
+    })();
+  </script>
+</body>
+</html>
