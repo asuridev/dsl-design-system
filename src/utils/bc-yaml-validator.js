@@ -10,6 +10,39 @@ const {
   unwrapRange,
 } = require('./canonical-types');
 
+// Java reserved words + literals + restricted/contextual identifiers. A name
+// emitted verbatim as a Java class/field/constant cannot be any of these.
+// Kept in sync with dsl-springboot-generator/src/utils/java-identifiers.js.
+const JAVA_RESERVED = new Set([
+  'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
+  'class', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum',
+  'extends', 'final', 'finally', 'float', 'for', 'goto', 'if', 'implements',
+  'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'package',
+  'private', 'protected', 'public', 'return', 'short', 'static', 'strictfp',
+  'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'transient',
+  'try', 'void', 'volatile', 'while',
+  'true', 'false', 'null',
+  'var', 'record', 'yield', 'sealed', 'permits', 'non-sealed',
+]);
+
+const JAVA_IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+// Mirror dsl-springboot-generator/src/utils/naming.js so collision detection
+// matches the field/column names the generator actually emits.
+function toCamelCaseId(str) {
+  const pascal = String(str)
+    .replace(/[-_\s]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''))
+    .replace(/^(.)/, (c) => c.toUpperCase());
+  return pascal.charAt(0).toLowerCase() + pascal.slice(1);
+}
+function toSnakeCaseId(str) {
+  return String(str)
+    .replace(/([A-Z])/g, '_$1')
+    .replace(/[-\s]+/g, '_')
+    .replace(/^_/, '')
+    .toLowerCase();
+}
+
 function validateBcYamlAnatomy(doc, options = {}) {
   const validator = new BcYamlValidator(doc || {}, options || {});
   return validator.run();
@@ -55,6 +88,19 @@ class BcYamlValidator {
     return `arch/${this.bc}/${this.bc}.yaml${pointer || ''}`;
   }
 
+  // [BC-095] A name emitted verbatim as a Java identifier must be a valid
+  // identifier and not a reserved word, otherwise the generated code won't compile.
+  checkJavaIdentifier(name, context, location) {
+    if (typeof name !== 'string' || name.length === 0) return; // missing-name handled by the caller's own check
+    if (!JAVA_IDENTIFIER_RE.test(name)) {
+      this.error('BC-095', `${context} "${name}" is not a valid Java identifier (letters, digits, '_' or '$', not starting with a digit; no hyphens, spaces or dots). It is emitted verbatim as a Java class/field/constant name.`, location);
+      return;
+    }
+    if (JAVA_RESERVED.has(name)) {
+      this.error('BC-095', `${context} "${name}" is a Java reserved word and cannot be used as a class/field/constant name. Rename it.`, location);
+    }
+  }
+
   validateDocumentHeader() {
     if (!this.doc.bc) {
       this.error('BC-001', 'BC yaml is missing required field "bc".', this.loc('#/bc'));
@@ -62,6 +108,8 @@ class BcYamlValidator {
     if (this.doc.bc && this.doc.bc !== this.bc) {
       this.error('BC-001', `BC yaml declares bc "${this.doc.bc}" but was loaded as "${this.bc}".`, this.loc('#/bc'));
     }
+    // The bc name is emitted verbatim as a Java package segment.
+    if (this.doc.bc) this.checkJavaIdentifier(this.doc.bc, 'Bounded context "bc"', this.loc('#/bc'));
   }
 
   validateEnums() {
@@ -101,6 +149,7 @@ class BcYamlValidator {
           continue;
         }
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) this.error('BC-006', `Enum "${enumDef.name}" value "${label}" must be a valid Java identifier (letters, digits and underscore only, not starting with a digit). UPPER_SNAKE_CASE is recommended.`, valueLoc);
+        this.checkJavaIdentifier(label, `Enum "${enumDef.name}" value`, valueLoc);
         if (declaredValues.has(label)) this.error('BC-006', `Enum "${enumDef.name}" declares duplicate value "${label}".`, valueLoc);
         declaredValues.add(label);
       }
@@ -585,6 +634,7 @@ class BcYamlValidator {
         continue;
       }
       if (!/^[a-z][A-Za-z0-9_]*$/.test(arg.name)) this.error('BC-054', `Error "${err.code}" arg name "${arg.name}" must be camelCase.`, `${argLoc}/name`);
+      this.checkJavaIdentifier(arg.name, `Error "${err.code}" arg`, `${argLoc}/name`);
       if (names.has(arg.name)) this.error('BC-054', `Error "${err.code}" declares duplicate arg "${arg.name}".`, `${argLoc}/name`);
       names.add(arg.name);
     }
@@ -601,11 +651,13 @@ class BcYamlValidator {
       const agg = this.doc.aggregates[i];
       const aggLoc = this.loc(`#/aggregates/${i}`);
       if (!isMapping(agg)) continue;
+      this.checkJavaIdentifier(agg.name, 'Aggregate name', `${aggLoc}/name`);
       this.validateProperties(agg.properties, `aggregate ${agg.name}`, `${aggLoc}/properties`, { allowDomainTypes: true });
       for (let j = 0; j < asArray(agg.entities).length; j++) {
         const entity = agg.entities[j];
         const entLoc = `${aggLoc}/entities/${j}`;
         if (!isMapping(entity)) continue;
+        this.checkJavaIdentifier(entity.name, `Entity name in aggregate "${agg.name}"`, `${entLoc}/name`);
         this.validateProperties(entity.properties, `entity ${entity.name}`, `${entLoc}/properties`, { allowDomainTypes: true });
         if (entity.relationship !== undefined && !['composition', 'aggregation'].includes(entity.relationship)) this.error('BC-060', `entity "${entity.name}" in aggregate "${agg.name}" relationship must be composition or aggregation.`, `${entLoc}/relationship`);
         if (entity.cardinality !== undefined && !['oneToMany', 'oneToOne'].includes(entity.cardinality)) this.error('BC-060', `entity "${entity.name}" in aggregate "${agg.name}" cardinality must be oneToMany or oneToOne.`, `${entLoc}/cardinality`);
@@ -651,6 +703,7 @@ class BcYamlValidator {
       const loc = this.loc(`#/valueObjects/${i}`);
       if (!isMapping(vo)) continue;
       if (!vo.name) this.error('BC-070', 'A valueObject entry is missing name.', `${loc}/name`);
+      this.checkJavaIdentifier(vo.name, 'Value object name', `${loc}/name`);
       if (!Array.isArray(vo.properties) || vo.properties.length === 0) this.error('BC-070', `Value object "${vo.name}" must declare at least one property.`, `${loc}/properties`);
       this.validateProperties(vo.properties, `valueObject ${vo.name}`, `${loc}/properties`);
       for (let j = 0; j < asArray(vo.properties).length; j++) {
@@ -737,6 +790,7 @@ class BcYamlValidator {
       if (projection.name && projectionNames.has(projection.name)) this.error('BC-080', `Duplicate projection name "${projection.name}".`, `${loc}/name`);
       projectionNames.add(projection.name);
       if (projection.name && /(Dto|Response|Request|Payload)$/.test(projection.name)) this.error('BC-081', `Projection "${projection.name}" uses a reserved suffix.`, `${loc}/name`);
+      this.checkJavaIdentifier(projection.name, 'Projection name', `${loc}/name`);
       if (!Array.isArray(projection.properties) || projection.properties.length === 0) this.error('BC-080', `Projection "${projection.name}" must declare at least one property.`, `${loc}/properties`);
       if (projection.source != null && !projection.persistent && (typeof projection.source !== 'string' || !/^(aggregate|readModel):[A-Z][A-Za-z0-9_]*$/.test(projection.source))) this.error('BC-082', `Projection "${projection.name}" has invalid source value.`, `${loc}/source`);
       this.validateProjectionAdditionalSources(projection, loc);
@@ -789,6 +843,7 @@ class BcYamlValidator {
       if (!isMapping(dto)) continue;
       this.checkAllowedKeys(dto, allowedDtoKeys, 'BC-012', `eventDtos "${dto.name || '<unnamed>'}"`, loc);
       if (!dto.name) this.error('BC-085', 'An eventDtos[] entry is missing name.', `${loc}/name`);
+      this.checkJavaIdentifier(dto.name, 'eventDtos name', `${loc}/name`);
       if (dto.name && eventDtoNames.has(dto.name)) this.error('BC-085', `Duplicate eventDtos name "${dto.name}".`, `${loc}/name`);
       eventDtoNames.add(dto.name);
       if (!Array.isArray(dto.properties) || dto.properties.length === 0) this.error('BC-085', `eventDtos "${dto.name}" must declare at least one property.`, `${loc}/properties`);
@@ -1284,6 +1339,8 @@ class BcYamlValidator {
     }
     const enumNames = this.enumNames();
     const allowedPropKeys = options.allowedPropKeys || null;
+    const seenCamel = new Map();
+    const seenSnake = new Map();
     for (let i = 0; i < properties.length; i++) {
       const prop = properties[i];
       const loc = `${location}/${i}`;
@@ -1294,9 +1351,31 @@ class BcYamlValidator {
       if (allowedPropKeys) this.checkAllowedKeys(prop, allowedPropKeys, 'BC-012', `${context} property "${prop.name || '<unnamed>'}"`, loc);
       if (!prop.name) this.error('BC-090', `${context} has a property without name.`, `${loc}/name`);
       if (!prop.type) this.error('BC-090', `${context} property "${prop.name || '<unnamed>'}" is missing type.`, `${loc}/type`);
+      // [BC-095] property name is emitted verbatim as a Java field + getter.
+      this.checkJavaIdentifier(prop.name, `${context} property`, `${loc}/name`);
+      // [BC-096] two names that collapse to the same Java field / SQL column
+      // produce a duplicate field / @Column that breaks compilation.
+      if (typeof prop.name === 'string' && prop.name) {
+        const camel = toCamelCaseId(prop.name);
+        if (seenCamel.has(camel) && seenCamel.get(camel) !== prop.name) this.error('BC-096', `${context} properties "${seenCamel.get(camel)}" and "${prop.name}" both map to the Java field "${camel}". Rename one.`, `${loc}/name`);
+        seenCamel.set(camel, prop.name);
+        const snake = toSnakeCaseId(prop.name);
+        if (seenSnake.has(snake) && seenSnake.get(snake) !== prop.name) this.error('BC-096', `${context} properties "${seenSnake.get(snake)}" and "${prop.name}" both map to the SQL column "${snake}". Rename one.`, `${loc}/name`);
+        seenSnake.set(snake, prop.name);
+      }
       this.validateType(prop.type, 'BC-091', `${context} property "${prop.name}"`, `${loc}/type`);
       const head = stripTypeParameters(String(prop.type || '').trim());
-      if (head === 'Decimal' && (prop.precision == null || prop.scale == null)) this.error('BC-092', `${context} property "${prop.name}" has type Decimal but is missing precision and/or scale.`, loc);
+      if (head === 'Decimal') {
+        if (prop.precision == null || prop.scale == null) {
+          this.error('BC-092', `${context} property "${prop.name}" has type Decimal but is missing precision and/or scale.`, loc);
+        } else {
+          // [BC-097] an invalid DECIMAL(p,s) shape produces DDL the database rejects.
+          const p = prop.precision;
+          const s = prop.scale;
+          if (!Number.isInteger(p) || p < 1) this.error('BC-097', `${context} property "${prop.name}": Decimal precision must be an integer >= 1 (got ${JSON.stringify(p)}).`, loc);
+          if (!Number.isInteger(s) || s < 0 || (Number.isInteger(p) && s > p)) this.error('BC-097', `${context} property "${prop.name}": Decimal scale must be an integer between 0 and precision (${p}); got ${JSON.stringify(s)}.`, loc);
+        }
+      }
       this.validateReadOnlyDefault(prop, context, loc, enumNames);
     }
   }

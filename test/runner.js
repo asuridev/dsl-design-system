@@ -783,6 +783,64 @@ domainEvents:
 `, 'BC-090');
 });
 
+test('copied dsl-validate rejects a property name that is a Java reserved word', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: class
+        type: String(100)
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-095');
+});
+
+test('copied dsl-validate rejects two property names that collide after case transformation', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: productName
+        type: String(100)
+      - name: product_name
+        type: String(100)
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-096');
+});
+
+test('copied dsl-validate rejects a Decimal whose scale exceeds its precision', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: price
+        type: Decimal
+        precision: 5
+        scale: 10
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-097');
+});
+
 test('copied dsl-validate rejects repository query params missing from useCase input', async () => {
   await assertTacticalValidationFails(`
 bc: catalog
