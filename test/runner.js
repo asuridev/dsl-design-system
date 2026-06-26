@@ -758,6 +758,83 @@ domainEvents:
 `, /maxSize must be a size string/);
 });
 
+test('copied dsl-validate rejects a multipart part typed as a non-File/non-scalar/non-enum (shared superset)', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: meta
+        type: SomeValueObject
+        required: true
+        source: multipart
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, 'BC-024');
+});
+
+test('copied dsl-validate accepts max on a Decimal input (shared superset, no false BC-025)', async () => {
+  await assertTacticalValidationOmits(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: listProducts
+        signature: "listProducts(minPrice: Decimal): List[Product]"
+        returns: List[Product]
+useCases:
+  - id: UC-CAT-002
+    name: ListProducts
+    type: query
+    actor: system
+    aggregate: Product
+    method: listProducts
+    trigger:
+      kind: http
+      operationId: listProducts
+    input:
+      - name: minPrice
+        type: Decimal
+        required: false
+        source: query
+        max: 100000
+    returns: List[Product]
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed: []
+`, /declares max but type is not numeric/);
+});
+
 test('copied dsl-validate reports a malformed BC yaml as a counted error, not a silent skip', async () => {
   await withTempProject(async (projectDir) => {
     assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);

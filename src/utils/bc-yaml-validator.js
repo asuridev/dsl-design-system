@@ -10,6 +10,12 @@ const {
   unwrapRange,
 } = require('./canonical-types');
 
+// Per-input anatomy rules (source enum, required fields, multipart/File, maxSize,
+// max, SearchText, Range, input-key whitelist) are the single-source-of-truth
+// shared validator (GAP-1). This repo keeps only its canonical-types-aware
+// per-input type-grammar check (BC-090) locally — see validateUseCaseInputs.
+const { validateUseCaseInputAnatomy } = require('@dsl/contract');
+
 // Java reserved words + literals + restricted/contextual identifiers. A name
 // emitted verbatim as a Java class/field/constant cannot be any of these.
 // Kept in sync with dsl-springboot-generator/src/utils/java-identifiers.js.
@@ -190,6 +196,10 @@ class BcYamlValidator {
     const useCases = asArray(this.doc.useCases);
     this.assertUnique(useCases, (uc) => uc && uc.id, 'BC-010', 'use case id', '#/useCases');
 
+    // Per-input anatomy rules (shared, single source of truth). Local per-input
+    // type-grammar (BC-090) still runs inside validateUseCaseInputs below.
+    for (const d of validateUseCaseInputAnatomy(this.doc)) this.diagnostics.push(d);
+
     const allowedUcKeys = new Set([
       'id', 'name', 'type', 'actor', 'description', 'trigger', 'aggregate', 'method',
       'aggregates', 'steps', 'input', 'returns', 'rules', 'notFoundError', 'lookups',
@@ -200,8 +210,6 @@ class BcYamlValidator {
     const allowedStorageCallKeys = new Set(['store', 'operation', 'input', 'bindsTo']);
     const allowedStorageOperations = new Set(['put', 'signUrl', 'get', 'delete']);
     const allowedTriggerKeys = new Set(['kind', 'operationId', 'event', 'channel', 'consumes', 'fromBc', 'filter']);
-    const allowedInputKeys = new Set(['name', 'type', 'required', 'source', 'loadAggregate', 'headerName', 'default', 'max', 'partName', 'maxSize', 'contentTypes', 'fields']);
-    const allowedInputSources = new Set(['body', 'path', 'query', 'authContext', 'header', 'multipart']);
     const allowedTypes = new Set(['command', 'query']);
     const allowedImplementations = new Set(['full', 'scaffold']);
     const allowedTriggerKinds = new Set(['http', 'event']);
@@ -256,7 +264,7 @@ class BcYamlValidator {
         }
       }
 
-      this.validateUseCaseInputs(uc, baseLoc, allowedInputKeys, allowedInputSources);
+      this.validateUseCaseInputs(uc, baseLoc);
       this.validateUseCasePagination(uc, baseLoc, allowedPaginationKeys, allowedDefaultSortKeys);
       this.validateUseCaseAuthorization(uc, baseLoc, allowedAuthKeys, allowedOwnershipKeys);
       this.validateUseCaseIdempotency(uc, baseLoc, allowedIdempotencyKeys);
@@ -284,66 +292,21 @@ class BcYamlValidator {
     }
   }
 
-  validateUseCaseInputs(uc, baseLoc, allowedInputKeys, allowedInputSources) {
-    if (uc.input == null) return;
-    if (!Array.isArray(uc.input)) {
-      this.error('BC-020', `Use case "${uc.id}" input must be a list.`, `${baseLoc}/input`);
-      return;
-    }
+  // Input anatomy (source enum, required fields, multipart/File, maxSize, max,
+  // SearchText, Range, input-key whitelist — BC-012/020..026 + the Range BC-090)
+  // is validated centrally by @dsl/contract `validateUseCaseInputAnatomy`, called
+  // once per document in `validateUseCases` (see `runSharedInputAnatomy`).
+  //
+  // Here we keep only the per-input type-grammar check (BC-090), which depends on
+  // this repo's local canonical-types resolution (GAP-5) and is therefore NOT in
+  // the shared validator.
+  validateUseCaseInputs(uc, baseLoc) {
+    if (!Array.isArray(uc.input)) return;
     for (let j = 0; j < uc.input.length; j++) {
       const input = uc.input[j];
-      const loc = `${baseLoc}/input/${j}`;
-      if (!isMapping(input)) {
-        this.error('BC-020', `Use case "${uc.id}" input[] contains a non-mapping entry.`, loc);
-        continue;
-      }
-      this.checkAllowedKeys(input, allowedInputKeys, 'BC-012', `Use case "${uc.id}" input "${input.name || '<unnamed>'}"`, loc);
-      if (!input.name) this.error('BC-021', `Use case "${uc.id}" has an input without name.`, `${loc}/name`);
-      if (!input.type) this.error('BC-021', `Use case "${uc.id}" input "${input.name || '<unnamed>'}" is missing required field type.`, `${loc}/type`);
-      if (!input.source) this.error('BC-021', `Use case "${uc.id}" input "${input.name || '<unnamed>'}" is missing required field source.`, `${loc}/source`);
-      if (input.source && !allowedInputSources.has(input.source)) this.error('BC-022', `Use case "${uc.id}" input "${input.name}" has unsupported source "${input.source}".`, `${loc}/source`);
-      this.validateType(input.type, 'BC-090', `Use case "${uc.id}" input "${input.name}"`, `${loc}/type`);
-      if (input.source === 'header' && (!input.headerName || typeof input.headerName !== 'string')) this.error('BC-023', `Use case "${uc.id}" input "${input.name}" declares source: header but is missing headerName.`, `${loc}/headerName`);
-      if (input.headerName != null && input.source !== 'header') this.error('BC-023', `Use case "${uc.id}" input "${input.name}" declares headerName but source is not header.`, `${loc}/headerName`);
-      // A multipart UC may carry a File part plus scalar/enum form-field parts (e.g. altText).
-      // Only File parts accept the binary qualifiers maxSize/contentTypes.
-      if (input.type === 'File' && input.source !== 'multipart') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" has type File but source is not multipart.`, `${loc}/source`);
-      for (const key of ['partName', 'maxSize', 'contentTypes']) {
-        if (input[key] != null && input.source !== 'multipart') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but source is not multipart.`, `${loc}/${key}`);
-      }
-      for (const key of ['maxSize', 'contentTypes']) {
-        if (input[key] != null && input.type !== 'File') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but type is not File.`, `${loc}/${key}`);
-      }
-      // maxSize for a File part is a size string with unit (e.g. "10MB"), NOT a raw byte
-      // integer. Mirror dsl-springboot-generator/src/utils/bc-yaml-reader.js so Phase 1
-      // rejects what Phase 2 would reject at load time.
-      if (input.maxSize != null && (typeof input.maxSize !== 'string' || !/^\d+(B|KB|MB|GB)$/.test(input.maxSize))) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" maxSize must be a size string like "10MB" (units: B, KB, MB, GB), not a raw byte number.`, `${loc}/maxSize`);
-      // partName and contentTypes are interpolated into generated Java string literals
-      // downstream; constrain them to safe shapes so they cannot break the literal.
-      if (typeof input.partName === 'string' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(input.partName)) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" partName "${input.partName}" must be a safe identifier (letters, digits, underscore and hyphen; not starting with a digit or hyphen).`, `${loc}/partName`);
-      if (Array.isArray(input.contentTypes)) {
-        for (const c of input.contentTypes) {
-          if (typeof c === 'string' && !/^[\w.+-]+\/[\w.+-]+$/.test(c)) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" contentTypes entry "${c}" is not a valid MIME type (expected "type/subtype", e.g. "image/png").`, `${loc}/contentTypes`);
-        }
-      }
-      // Range[T] builds a between() filter downstream and requires an order-comparable scalar.
-      const rangeInner = unwrapRange(input.type);
-      if (rangeInner != null) {
-        const orderable = new Set(['Integer', 'Long', 'Decimal', 'Date', 'DateTime', 'Duration', 'String', 'Uuid']);
-        const head = stripTypeParameters(rangeInner);
-        if (!orderable.has(head)) this.error('BC-090', `Use case "${uc.id}" input "${input.name}" declares "${input.type}", but Range filters require an order-comparable scalar inner type (Integer, Long, Decimal, Date, DateTime, Duration, String, Uuid). "${rangeInner}" is not orderable.`, `${loc}/type`);
-      }
-      if (input.max != null) {
-        if (!Number.isInteger(input.max)) this.error('BC-025', `Use case "${uc.id}" input "${input.name}" max must be an integer.`, `${loc}/max`);
-        if (!/^(Integer|Long|int|long|BigDecimal|Decimal)$/.test(String(input.type))) this.error('BC-025', `Use case "${uc.id}" input "${input.name}" declares max but type is not numeric.`, `${loc}/max`);
-      }
-      if (input.type === 'SearchText' && (!Array.isArray(input.fields) || input.fields.length === 0 || input.fields.some((f) => typeof f !== 'string' || !f.trim()))) {
-        this.error('BC-026', `Use case "${uc.id}" input "${input.name}" type SearchText requires a non-empty fields list.`, `${loc}/fields`);
-      }
-      if (input.fields != null && input.type !== 'SearchText') this.error('BC-026', `Use case "${uc.id}" input "${input.name}" declares fields but type is not SearchText.`, `${loc}/fields`);
+      if (!isMapping(input)) continue;
+      this.validateType(input.type, 'BC-090', `Use case "${uc.id}" input "${input.name}"`, `${baseLoc}/input/${j}/type`);
     }
-    const hasMultipart = uc.input.some((i) => isMapping(i) && i.source === 'multipart');
-    if (hasMultipart && uc.input.some((i) => isMapping(i) && i.source === 'body')) this.error('BC-024', `Use case "${uc.id}" mixes source: multipart with source: body.`, `${baseLoc}/input`);
   }
 
   validateUseCaseStorageCalls(uc, baseLoc, allowedStorageCallKeys, allowedStorageOperations) {
