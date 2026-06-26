@@ -140,6 +140,8 @@
   "diagram.reset": "Reset",
   "diagram.fitWidth": "Fit width",
   "diagram.dragHint": "Drag to pan. Use +, -, and 0 when focused.",
+  "diagram.dragHintZoom": "Drag to pan. Use the buttons, the +, -, and 0 keys, or Ctrl + wheel to zoom.",
+  "diagram.renderFailed": "The diagram could not be rendered.",
   "diagram.correctPrompt": "Review and fix this Mermaid diagram. Preserve the intended domain meaning, correct the syntax error, and update the related .mmd artifact only.",
   "async.channels": "Channels",
   "async.publish": "PUBLISH - BC emits",

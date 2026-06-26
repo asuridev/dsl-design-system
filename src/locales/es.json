@@ -140,6 +140,8 @@
   "diagram.reset": "Restablecer",
   "diagram.fitWidth": "Ajustar ancho",
   "diagram.dragHint": "Arrastra para desplazar. Usa +, - y 0 cuando el diagrama tenga foco.",
+  "diagram.dragHintZoom": "Arrastra para desplazar. Usa los botones, las teclas +, - y 0, o Ctrl + rueda para hacer zoom.",
+  "diagram.renderFailed": "No se pudo renderizar el diagrama.",
   "diagram.correctPrompt": "Revisa y corrige este diagrama Mermaid. Conserva el significado de dominio, corrige el error de sintaxis y actualiza solo el artefacto .mmd relacionado.",
   "async.channels": "Canales",
   "async.publish": "PUBLICA - el BC emite",

@@ -2647,7 +2647,7 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
             <button class="sys-btn" data-sys-zoom="fit" data-i18n="diagram.fitWidth">${i18nText('diagram.fitWidth', locale)}</button>
             <button class="sys-btn" data-sys-zoom="reset" data-i18n="diagram.reset">${i18nText('diagram.reset', locale)}</button>
           </div>
-          <p class="sys-hint" data-i18n="diagram.dragHint">${i18nText('diagram.dragHint', locale)}</p>
+          <p class="sys-hint" data-i18n="diagram.dragHintZoom">${i18nText('diagram.dragHintZoom', locale)}</p>
           <div class="sys-diag-target" id="sys-diag-target" tabindex="0">
             <div class="mermaid">${escapeHtml(systemDiagram)}</div>
           </div>
@@ -2709,6 +2709,46 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
     ${reviewSharedStyles()}
     .bc-card { transition: transform .15s, box-shadow .15s; }
     .bc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+    /* System Architecture (C4) diagram viewport */
+    .sys-diagram-wrap {
+      position: relative;
+      background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color);
+      border-radius: .5rem;
+      padding: 1rem 1.25rem 1.25rem;
+      min-height: 280px;
+      max-height: 70vh;
+      overflow: auto;
+    }
+    .sys-toolbar {
+      display: flex; gap: .35rem; justify-content: flex-end; flex-wrap: wrap;
+      position: sticky; top: 0; z-index: 2;
+      background: var(--bs-body-bg); padding: .25rem 0; margin-bottom: .25rem;
+    }
+    .sys-btn {
+      min-width: 2.1rem; padding: .25rem .55rem; font-size: .8rem; line-height: 1.2;
+      color: var(--bs-body-color); background: var(--bs-body-bg);
+      border: 1px solid var(--bs-border-color); border-radius: .375rem; cursor: pointer;
+      transition: background .12s, border-color .12s;
+    }
+    .sys-btn:hover { background: var(--bs-tertiary-bg); border-color: var(--bs-secondary-color); }
+    .sys-btn:active { background: var(--bs-secondary-bg); }
+    .sys-hint { font-size: .78rem; color: var(--bs-secondary-color); text-align: right; margin: 0 0 .75rem; }
+    .sys-diag-target { display: inline-block; transform-origin: 0 0; cursor: grab; }
+    .sys-diag-target.sys-dragging { cursor: grabbing; }
+    .sys-diag-target svg { display: block; max-width: none; height: auto; }
+    .sys-diag-error { text-align: left; }
+    .sys-diag-error .error-message {
+      background: #fff3cd; border: 1px solid #ffecb5; border-radius: .4rem;
+      padding: .75rem; margin-bottom: .75rem;
+    }
+    .sys-diag-error pre {
+      background: #fff8e1; border: 1px solid #ffe082; border-radius: .4rem;
+      padding: 1rem; font-size: .78rem; white-space: pre-wrap; margin: 0;
+    }
+    .sys-diag-error .line-no { color: var(--bs-secondary-color); user-select: none; display: inline-block; width: 3.5rem; }
+    [data-bs-theme="dark"] .sys-diag-error .error-message { background: #322a0c; border-color: #5c4d12; }
+    [data-bs-theme="dark"] .sys-diag-error pre { background: #2a2410; border-color: #5c4d12; color: #e8dca6; }
   </style>
 </head>
 <body>
@@ -2744,22 +2784,66 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
       catch (e) { console.warn('Saga diagram render error:', e); }
     });
     (async function() {
-      var mermaidEl = document.querySelector('#sys-diag-target .mermaid');
+      var target = document.getElementById('sys-diag-target');
+      if (!target) return;
+      var wrap = target.closest('.sys-diagram-wrap');
+      if (!wrap) return;
+      var mermaidEl = target.querySelector('.mermaid');
       if (!mermaidEl) return;
-      try { await mermaid.run({ nodes: [mermaidEl], suppressErrors: true }); }
-      catch(e) { console.warn('System diagram render error:', e); }
+      // textContent gives the decoded source (HTML entities resolved by the browser).
+      var sysSource = mermaidEl.textContent.trim();
+      function sysEsc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      function sysNumberedSource(src) {
+        return String(src || '').split('\\n').map(function(line, i) {
+          return '<span class="line-no">' + String(i + 1).padStart(3, ' ') + '</span>' + sysEsc(line);
+        }).join('\\n');
+      }
+      function showSysError(msg) {
+        target.className = 'sys-diag-error';
+        target.style.transform = '';
+        target.innerHTML =
+          '<div class="error-message">' +
+          '<div class="text-warning small mb-2 fw-semibold">&#9888; <span data-i18n="diagram.syntaxError">${i18nText('diagram.syntaxError', locale)}</span></div>' +
+          '<p class="small mb-1"><strong>system-diagram.mmd</strong></p>' +
+          '<p class="small mb-0"><span data-i18n="diagram.renderFailed">${i18nText('diagram.renderFailed', locale)}</span> ' +
+          '<span data-i18n="diagram.errorMessage">${i18nText('diagram.errorMessage', locale)}</span>: ' + sysEsc(msg) + '</p>' +
+          '</div>' +
+          '<div class="text-muted small mb-2 fw-semibold" data-i18n="diagram.rawSource">${i18nText('diagram.rawSource', locale)}</div>' +
+          '<pre>' + sysNumberedSource(sysSource) + '</pre>';
+      }
+      // Render with a parse pre-check + one retry. mermaid.run() with
+      // suppressErrors:true draws the "bomb" icon instead of throwing, so
+      // parse() is the only reliable way to detect a bad diagram; the retry
+      // absorbs the occasional race with mermaid.initialize on the experimental
+      // C4 renderer.
+      async function renderSysDiagram() {
+        await mermaid.parse(sysSource);          // throws on syntax error
+        mermaidEl.removeAttribute('data-processed');
+        await mermaid.run({ nodes: [mermaidEl] });
+      }
+      try {
+        await renderSysDiagram();
+      } catch (e1) {
+        console.warn('System diagram render error (will retry):', e1);
+        await new Promise(function(r) { setTimeout(r, 150); });
+        try {
+          await renderSysDiagram();
+        } catch (e2) {
+          console.warn('System diagram render error:', e2);
+          showSysError(e2 && e2.message ? e2.message : String(e2));
+          return;
+        }
+      }
       // Set arrow stroke-width to 2px — C4 diagram uses inline stroke-width attributes,
       // not CSS classes, so we update them directly after render.
-      var svgEl = document.querySelector('#sys-diag-target svg');
+      var svgEl = target.querySelector('svg');
       if (svgEl) {
         svgEl.querySelectorAll('path[stroke-width="1"], line[stroke-width="1"]').forEach(function(p) {
           p.setAttribute('stroke-width', '2');
         });
       }
-      var target = document.getElementById('sys-diag-target');
-      if (!target) return;
-      var wrap = target.closest('.sys-diagram-wrap');
-      if (!wrap) return;
       var scale = 1, tx = 0, ty = 0, dragging = false, startX = 0, startY = 0;
       // Returns the viewBox width (SVG canvas size) used to set CSS width.
       function getViewW() {
@@ -2838,7 +2922,12 @@ function buildIndexHtml(systemData, bcCards, systemDiagram, generatedAt, reviewM
         else if (e.key === '-') { e.preventDefault(); zoom(-0.15); }
         else if (e.key === '0') { e.preventDefault(); reset(); }
       });
-      wrap.addEventListener('wheel', function(e) { e.preventDefault(); zoom(e.deltaY < 0 ? 0.1 : -0.1); }, { passive: false });
+      // Zoom on wheel only while Ctrl/Cmd is held; a plain wheel scrolls the page.
+      wrap.addEventListener('wheel', function(e) {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        zoom(e.deltaY < 0 ? 0.1 : -0.1);
+      }, { passive: false });
       requestAnimationFrame(function() { requestAnimationFrame(function() { fit(); }); });
     })();
   <\/script>
