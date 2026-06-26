@@ -2146,7 +2146,7 @@ input:
     type: File
     source: multipart
     partName: invoice
-    maxSize: 5MB
+    maxSize: "5MB"                 # string con unidad B|KB|MB|GB — NUNCA bytes crudos (5242880 → BC-024)
     contentTypes: [application/pdf, image/png]
 ```
 

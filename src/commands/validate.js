@@ -69,17 +69,26 @@ async function runValidate(options = {}) {
     allBcNames = [filterBc];
   }
 
-  // Load BC yamls
+  // Load BC yamls. A BC directory that exists but fails to read/parse is a hard
+  // error (counted, exits non-zero), not a silent skip — otherwise a malformed BC
+  // disappears from the validated set and its problems surface only later, in the
+  // Phase-2 generator. Mirrors the generator's "Failed to load BC" behaviour.
   const bcYamls = [];
+  const loadFailures = [];
   for (const bcName of allBcNames) {
     try {
       bcYamls.push(readBcYaml(bcName, cwd));
     } catch (err) {
-      logger.warn(`Skipping ${bcName}: ${err.message}`);
+      loadFailures.push({
+        code: 'BC-000',
+        level: 'error',
+        message: `Failed to load BC "${bcName}": ${err.message}`,
+        location: `${bcName}.yaml`,
+      });
     }
   }
 
-  if (bcYamls.length === 0) {
+  if (bcYamls.length === 0 && loadFailures.length === 0) {
     console.log(chalk.yellow('No BC yamls could be loaded. Nothing to validate.'));
     return;
   }
@@ -109,6 +118,7 @@ async function runValidate(options = {}) {
       .filter(Boolean)
   );
   const diagnostics = [];
+  diagnostics.push(...loadFailures);
   for (const bcYaml of bcYamls) {
     diagnostics.push(...validateBcYamlAnatomy(bcYaml, {
       systemActors: systemActors.size > 0 ? systemActors : null,

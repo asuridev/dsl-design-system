@@ -201,16 +201,20 @@ El generador soporta un vocabulario extendido para cada sección del BC.
   | `path` | Segmentos de URL `/{id}`. Siempre `required: true`. Combinar con `loadAggregate: true` si el input carga el agregado principal. |
   | `authContext` | Claims del JWT extraídos del contexto de seguridad. No aparece en el OpenAPI. |
   | `header` | Header HTTP personalizado. Requiere `headerName`. |
-  | `multipart` | Parte de formulario multipart. Requiere `type: File` + `partName`. |
+  | `multipart` | Parte de formulario multipart. Requiere `type: File` + `partName`. `maxSize` opcional como **string con unidad** (`"10MB"`, no bytes). |
 - `input[]` extendido: `default` (solo si `required: false`), `max` (numéricos y listas).
 - `pagination` (queries): `defaultSize`, `maxSize`, `sortable[]`, `defaultSort: { field, direction }`. **`direction` debe ser `ASC` o `DESC` en mayúsculas** — el generador mapea el valor literalmente al identificador del enum de dirección del runtime de la plataforma destino, sin normalización; `asc`/`desc` minúsculas hacen abortar el build.
+- ⚠️ **`maxSize` está sobrecargado — no confundir los tres usos:**
+  - `pagination.maxSize` (queries) → **entero** positivo (tamaño máximo de página).
+  - `validations[].maxSize` sobre una propiedad `List[T]` → **entero** positivo (cardinalidad máxima de la lista).
+  - `input[].maxSize` de una parte multipart `File` → **string con unidad** (`"10MB"`, unidades `B|KB|MB|GB`). **Nunca** bytes crudos (`5242880` → 🔴 BC-024).
 - `fkValidations[].bc` — valida existencia de un FK externo. **Tres rutas de generación según contexto** (ver `references/use-cases-design-decisions.md §2`): (1) sin `bc` o mismo BC → `repo.findById().isEmpty()` inline; (2) BC externo con LRM local (`readModel: true`) → usa repositorio del LRM; (3) BC externo sin LRM → genera `{Bc}ServicePort.java` con `exists*()`. En los casos (2) y (3) **exige** entrada en `integrations.outbound[]` para ese BC.
 - `idempotency` (solo commands con `trigger.kind: http`): `header`, `ttl` (ISO-8601), `storage: cache`. ⚠️ Los valores `database` y `redis` están **deprecados** — el generador los rechaza. El único valor soportado es `cache`; el provider concreto se configura en `dsl-springboot.json` con la clave `cacheProvider`. **No declararlo en UCs con `trigger.kind: event`**: la idempotencia de mensajes se modela en `system.yaml` con `infrastructure.reliability.consumerIdempotency: true`.
 - `authorization`: cuatro estrategias combinables — `rolesAnyOf[]` (RBAC por rol; el generador evalúa `realm_access.roles` del JWT), `permissionsAnyOf[]` (RBAC granular con permisos en formato `recurso:accion`; evalúa el claim `permissions`), `scopesAnyOf[]` (OAuth2 Scopes; escribir sin prefijo, el generador añade `SCOPE_` automáticamente), `ownership: { field, claim, allowRoleBypass }` (guarda imperativa en el handler — no genera `@PreAuthorize`). Cuando se combinan los tres campos de `@PreAuthorize`, el generador los une con `and` en orden fijo: `scopesAnyOf` → `rolesAnyOf` → `permissionsAnyOf`. **Mutuamente excluyente con `public: true`**. ⚠️ **Prerequisito:** `arch/system/system.yaml` debe declarar `infrastructure.authServer: true`; sin este flag el generador no produce `SecurityConfig.java` ni ninguna protección Spring Security. Ver guía de decisión en §1.4 y en `references/use-cases-design-decisions.md §8`.
 - Multi-aggregate: `aggregates[]` + `steps[].{aggregate, method, onFailure.compensate}`.
 - `bulk: { itemType, maxItems, onItemError: continue|abort }`.
 - `async: { mode: jobTracking|fireAndForget, statusEndpoint }`.
-- Multipart: `type: File`, `source: multipart`, `partName`, `maxSize`, `contentTypes[]`.
+- Multipart: `type: File`, `source: multipart`, `partName`, `maxSize`, `contentTypes[]`. ⚠️ Aquí `maxSize` es un **string con unidad** (`"10MB"`, unidades `B|KB|MB|GB`) — **nunca** un entero de bytes. `maxSize: 5242880` falla en el reader de Fase 2 y ahora también en `dsl validate` (BC-024); usar `maxSize: "5MB"`.
 - `returns: BinaryStream` (solo queries).
 - `Range[T]`, `SearchText { fields[] }`.
 - `trigger.kind: event` con `consumes`, `fromBc`, `filter` (booleano).

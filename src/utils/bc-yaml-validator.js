@@ -314,6 +314,10 @@ class BcYamlValidator {
       for (const key of ['maxSize', 'contentTypes']) {
         if (input[key] != null && input.type !== 'File') this.error('BC-024', `Use case "${uc.id}" input "${input.name}" declares ${key} but type is not File.`, `${loc}/${key}`);
       }
+      // maxSize for a File part is a size string with unit (e.g. "10MB"), NOT a raw byte
+      // integer. Mirror dsl-springboot-generator/src/utils/bc-yaml-reader.js so Phase 1
+      // rejects what Phase 2 would reject at load time.
+      if (input.maxSize != null && (typeof input.maxSize !== 'string' || !/^\d+(B|KB|MB|GB)$/.test(input.maxSize))) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" maxSize must be a size string like "10MB" (units: B, KB, MB, GB), not a raw byte number.`, `${loc}/maxSize`);
       // partName and contentTypes are interpolated into generated Java string literals
       // downstream; constrain them to safe shapes so they cannot break the literal.
       if (typeof input.partName === 'string' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(input.partName)) this.error('BC-024', `Use case "${uc.id}" input "${input.name}" partName "${input.partName}" must be a safe identifier (letters, digits, underscore and hyphen; not starting with a digit or hyphen).`, `${loc}/partName`);

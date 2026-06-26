@@ -676,6 +676,107 @@ domainEvents:
 `, 'BC-024');
 });
 
+test('copied dsl-validate rejects multipart maxSize given as a raw byte integer', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: image
+        type: File
+        required: true
+        source: multipart
+        partName: image
+        maxSize: 5242880
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, 'BC-024');
+});
+
+test('copied dsl-validate accepts multipart maxSize as a unit string (no false BC-024)', async () => {
+  await assertTacticalValidationOmits(`
+bc: catalog
+type: core
+description: Catalog BC.
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+    domainMethods:
+      - name: attachImage
+        signature: "attachImage(image: StoredObject): void"
+        returns: void
+useCases:
+  - id: UC-CAT-001
+    name: UploadImage
+    type: command
+    actor: system
+    aggregate: Product
+    method: attachImage
+    trigger:
+      kind: event
+      consumes: SomethingHappened
+    input:
+      - name: image
+        type: File
+        required: true
+        source: multipart
+        partName: image
+        maxSize: "5MB"
+    implementation: scaffold
+domainEvents:
+  published: []
+  consumed:
+    - name: SomethingHappened
+      sourceBc: orders
+      listenerRequired: false
+`, /maxSize must be a size string/);
+});
+
+test('copied dsl-validate reports a malformed BC yaml as a counted error, not a silent skip', async () => {
+  await withTempProject(async (projectDir) => {
+    assert.strictEqual(runNode([CLI, 'init'], { cwd: projectDir }).status, 0);
+    await writeValidArch(projectDir);
+    // Overwrite catalog.yaml with syntactically invalid YAML (unclosed flow sequence).
+    await writeYaml(path.join(projectDir, 'arch', 'catalog', 'catalog.yaml'), `
+bc: catalog
+type: core
+description: Catalog BC.
+domainEvents: [unclosed
+`);
+    const validateCli = path.join(projectDir, 'tools', 'dsl-validate', 'bin', 'dsl.js');
+    const result = runNode([validateCli, 'validate'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notStrictEqual(result.status, 0, output);
+    assert.match(output, /Failed to load BC "catalog"/);
+  });
+});
+
 test('copied dsl-validate rejects cacheable keyFields missing from useCase input', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

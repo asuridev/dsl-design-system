@@ -262,6 +262,23 @@ Cuando ya no haya líneas `✖`, procesar cada línea `⚠` de la salida:
 
 **Límite compartido:** El contador de 3 ciclos del Paso 3 es compartido con el Paso 3b. Si se alcanzan 3 ciclos en total (errores + advertencias), detener e informar al usuario.
 
+### Paso 4 — Barrido completo del repositorio (sin `--bc`)
+
+Cuando la validación por-BC (Pasos 1–3b) quede limpia (`✔` o solo `⚠` esperadas), ejecutar **una vez** la validación completa, **sin** `--bc`, antes de cerrar el diseño:
+
+```
+node tools/dsl-validate/bin/dsl.js validate
+```
+
+El modo `--bc {bc-name}` solo carga el BC objetivo; este barrido completo detecta lo que aquel oculta:
+
+- **Fallos de carga de OTROS BCs** (`✖ Failed to load BC "X"`): un BC distinto al recién diseñado que ya no parsea o quedó malformado (p. ej. un valor que el reader de Fase 2 rechaza). En modo `--bc` ese BC ni siquiera se carga y el problema aparece recién en el generador.
+- **Drift de anatomía o de coherencia entre BCs** introducido por cambios previos.
+
+Interpretación:
+- Las advertencias `INT-007` / `INT-012` / `INT-014` de BCs aún **sin diseñar** son **esperadas** (el productor del evento todavía no existe) — no bloquean.
+- Cualquier `✖` (incluido `Failed to load BC`) en **otro** BC debe corregirse antes de dar por cerrado el diseño táctico. Si el `✖` pertenece a un BC fuera del alcance de esta sesión, informarlo al usuario con la causa raíz y la corrección recomendada en lugar de modificarlo silenciosamente.
+
 ### Tabla de errores por código de diagnóstico
 
 | Código / Patrón | Causa típica | Corrección |  
@@ -371,8 +388,9 @@ Presenta al usuario el resultado completo en este formato:
 [Si todos los BCs están diseñados: "El sistema está listo para Fase 3 — Generación de Código."]
 
 ### Readiness para Fase 2
-[N/3 criterios cumplidos]:
+[N/4 criterios cumplidos]:
 - [ ] `dsl validate --bc {bc-name}` terminó sin líneas `✖`
+- [ ] `dsl validate` completo (sin `--bc`, Paso 4) sin `✖` — incluido ningún `Failed to load BC` en otros BCs
 - [ ] `bc.yaml` v2 es auto-suficiente: contiene enums, valueObjects, aggregates, useCases, repositories, errors, domainEvents, integrations — sin referencias a clases, SQL ni frameworks
 - [ ] El humano aprobó explícitamente decisiones de integración (LRM vs HTTP), agregados e invariantes
 
