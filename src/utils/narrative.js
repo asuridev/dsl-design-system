@@ -241,10 +241,78 @@ function parseBcNarrative(specMd, flowsMd) {
   return index;
 }
 
+// Bold label line that opens a Given/When/Then segment inside a flow body,
+// e.g. `**Given**:`, `**When**:`, `**Then**:`, `**Casos borde**:`.
+const FLOW_LABEL_RE = /^\*\*([^*]+?)\*\*\s*:?\s*$/;
+
+// Split a single flow scenario body into ordered, labeled segments so the
+// review can render Given / When / Then / edge cases as distinct visual blocks.
+// Text before the first label becomes an unlabeled `intro` segment. Each
+// segment body is rendered with the shared markdown renderer.
+function splitFlowSegments(body) {
+  const lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
+  const segments = [];
+  let current = { label: null, lines: [] };
+  for (const line of lines) {
+    const m = line.trim().match(FLOW_LABEL_RE);
+    if (m) {
+      if (current.label !== null || current.lines.join('').trim()) segments.push(current);
+      current = { label: m[1].trim(), lines: [] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current.label !== null || current.lines.join('').trim()) segments.push(current);
+  return segments
+    .map((s) => ({ label: s.label, html: renderMarkdown(s.lines.join('\n')) }))
+    .filter((s) => s.label !== null || s.html);
+}
+
+// Extract every Given/When/Then scenario from a {bc}-flows.md document, in
+// document order, regardless of whether it is linked to a use case via the
+// coverage matrix (so saga handlers and other standalone flows are included).
+//
+//   extractFlowScenarios(flowsMd) → [ {
+//     id, title, group, segments: [ { label, html } ]
+//   } ]
+//
+// `group` is the nearest preceding plain (non-id) heading, e.g. "Categorías",
+// "Checkout", "Saga Event Handlers".
+function extractFlowScenarios(flowsMd) {
+  if (!flowsMd) return [];
+  const lines = String(flowsMd).replace(/\r\n/g, '\n').split('\n');
+  const scenarios = [];
+  let group = '';
+  let current = null;
+  for (const line of lines) {
+    const idHeading = line.match(HEADING_RE);
+    if (idHeading && /^FL-/.test(idHeading[1])) {
+      if (current) scenarios.push(current);
+      current = { id: idHeading[1], title: (idHeading[2] || '').trim(), group, body: [] };
+      continue;
+    }
+    const plainHeading = line.match(/^(#{2,6})\s+(.*)$/);
+    if (plainHeading && !idHeading) {
+      // A non-id heading updates the current group context.
+      group = plainHeading[2].trim();
+      continue;
+    }
+    if (current) current.body.push(line);
+  }
+  if (current) scenarios.push(current);
+  return scenarios.map((s) => ({
+    id: s.id,
+    title: s.title,
+    group: s.group,
+    segments: splitFlowSegments(s.body.join('\n').trim()),
+  }));
+}
+
 module.exports = {
   parseBcNarrative,
   splitSectionsById,
   parseCoverageMatrix,
   renderMarkdown,
+  extractFlowScenarios,
   ID_IN_TEXT_RE,
 };

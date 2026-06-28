@@ -9,7 +9,7 @@ const open = require('open');
 const { validateBcYamlAnatomy } = require('../utils/bc-yaml-validator');
 const { validateIntegrationCoherence, validateOpenApiUseCases } = require('@dsl/contract');
 const { clientI18nScript, localeSwitcher, normalizeLocale, t, themeBootScript, themeSwitcher, clientThemeScript } = require('../utils/i18n');
-const { parseBcNarrative } = require('../utils/narrative');
+const { parseBcNarrative, extractFlowScenarios } = require('../utils/narrative');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1684,6 +1684,23 @@ function reviewSharedStyles() {
     .uc-detail .narrative-table { font-size: .82rem; }
     .uc-detail .narrative-flow > summary { cursor: pointer; }
     .uc-detail .narrative-subheading { text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); margin-top: .75rem; }
+    /* Validation scenarios (Given/When/Then) */
+    .scenario-card { background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: .85rem 1rem; }
+    .flow-seg { border-left: 3px solid var(--bs-border-color); padding: .25rem .75rem; margin: .4rem 0; }
+    .flow-seg-label { display: inline-block; text-transform: uppercase; letter-spacing: .04em; font-size: .68rem; font-weight: 700; padding: .05rem .4rem; border-radius: .25rem; margin-bottom: .25rem; }
+    .flow-seg-body > :last-child { margin-bottom: 0; }
+    .flow-seg-body ul, .flow-seg-body ol { margin-bottom: .25rem; }
+    .flow-seg--given { border-left-color: var(--bs-info); }
+    .flow-seg--given .flow-seg-label { background: var(--bs-info-bg-subtle); color: var(--bs-info-text-emphasis); }
+    .flow-seg--when { border-left-color: var(--bs-primary); }
+    .flow-seg--when .flow-seg-label { background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); }
+    .flow-seg--then { border-left-color: var(--bs-success); }
+    .flow-seg--then .flow-seg-label { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+    .flow-seg--edge { border-left-color: var(--bs-warning); }
+    .flow-seg--edge .flow-seg-label { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+    .flow-seg--other .flow-seg-label { background: var(--bs-secondary-bg); color: var(--bs-secondary-color); }
+    .flow-seg--intro { border-left-color: transparent; padding-left: 0; }
+    .narrative-code, .scenario-card .narrative-code { background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: .35rem; padding: .6rem; font-size: .8rem; overflow: auto; }
     /* Copy-to-clipboard control */
     .copy-btn { font-size: .72rem; }
     .copy-btn.copied { color: var(--bs-success); border-color: var(--bs-success); }
@@ -1957,6 +1974,106 @@ function renderSecurityMatrix(matrix, locale = 'es') {
         <th data-i18n="sec.ownership">${i18nText('sec.ownership', locale)}</th>
       </tr></thead><tbody>${rows}</tbody>
     </table></div>`;
+}
+
+// Focused reliability view: answers "where is idempotency applied?" and "which
+// endpoints are cached?" directly, instead of leaving them as two cells in the
+// dense (and collapsed) operations matrix. Derived from the same operations
+// matrix entries (uc.idempotency / uc.cacheable) — no extra data needed.
+function renderReliabilityPanel(matrix, locale = 'es') {
+  const entries = asArray(matrix);
+  const idempotent = entries.filter((e) => e.idempotency);
+  const cached = entries.filter((e) => e.cache);
+
+  const endpointCell = (e) =>
+    `<td><div class="font-monospace small">${escapeHtml(e.endpoint)}</div><div class="text-muted small">${escapeHtml(e.id)} ${escapeHtml(e.name)}</div></td>`;
+
+  const idempotentBlock = idempotent.length
+    ? `<div class="table-responsive"><table class="table table-sm table-hover align-middle">
+        <thead class="table-light"><tr>
+          <th data-i18n="rel.endpoint">${i18nText('rel.endpoint', locale)}</th>
+          <th data-i18n="rel.header">${i18nText('rel.header', locale)}</th>
+          <th data-i18n="rel.ttl">${i18nText('rel.ttl', locale)}</th>
+          <th data-i18n="rel.storage">${i18nText('rel.storage', locale)}</th>
+        </tr></thead><tbody>${idempotent.map((e) => `
+          <tr>
+            ${endpointCell(e)}
+            <td><span class="badge bg-primary">${escapeHtml(e.idempotency.header)}</span></td>
+            <td class="font-monospace small">${escapeHtml(e.idempotency.ttl || '—')}</td>
+            <td><span class="badge bg-light text-dark border">cache</span></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`
+    : `<p class="text-muted small" data-i18n="ui.noIdempotency">${i18nText('ui.noIdempotency', locale)}</p>`;
+
+  const cachedBlock = cached.length
+    ? `<div class="table-responsive"><table class="table table-sm table-hover align-middle">
+        <thead class="table-light"><tr>
+          <th data-i18n="rel.endpoint">${i18nText('rel.endpoint', locale)}</th>
+          <th data-i18n="rel.ttl">${i18nText('rel.ttl', locale)}</th>
+          <th data-i18n="rel.keyFields">${i18nText('rel.keyFields', locale)}</th>
+        </tr></thead><tbody>${cached.map((e) => `
+          <tr>
+            ${endpointCell(e)}
+            <td><span class="badge bg-info text-dark">${escapeHtml(e.cache.ttl || '—')}</span></td>
+            <td>${e.cache.keyFields.length ? `<span class="font-monospace small">${escapeHtml(e.cache.keyFields.join(', '))}</span>` : '<span class="text-muted">—</span>'}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>`
+    : `<p class="text-muted small" data-i18n="ui.noCache">${i18nText('ui.noCache', locale)}</p>`;
+
+  return `
+    <h6 class="text-uppercase text-muted small mb-2" data-i18n="ui.reliabilityIdempotent">${i18nText('ui.reliabilityIdempotent', locale)}</h6>
+    ${idempotentBlock}
+    <h6 class="text-uppercase text-muted small mt-3 mb-2" data-i18n="ui.reliabilityCached">${i18nText('ui.reliabilityCached', locale)}</h6>
+    ${cachedBlock}`;
+}
+
+// Dedicated, scannable view of every Given/When/Then scenario in {bc}-flows.md
+// so the human can read and give feedback. Scenarios are grouped by their
+// flows.md heading and each segment (Given/When/Then/edge cases) is rendered as
+// a color-differentiated block. Read-only by design (no copy-prompt buttons).
+function renderScenarios(scenarios, locale = 'es') {
+  const list = asArray(scenarios);
+  if (!list.length) return `<p class="text-muted small" data-i18n="ui.noScenarios">${i18nText('ui.noScenarios', locale)}</p>`;
+
+  // Map known Spanish/English flow labels to a localized display + style class.
+  const segMeta = (label) => {
+    const norm = String(label || '').trim().toLowerCase();
+    if (/^(given|dado)/.test(norm)) return { cls: 'given', text: i18nText('flow.given', locale) };
+    if (/^(when|cuando)/.test(norm)) return { cls: 'when', text: i18nText('flow.when', locale) };
+    if (/^(then|entonces)/.test(norm)) return { cls: 'then', text: i18nText('flow.then', locale) };
+    if (/borde|edge/.test(norm)) return { cls: 'edge', text: i18nText('flow.edgeCases', locale) };
+    return { cls: 'other', text: label };
+  };
+
+  const renderScenario = (sc) => {
+    const segs = asArray(sc.segments).map((seg) => {
+      if (!seg.label) return `<div class="flow-seg flow-seg--intro">${seg.html}</div>`;
+      const meta = segMeta(seg.label);
+      return `<div class="flow-seg flow-seg--${meta.cls}">
+        <span class="flow-seg-label">${escapeHtml(meta.text)}</span>
+        <div class="flow-seg-body">${seg.html}</div>
+      </div>`;
+    }).join('');
+    return `<div class="scenario-card mb-3">
+      <div class="d-flex align-items-baseline gap-2 flex-wrap mb-2">
+        <span class="badge bg-dark font-monospace">${escapeHtml(sc.id)}</span>
+        <span class="fw-semibold">${escapeHtml(sc.title)}</span>
+      </div>
+      ${segs}
+    </div>`;
+  };
+
+  // Group by flows.md heading, preserving document order.
+  const groups = [];
+  for (const sc of list) {
+    const g = sc.group || '';
+    let bucket = groups.find((x) => x.group === g);
+    if (!bucket) { bucket = { group: g, items: [] }; groups.push(bucket); }
+    bucket.items.push(sc);
+  }
+  return groups.map((bucket) => `
+    ${bucket.group ? `<h6 class="text-uppercase text-muted small mt-3 mb-2">${escapeHtml(bucket.group)}</h6>` : ''}
+    ${bucket.items.map(renderScenario).join('')}`).join('');
 }
 
 function renderOperationsMatrix(matrix, locale = 'es') {
@@ -2284,9 +2401,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   const navSections = [
     { id: 'sec-decisions', key: 'ui.designDecisions' },
     { id: 'sec-usecases', key: 'ui.useCaseCatalog' },
+    { id: 'sec-scenarios', key: 'ui.scenarios' },
     { id: 'sec-events', key: 'ui.eventsReadModels' },
     { id: 'sec-sagas', key: 'ui.sagaParticipation' },
     { id: 'sec-security', key: 'ui.endpointSecurity' },
+    { id: 'sec-reliability', key: 'ui.reliability' },
     { id: 'sec-operations', key: 'ui.operationalBehavior' },
     { id: 'sec-integrations', key: 'ui.directIntegrations' },
     { id: 'sec-storage', key: 'ui.storageBuckets' },
@@ -2298,9 +2417,11 @@ function buildBcReviewHtml(bcReview, generatedAt, locale = 'es') {
   const sectionsHtml = [
     reviewSection('sec-decisions', 'ui.designDecisions', renderDecisionCards(bcReview.decisions, locale), locale, { count: asArray(bcReview.decisions).length }),
     reviewSection('sec-usecases', 'ui.useCaseCatalog', `<div class="detail-card">${renderUseCaseCatalog(bcReview.useCaseCatalog, locale)}</div>`, locale, { count: asArray(bcReview.useCaseCatalog).length }),
+    reviewSection('sec-scenarios', 'ui.scenarios', `<div class="detail-card">${renderScenarios(bcReview.scenarios, locale)}</div>`, locale, { count: asArray(bcReview.scenarios).length }),
     reviewSection('sec-events', 'ui.eventsReadModels', `<div class="detail-card">${renderEvents(bcReview.events, locale)}</div>`, locale),
     reviewSection('sec-sagas', 'ui.sagaParticipation', `<div class="detail-card">${renderSagaParticipation(bcReview.name, bcReview.sagas, locale)}</div>`, locale),
     reviewSection('sec-security', 'ui.endpointSecurity', `<div class="detail-card">${renderSecurityMatrix(bcReview.securityMatrix, locale)}</div>`, locale, { collapsible: true, count: asArray(bcReview.securityMatrix).length }),
+    reviewSection('sec-reliability', 'ui.reliability', `<div class="detail-card">${renderReliabilityPanel(bcReview.operationsMatrix, locale)}</div>`, locale),
     reviewSection('sec-operations', 'ui.operationalBehavior', `<div class="detail-card">${renderOperationsMatrix(bcReview.operationsMatrix, locale)}</div>`, locale, { collapsible: true, collapsed: true, count: asArray(bcReview.operationsMatrix).length }),
     reviewSection('sec-integrations', 'ui.directIntegrations', `<div class="detail-card">${renderIntegrations(bcReview.integrations, locale)}</div>`, locale),
     reviewSection('sec-storage', 'ui.storageBuckets', `<div class="detail-card">${renderStorageSummary(bcReview.storage, locale)}</div>`, locale, { collapsible: true, collapsed: true }),
@@ -3155,6 +3276,9 @@ function registerPreview(program) {
         const specMd = await readTextIfExists(path.join(bcDir, `${bcName}-spec.md`));
         const flowsMd = await readTextIfExists(path.join(bcDir, `${bcName}-flows.md`));
         const narrative = (specMd || flowsMd) ? parseBcNarrative(specMd, flowsMd) : null;
+        // All Given/When/Then scenarios in document order (including flows not
+        // linked to a use case, e.g. saga handlers) for the dedicated section.
+        const scenarios = extractFlowScenarios(flowsMd);
 
         if (bcDoc) {
           bcDoc.bc = bcDoc.bc || bcName;
@@ -3164,7 +3288,7 @@ function registerPreview(program) {
           if (asyncApiDoc) asyncApiByBc.set(bcName, asyncApiDoc);
         }
 
-        bcArtifacts.set(bcName, { bcDir, bcDoc, openApiDoc, internalApiDoc, asyncApiDoc, narrative });
+        bcArtifacts.set(bcName, { bcDir, bcDoc, openApiDoc, internalApiDoc, asyncApiDoc, narrative, scenarios });
       }
 
       spinner.text = t(locale, 'cli.validating');
@@ -3255,6 +3379,7 @@ function registerPreview(program) {
           useCaseCatalog: extractUseCaseCatalog(artifact.bcDoc, opIndex, internalOpIndex, artifact.narrative),
           securityMatrix: extractSecurityMatrix(artifact.bcDoc, opIndex, internalOpIndex),
           operationsMatrix: extractOperationsMatrix(artifact.bcDoc, opIndex, internalOpIndex),
+          scenarios: asArray(artifact.scenarios),
           events: extractEvents(artifact.bcDoc),
           storage: extractStorageUsage(artifact.bcDoc, systemData),
           integrations: bcIntegrations,

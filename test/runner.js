@@ -1695,6 +1695,42 @@ test('dsl preview generates decision review assets without opening browser', asy
   });
 });
 
+test('dsl preview renders the reliability panel and validation scenarios sections', async () => {
+  await withTempProject(async (projectDir) => {
+    await copyCanastaExample(projectDir);
+
+    const result = runNode([CLI, 'preview', '--no-open', '--format', 'all', '--locale', 'es'], { cwd: projectDir });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.strictEqual(result.status, 0, output);
+
+    const reviewDir = path.join(projectDir, 'arch', 'review');
+    const catalogHtml = await fs.readFile(path.join(reviewDir, 'catalog-review.html'), 'utf8');
+    const reviewModel = JSON.parse(await fs.readFile(path.join(reviewDir, 'review-model.json'), 'utf8'));
+
+    // Focused reliability panel: idempotent endpoints listed, empty cache block.
+    assert.match(catalogHtml, /id="sec-reliability"/);
+    assert.match(catalogHtml, /data-i18n="ui\.reliabilityIdempotent"/);
+    assert.match(catalogHtml, /data-i18n="ui\.reliabilityCached"/);
+    assert.match(catalogHtml, /Idempotency-Key/);
+    assert.match(catalogHtml, /UC-CAT-001/);
+    assert.match(catalogHtml, /data-i18n="ui\.noCache"/, 'no cacheable UC declared → cache empty-state');
+
+    // Dedicated scenarios section with differentiated Given/When/Then blocks.
+    assert.match(catalogHtml, /id="sec-scenarios"/);
+    assert.match(catalogHtml, /class="scenario-card/);
+    assert.match(catalogHtml, /flow-seg--given/);
+    assert.match(catalogHtml, /flow-seg--when/);
+    assert.match(catalogHtml, /flow-seg--then/);
+    assert.match(catalogHtml, /FL-CAT-001/);
+
+    // Review model exposes scenarios per BC.
+    const catalog = reviewModel.boundedContexts.find((bc) => bc.name === 'catalog');
+    assert.ok(catalog && Array.isArray(catalog.scenarios), 'catalog BC exposes scenarios');
+    assert.ok(catalog.scenarios.length > 0, 'catalog has at least one scenario');
+    assert.ok(catalog.scenarios[0].segments.length > 0, 'scenario has segments');
+  });
+});
+
 test('dsl preview renders the direct-integrations section per bounded context', async () => {
   await withTempProject(async (projectDir) => {
     await writeArchWithIntegrations(projectDir);
@@ -1990,6 +2026,68 @@ test('dsl preview narrative parser is dependency-free and id-keyed', () => {
   assert.strictEqual(narrative.get('UC-CAT-001').flows.length, 1, 'flow linked via coverage matrix');
   assert.strictEqual(narrative.get('UC-CAT-001').flows[0].id, 'FL-CAT-001');
   assert.match(renderMarkdown('plain `code` and **bold**'), /<code>code<\/code>.*<strong>bold<\/strong>/);
+});
+
+test('extractFlowScenarios returns every flow with group and Given/When/Then segments', () => {
+  const { extractFlowScenarios } = require(path.join(ROOT, 'src', 'utils', 'narrative.js'));
+  const flowsMd = [
+    '# Catalog BC — Flujos',
+    '',
+    '## Matriz de Cobertura UC → Flujo',
+    '| UC | Flujo |',
+    '|----|-------|',
+    '| UC-CAT-001 | FL-CAT-001 |',
+    '',
+    '## Categorías',
+    '',
+    '### FL-CAT-001: CreateCategory — happy path',
+    '',
+    '**Given**:',
+    '- No existe la categoría.',
+    '',
+    '**When**:',
+    '- `POST /categories`',
+    '',
+    '**Then**:',
+    '- HTTP `201 Created`',
+    '',
+    '**Casos borde**:',
+    '- Duplicado → `201` idempotente.',
+    '',
+    '## Saga Event Handlers',
+    '',
+    '### FL-CAT-099: Handler — standalone flow not linked to any UC',
+    '',
+    '**Given**:',
+    '- Llega un evento.',
+  ].join('\n');
+
+  const scenarios = extractFlowScenarios(flowsMd);
+  assert.strictEqual(scenarios.length, 2, 'returns all FL-* scenarios, including unlinked ones');
+
+  const first = scenarios[0];
+  assert.strictEqual(first.id, 'FL-CAT-001');
+  assert.strictEqual(first.group, 'Categorías', 'group is the nearest preceding plain heading');
+  const labels = first.segments.map((s) => s.label);
+  assert.deepStrictEqual(labels, ['Given', 'When', 'Then', 'Casos borde'], 'segments are split by label');
+  assert.match(first.segments[2].html, /201 Created/);
+
+  const standalone = scenarios[1];
+  assert.strictEqual(standalone.id, 'FL-CAT-099');
+  assert.strictEqual(standalone.group, 'Saga Event Handlers');
+
+  assert.deepStrictEqual(extractFlowScenarios(''), [], 'no flows.md yields empty list');
+});
+
+test('locale catalogs es.json and en.json have identical key sets', () => {
+  const es = require(path.join(ROOT, 'src', 'locales', 'es.json'));
+  const en = require(path.join(ROOT, 'src', 'locales', 'en.json'));
+  const esKeys = Object.keys(es).sort();
+  const enKeys = Object.keys(en).sort();
+  const missingInEn = esKeys.filter((k) => !(k in en));
+  const missingInEs = enKeys.filter((k) => !(k in es));
+  assert.deepStrictEqual(missingInEn, [], `keys missing in en.json: ${missingInEn.join(', ')}`);
+  assert.deepStrictEqual(missingInEs, [], `keys missing in es.json: ${missingInEs.join(', ')}`);
 });
 
 test('published event payload docs do not whitelist auth-context', async () => {
