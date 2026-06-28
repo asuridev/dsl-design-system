@@ -2533,34 +2533,6 @@ se usa en múltiples lugares con la misma semántica, o es un tipo compuesto →
 **Granularidad de casos de uso:** Un CU = una intención del usuario. Si dos pasos
 siempre ocurren juntos y uno no tiene sentido sin el otro → un solo CU.
 
-```
-arch/{bc-name}/
-├── {bc-name}.yaml              ← v2 (enriquecido, fuente de verdad para el generador)
-├── {bc-name}-spec.md
-├── {bc-name}-flows.md
-├── {bc-name}-open-api.yaml          ← endpoints públicos (personas + sistemas externos)
-├── {bc-name}-internal-api.yaml      ← endpoints BC-a-BC (condicional)
-├── {bc-name}-async-api.yaml
-└── diagrams/
-    ├── {bc-name}-diagram.mmd                 ← siempre
-    ├── {bc-name}-diagram-domain-model.mmd    ← siempre
-    ├── {bc-name}-diagram-{entity}-states.mmd ← 1 por enum con transitions (ej: category-states, product-states)
-    └── {bc-name}-diagram-{op-kebab}-seq.mmd  ← 1 por operación outbound (ej: product-activated-seq)
-```
-
----
-
-## Fase 10: Principios de Calidad del Diseño Táctico
-
-**Agregado vs Entidad:** Si la entidad tiene identidad propia fuera del root (puede
-buscarse directamente, tiene su propio ciclo de vida) → es un agregado separado.
-
-**Value Object vs propiedad primitiva:** Si el valor tiene validación de negocio propia,
-se usa en múltiples lugares con la misma semántica, o es un tipo compuesto → es un VO.
-
-**Granularidad de casos de uso:** Un CU = una intención del usuario. Si dos pasos
-siempre ocurren juntos y uno no tiene sentido sin el otro → un solo CU.
-
 **Contratos de API:** El contrato REST no expone el modelo de dominio directamente.
 Los schemas de request/response son DTOs, no entidades. Un producto con 15 propiedades
 puede tener un `CreateProductRequest` con solo 5.

@@ -3,8 +3,8 @@ name: ddd-step1-strategic-design
 description: >
   Ejecuta el Paso 1 del framework de diseño de sistemas con DDD: Diseño Estratégico.
   Analiza el contexto de negocio ingresado, identifica Bounded Contexts, Agregados y
-  relaciones, y genera los cuatro artefactos canónicos: system.yaml, system-spec.md y
-  system-diagram.mmd en arch/system/, más AGENTS.md en la raíz del proyecto.
+  relaciones, y genera los cinco artefactos canónicos: system.yaml, system-spec.md y
+  system-diagram.mmd en arch/system/, más AGENTS.md y CLAUDE.md en la raíz del proyecto.
   Usar SIEMPRE que el usuario quiera diseñar un nuevo sistema, plataforma, aplicación
   o dominio de negocio desde cero. También aplica cuando el usuario diga frases como
   "quiero diseñar", "necesito modelar un sistema", "vamos a hacer el paso 1", "analiza
@@ -17,12 +17,13 @@ description: >
 # DDD Paso 1 — Diseño Estratégico
 
 Este skill produce el diseño estratégico completo de un sistema basado en Domain-Driven
-Design. Al finalizar, existen cuatro artefactos:
+Design. Al finalizar, existen cinco artefactos:
 
 - `arch/system/system.yaml` — fuente de verdad estructurada (input para generadores en pasos siguientes)
 - `arch/system/system-spec.md` — narrativa detallada por Bounded Context
 - `arch/system/system-diagram.mmd` — diagrama C4 Contenedores en Mermaid
 - `AGENTS.md` — contexto consolidado del sistema para agentes de IA
+- `CLAUDE.md` — contexto e instrucciones para Claude Code en la raíz del proyecto
 
 ---
 
@@ -1312,15 +1313,45 @@ Reglas para este artefacto:
 - La sección "¿Qué se está construyendo?" debe responder en lenguaje de negocio, no técnico
 - Si se sobreescribe en un paso posterior, conservar el historial en "Estado del Diseño"
 
+### 3.5 CLAUDE.md
+
+Genera `CLAUDE.md` en la **raíz del proyecto**. Es el contexto e instrucciones que
+Claude Code carga al trabajar en el repositorio en pasos futuros. Mientras `AGENTS.md`
+es el contexto genérico del sistema, `CLAUDE.md` orienta específicamente a Claude Code:
+comandos clave, fuentes de verdad, agentes disponibles y convenciones de los YAML.
+
+**Salvaguarda obligatoria:** este archivo es un artefacto generado para el proyecto de
+usuario que se está diseñando. Si el repositorio actual es `dsl-design-system` o el
+`CLAUDE.md` existente documenta el framework DSL Design System, no lo sobrescribas sin
+confirmación explícita del usuario. Aplica exactamente la misma lógica que la salvaguarda
+de la sección 3.4 para `AGENTS.md`: informa que el archivo raíz es documentación del
+framework y ofrece continuar con los otros artefactos o reemplazarlo solo si el usuario
+lo confirma.
+
+**Estructura obligatoria:** usa la plantilla canónica definida en el agente
+`design-system` (`src/agents/design-system.agent.md`, sección "Estructura obligatoria de
+`CLAUDE.md`"). El archivo debe contener al menos: `## Proyecto`, `## Comandos Clave`,
+`## Fuentes de Verdad`, `## Agentes Disponibles`, `## Convenciones de Artefactos YAML`,
+`## Bounded Contexts` (tabla derivada de `system.yaml`) y `## Estado del Diseño`.
+
+Reglas para este artefacto:
+- La tabla de `## Bounded Contexts` debe listar exactamente los mismos BCs que
+  `boundedContexts[]` de `system.yaml`, con su tipo (Core/Supporting/Generic).
+- Los `## Comandos Clave` no deben referenciar tecnología concreta de Fase 2 (frameworks,
+  motores de BD) — solo los comandos del CLI `dsl` y del validador.
+- Mantén `CLAUDE.md` coherente con `AGENTS.md` y `system.yaml`: el nombre del sistema, los
+  BCs y el glosario deben coincidir entre los tres.
+
 ---
 
 ## Fase 4: Creación de Archivos
 
-Crea el directorio `arch/system/` si no existe y genera los cuatro archivos:
+Crea el directorio `arch/system/` si no existe y genera los cinco archivos:
 
 ```
 [raíz del proyecto]/
 ├── AGENTS.md
+├── CLAUDE.md
 └── arch/
     └── system/
         ├── system.yaml
@@ -1329,12 +1360,12 @@ Crea el directorio `arch/system/` si no existe y genera los cuatro archivos:
 ```
 
 Usa `Write` para archivos nuevos y `Edit` para modificar existentes. Si ya existen, confirma con el usuario antes
-de sobreescribir — puede ser un diseño en progreso. Para `AGENTS.md`, aplica además la
-salvaguarda de la sección 3.4: nunca reemplaces el `AGENTS.md` documental de este repo
+de sobreescribir — puede ser un diseño en progreso. Para `AGENTS.md` y `CLAUDE.md`, aplica además la
+salvaguarda de las secciones 3.4 y 3.5: nunca reemplaces el `AGENTS.md` ni el `CLAUDE.md` documental de este repo
 como efecto colateral de una prueba del agente diseñador.
 
-Or den de creación recomendado: `system.yaml` → `system-spec.md` → `system-diagram.mmd` → `AGENTS.md`
-(AGENTS.md al final porque consolida información de los tres anteriores).
+Orden de creación recomendado: `system.yaml` → `system-spec.md` → `system-diagram.mmd` → `AGENTS.md` → `CLAUDE.md`
+(AGENTS.md y CLAUDE.md al final porque consolidan información de los tres anteriores).
 
 ---
 
@@ -1347,7 +1378,7 @@ Al finalizar, presenta al usuario:
    (ej: por qué Inventario publica hacia Catálogo y no al revés)
 3. **Supuestos aplicados** — si inferiste algo, menciónalo explícitamente
 4. **Defaults de infraestructura aplicados** — qué se asumió y por qué
-5. **Artefactos generados** — lista los 4 archivos creados con sus rutas
+5. **Artefactos generados** — lista los 5 archivos creados con sus rutas (incluido `CLAUDE.md`)
 6. **Siguiente paso** — ofrecer avanzar al Paso 2 con algún BC específico
 
 Sé conciso. El resumen no es documentación — es orientación para la siguiente decisión.

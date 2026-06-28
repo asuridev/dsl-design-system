@@ -73,10 +73,13 @@ arch/system/system.yaml       → fuente de verdad estructurada
 arch/system/system-spec.md    → narrativa y lenguaje ubícuo por BC
 arch/system/system-diagram.mmd → relaciones visuales C4
 AGENTS.md                      → contexto consolidado del sistema
+CLAUDE.md                      → contexto e instrucciones para Claude Code
 ```
 
-Leer los cuatro en paralelo. Si alguno no existe, notificarlo inmediatamente — no continuar
-con un diseño parcialmente leído porque los cambios quedarían inconsistentes.
+Leer los cinco en paralelo. Si alguno no existe, notificarlo inmediatamente — no continuar
+con un diseño parcialmente leído porque los cambios quedarían inconsistentes. (`CLAUDE.md`
+solo existe si el Paso 1 ya lo generó; si falta en un diseño ya creado, es una deuda a
+reportar, no un bloqueo.)
 
 Si necesitas validar estructura o convenciones del `system.yaml`, leer:
 → `../ddd-step1-strategic-design/references/system-yaml-guide.md` — ejemplos anotados, señales de sobre/sub-diseño, árbol de decisión de integraciones y checklist de validación
@@ -171,6 +174,19 @@ en todos los artefactos que le corresponden.
   secciones "Lenguaje Ubícuo" de system-spec.md?
   - Mismo término con definición diferente en cada artefacto → 🟡 ALERTA
   - Término clave en system-spec.md ausente en el glosario de AGENTS.md → 🔵 SUGERENCIA
+
+**A7 — CLAUDE.md ↔ system.yaml / AGENTS.md**
+- `CLAUDE.md` es un artefacto derivado generado en el Paso 1 (ver sección 3.5 del skill
+  `ddd-step1-strategic-design`). Verificar su coherencia con la fuente de verdad:
+  - ¿La tabla `## Bounded Contexts` de CLAUDE.md lista exactamente los mismos BCs (y tipos
+    Core/Supporting/Generic) que `boundedContexts[]` de system.yaml y que la tabla de
+    AGENTS.md? — BC o tipo distinto → 🔵 SUGERENCIA (CLAUDE.md es derivado, actualizar)
+  - ¿El nombre del sistema y el glosario coinciden con system.yaml/system-spec.md/AGENTS.md?
+    - Discrepancia → 🔵 SUGERENCIA
+  - ¿Los `## Comandos Clave` referencian solo el CLI `dsl`/el validador, sin tecnología
+    concreta de Fase 2 (frameworks, motores de BD)? — referencia tecnológica → 🟡 ALERTA
+- `CLAUDE.md` ausente en un diseño Paso 1 ya generado → 🔵 SUGERENCIA: regenerarlo (el Paso 1
+  lo declara como 5.º artefacto canónico).
 
 ---
 
@@ -597,11 +613,15 @@ de implementación. Este checklist aplica a `arch/system/system.yaml`, `system-s
 - Los campos DSL `indexed`, `unique`, `auditable`, `hidden`, `source: authContext`,
   `derived_from` y `relationship` son válidos porque declaran intención, no mecanismo.
 
-**H3 — Protección del `AGENTS.md` documental del framework**
+**H3 — Protección del `AGENTS.md` y `CLAUDE.md` documentales del framework**
 - Si el `AGENTS.md` leído contiene el título `AGENTS.md — DSL Design System`, tratarlo
   como documentación del framework, no como artefacto generado del diseño del usuario.
   No corregirlo ni sobrescribirlo durante una validación de un sistema de ejemplo sin
   confirmación explícita.
+- Aplicar la misma protección a `CLAUDE.md`: si el archivo leído documenta el framework
+  DSL Design System (importa `AGENTS.md`/`VISION.md` o describe el repositorio `dsl-design-system`)
+  en lugar de un sistema de usuario, tratarlo como documentación del framework y no
+  corregirlo ni sobrescribirlo sin confirmación explícita.
 
 ---
 
