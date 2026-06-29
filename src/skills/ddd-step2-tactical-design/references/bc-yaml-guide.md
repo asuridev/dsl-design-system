@@ -308,6 +308,21 @@ returns: ProductPriceSnapshot      # objeto simple
 returns: ProductDetail             # detalle completo
 ```
 
+> ⚠️ **Projection como `returns` de un `queryMethod` de repositorio.**
+> Cuando una projection es el `returns` de un **método de repositorio** (no solo de un use
+> case), el generador la materializa con una expresión constructora JPQL
+> `SELECT new Projection(a.f1, a.f2, …)` mapeando **cada propiedad de la projection a una
+> columna real del agregado, por nombre exacto**. Por eso, en ese caso la projection:
+> - **debe** tener nombres de propiedad idénticos a campos del agregado (p. ej. `id`, no
+>   `productId`), y
+> - **no** puede incluir propiedades `derivedFrom` (computadas).
+>
+> Si necesitas un shape con un id renombrado (`productId`) o con campos derivados, **no** lo
+> pongas como retorno directo del repositorio: haz que el repo devuelva `List[<Aggregate>]`
+> y construye la projection en el handler/mapper del use case (ahí `productId = product.id()`
+> es válido). El ejemplo `ProductPriceSnapshot` de arriba es correcto **siempre que** lo
+> produzca un handler, no un `queryMethod`. Fase 1 rechaza el caso inválido con **BC-166**.
+
 `returns` inline para shapes simples de un único UC:
 
 ```yaml

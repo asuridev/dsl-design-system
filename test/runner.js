@@ -1227,6 +1227,86 @@ domainEvents:
 `, 'BC-161');
 });
 
+test('copied dsl-validate rejects a projection repo return whose property is not an aggregate field (BC-166)', async () => {
+  await assertTacticalValidationFails(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - value: DRAFT
+      - value: ACTIVE
+projections:
+  - name: ProductPriceValidation
+    description: Price and status shape returned to orders at checkout.
+    properties:
+      - name: productId
+        type: Uuid
+      - name: status
+        type: ProductStatus
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: status
+        type: ProductStatus
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: findByProductIds
+        params:
+          - name: productIds
+            type: List[Uuid]
+        returns: List[ProductPriceValidation]
+        derivedFrom: implicit
+domainEvents:
+  published: []
+  consumed: []
+`, 'BC-166');
+});
+
+test('copied dsl-validate accepts a projection repo return that maps 1:1 to aggregate fields (no BC-166)', async () => {
+  await assertTacticalValidationOmits(`
+bc: catalog
+type: core
+description: Catalog BC.
+enums:
+  - name: ProductStatus
+    values:
+      - value: DRAFT
+      - value: ACTIVE
+projections:
+  - name: ProductPriceValidation
+    description: Price and status shape returned to orders at checkout.
+    properties:
+      - name: id
+        type: Uuid
+      - name: status
+        type: ProductStatus
+aggregates:
+  - name: Product
+    properties:
+      - name: id
+        type: Uuid
+      - name: status
+        type: ProductStatus
+repositories:
+  - aggregate: Product
+    queryMethods:
+      - name: findByProductIds
+        params:
+          - name: productIds
+            type: List[Uuid]
+        returns: List[ProductPriceValidation]
+        derivedFrom: implicit
+domainEvents:
+  published: []
+  consumed: []
+`, /BC-166/);
+});
+
 test('copied dsl-validate rejects exists qualifier methods that do not return Boolean', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

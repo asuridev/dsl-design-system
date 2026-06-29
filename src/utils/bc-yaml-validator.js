@@ -1079,6 +1079,7 @@ class BcYamlValidator {
     const aggByName = this.aggregateByName();
     const ruleIds = this.ruleIds();
     const deleteGuardByAggregate = this.deleteGuardByAggregate();
+    const projectionByName = new Map(asArray(this.doc.projections).filter((p) => p && p.name).map((p) => [p.name, p]));
 
     for (let i = 0; i < repositories.length; i++) {
       const repo = repositories[i];
@@ -1110,7 +1111,7 @@ class BcYamlValidator {
       for (let j = 0; j < allMethods.length; j++) {
         const method = allMethods[j];
         const methodLoc = `${loc}/${method._section}/${j}`;
-        this.validateRepositoryMethod(repo, aggregate, method, methodLoc, allowedMethodKeys, allowedParamKeys, allowedOperators, ruleIds);
+        this.validateRepositoryMethod(repo, aggregate, method, methodLoc, allowedMethodKeys, allowedParamKeys, allowedOperators, ruleIds, projectionByName);
         this.validateRepositoryMethodUseCaseInputs(repo, method, methodLoc);
       }
       const deleteMethod = asArray(repo.methods).find((m) => m && m.name === 'delete' && Array.isArray(m.params) && m.params.length === 1);
@@ -1124,10 +1125,32 @@ class BcYamlValidator {
     this.validateQueryUseCasesHaveRepositoryMethods(repositories, aggregateNames);
   }
 
-  validateRepositoryMethod(repo, aggregate, method, loc, allowedMethodKeys, allowedParamKeys, allowedOperators, ruleIds) {
+  validateRepositoryMethod(repo, aggregate, method, loc, allowedMethodKeys, allowedParamKeys, allowedOperators, ruleIds, projectionByName) {
     if (!isMapping(method)) return;
     this.checkAllowedKeys(method, allowedMethodKeys, 'BC-012', `repositories["${repo.aggregate}"].${method._section}`, loc);
     if (method.returns != null && !isAllowedRepositoryReturn(method.returns)) this.error('BC-157', `Repository method for "${repo.aggregate}" has unsupported returns "${method.returns}".`, `${loc}/returns`);
+    // A repository method that returns a projection is generated as a JPQL constructor
+    // expression (SELECT new <Projection>(a.f1, …)). That is only deterministic when every
+    // projection property maps to a real column on this aggregate by exact name. Reject
+    // computed (derivedFrom) or non-aggregate properties — mirrors Phase 2
+    // bc-yaml-reader.js (projection-as-repo-return) so the design fails here, not at build.
+    if (method.returns != null && aggregate && projectionByName) {
+      const ret = String(method.returns).trim();
+      const collection = unwrapCollection(ret);
+      const inner = (collection ? collection.inner : ret).replace(/\?$/, '').trim();
+      const projection = projectionByName.get(inner);
+      if (projection) {
+        const aggFields = this.aggregateFieldNames(aggregate);
+        for (const prop of asArray(projection.properties)) {
+          if (!prop || !prop.name) continue;
+          if (prop.derivedFrom != null) {
+            this.error('BC-166', `Repository ${method._section} method "${method.name}" returns projection "${inner}" with computed property "${prop.name}" (derivedFrom); the generator cannot produce it in a query — compute it in the use-case handler instead of a repository return.`, `${loc}/returns`);
+          } else if (!aggFields.has(prop.name)) {
+            this.error('BC-166', `Repository ${method._section} method "${method.name}" returns projection "${inner}" whose property "${prop.name}" is not a field of aggregate "${repo.aggregate}". The generator builds SELECT new ${inner}(...) from aggregate columns and cannot map "${prop.name}". Either rename the property to the aggregate field, or have the repo return List[${repo.aggregate}] and build the projection in the handler.`, `${loc}/returns`);
+          }
+        }
+      }
+    }
     if (method.defaultSort != null) {
       if (method._section !== 'queryMethods') this.error('BC-158', 'defaultSort is only allowed in queryMethods.', `${loc}/defaultSort`);
       if (!isMapping(method.defaultSort) || !method.defaultSort.field) this.error('BC-158', 'defaultSort must be an object with field.', `${loc}/defaultSort`);
