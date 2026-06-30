@@ -15,7 +15,7 @@ description: >
   o cualquier variante de revisión, cuestionamiento o ajuste sobre artefactos en
   arch/{bc-name}/. También aplica cuando el usuario proporcione nueva información de negocio
   que cambie el modelo de dominio de un BC específico.
-  NO aplica para cambios al diseño estratégico (arch/system/) — usar ddd-step1-refine para eso.
+  NO aplica para cambios al diseño estratégico (arch/system/) — usar ddd-design-validation para eso.
 ---
 
 # DDD Paso 2 — Refinamiento del Diseño Táctico
@@ -1144,7 +1144,7 @@ Si durante la validación se detecta alguna de las siguientes situaciones:
      - "Revisar manualmente — no actualizar system.yaml aún"
    ```
 4. Solo si el diseñador autoriza → propagar el cambio a system.yaml usando el patrón
-   de edición mínima de `ddd-step1-refine` (replace_string_in_file quirúrgico)
+   de edición mínima de `ddd-design-validation` (replace_string_in_file quirúrgico)
 5. No continuar con el refinamiento del BC hasta que la discrepancia esté resuelta
 
 ---

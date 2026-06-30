@@ -496,36 +496,43 @@ test('dsl init scaffolds design assets and validator', async () => {
   });
 });
 
-test('dsl init generates Claude Code orchestrators as main-thread slash commands', async () => {
+test('dsl init generates Claude Code orchestrators as main-thread skills', async () => {
   await withTempProject(async (projectDir) => {
     const result = runNode([CLI, 'init'], { cwd: projectDir });
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
 
-    // Orchestrators land in .claude/commands/ (main thread, AskUserQuestion can pause),
-    // NOT in .claude/agents/ (subagents cannot use AskUserQuestion).
-    const commandPath = path.join(projectDir, '.claude', 'commands', 'design-system.md');
-    assert.ok(await fs.pathExists(commandPath), 'Expected .claude/commands/design-system.md');
+    // Orchestrators land in .claude/skills/<name>/SKILL.md (main thread, AskUserQuestion
+    // can pause; skills are the recommended Claude Code entry point), NOT in
+    // .claude/agents/ (subagents cannot use AskUserQuestion). Read-only WORKERS may live
+    // in .claude/agents/ later — orchestrators never do.
+    const skillPath = path.join(projectDir, '.claude', 'skills', 'design-system', 'SKILL.md');
+    assert.ok(await fs.pathExists(skillPath), 'Expected .claude/skills/design-system/SKILL.md');
     assert.ok(
-      !(await fs.pathExists(path.join(projectDir, '.claude', 'agents'))),
-      'Did not expect .claude/agents/ (orchestrators must be commands, not subagents)',
+      await fs.pathExists(path.join(projectDir, '.claude', 'skills', 'design-bounded-context', 'SKILL.md')),
+      'Expected .claude/skills/design-bounded-context/SKILL.md',
+    );
+    // .claude/agents/ holds read-only WORKERS (subagents), never orchestrators.
+    assert.ok(
+      !(await fs.pathExists(path.join(projectDir, '.claude', 'agents', 'design-system.md'))),
+      'Orchestrators must be skills, never subagents in .claude/agents/',
     );
 
-    const command = await fs.readFile(commandPath, 'utf8');
-    // Command frontmatter: no name, allowed-tools incl. AskUserQuestion, $ARGUMENTS injected.
-    assert.ok(!/^name:/m.test(command), 'Command must not keep agent `name:` frontmatter');
-    assert.ok(
-      /^allowed-tools:.*AskUserQuestion/m.test(command),
-      'Command must declare allowed-tools including AskUserQuestion',
-    );
-    assert.ok(command.includes('$ARGUMENTS'), 'Command must inject $ARGUMENTS');
+    const orchestrator = await fs.readFile(skillPath, 'utf8');
+    // Skill frontmatter: keeps name + description; drops tools/argument-hint; no $ARGUMENTS.
+    assert.ok(/^name:\s*design-system/m.test(orchestrator), 'Skill must keep `name:` frontmatter');
+    assert.ok(/^description:/m.test(orchestrator), 'Skill must keep `description:` frontmatter');
+    assert.ok(!/^tools:/m.test(orchestrator), 'Skill must not keep agent `tools:` frontmatter');
+    assert.ok(!/^argument-hint:/m.test(orchestrator), 'Skill must not keep `argument-hint:` frontmatter');
+    assert.ok(!/^allowed-tools:/m.test(orchestrator), 'Skill must not declare `allowed-tools:`');
+    assert.ok(!orchestrator.includes('$ARGUMENTS'), 'Skill must not inject $ARGUMENTS (command-only token)');
     // The pause mechanism must point at the real interactive tool, not the dead text marker.
-    assert.ok(!command.includes('vscode_askQuestions'), 'No leftover vscode_askQuestions in command');
-    assert.ok(command.includes('AskUserQuestion'), 'Command must instruct calling AskUserQuestion');
-    assert.ok(!command.includes('@design-system'), 'Invocation refs must be /command, not @agent');
+    assert.ok(!orchestrator.includes('vscode_askQuestions'), 'No leftover vscode_askQuestions in skill');
+    assert.ok(orchestrator.includes('AskUserQuestion'), 'Skill must instruct calling AskUserQuestion');
+    assert.ok(!orchestrator.includes('@design-system'), 'Invocation refs must be /command, not @agent');
 
-    // Skills are transformed too (they carry the question templates).
+    // DDD skills are transformed too (they carry the question templates).
     const skill = await fs.readFile(
-      path.join(projectDir, '.claude', 'skills', 'ddd-step1-strategic-design', 'SKILL.md'),
+      path.join(projectDir, '.claude', 'skills', 'ddd-step1-authoring', 'SKILL.md'),
       'utf8',
     );
     assert.ok(!skill.includes('vscode_askQuestions'), 'No leftover vscode_askQuestions in skill');
@@ -538,6 +545,78 @@ test('dsl init generates Claude Code orchestrators as main-thread slash commands
     );
     assert.ok(copilotAgent.includes('vscode_askQuestions'), 'Copilot agent must keep vscode_askQuestions');
     assert.ok(copilotAgent.includes('@design-bounded-context'), 'Copilot agent must keep @agent refs');
+  });
+});
+
+test('dsl init generates Step 1 read-only workers as Claude Code subagents', async () => {
+  await withTempProject(async (projectDir) => {
+    const result = runNode([CLI, 'init'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+    // Every Step 1 worker must be read-only and must never pause for the designer.
+    const workers = ['validator', 'integration-auditor', 'domain-analyst'];
+    for (const name of workers) {
+      const workerPath = path.join(projectDir, '.claude', 'agents', `${name}.md`);
+      assert.ok(await fs.pathExists(workerPath), `Expected .claude/agents/${name}.md`);
+
+      const worker = await fs.readFile(workerPath, 'utf8');
+      const toolsLine = (worker.match(/^tools:\s*\[([^\]]*)\]/m) || [])[1];
+      assert.ok(toolsLine, `${name}: must declare a tools frontmatter`);
+      assert.ok(!/\b(Write|Edit|NotebookEdit)\b/.test(toolsLine),
+        `${name}: tools must not grant write tools`);
+      assert.ok(!/AskUserQuestion/.test(toolsLine),
+        `${name}: tools must not grant AskUserQuestion (subagents cannot pause)`);
+      // Body must explicitly forbid pausing for the designer (decisions bubble up instead).
+      assert.ok(/NO\b[^\n]*AskUserQuestion/.test(worker),
+        `${name}: body must explicitly prohibit calling AskUserQuestion`);
+
+      // Copilot gets no worker subagents (no programmatic spawn).
+      assert.ok(
+        !(await fs.pathExists(path.join(projectDir, '.github', 'agents', `${name}.md`))),
+        `Copilot must not receive worker subagent ${name}`,
+      );
+    }
+  });
+});
+
+test('dsl init installs the segmented Step 1 skills to both runtimes', async () => {
+  await withTempProject(async (projectDir) => {
+    const result = runNode([CLI, 'init'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+    // The Step 1 process is segmented 1:1 with the workers, plus the authoring core.
+    const step1Skills = [
+      'ddd-domain-analysis',
+      'ddd-integration-audit',
+      'ddd-step1-authoring',
+      'ddd-design-validation',
+    ];
+    for (const name of step1Skills) {
+      assert.ok(
+        await fs.pathExists(path.join(projectDir, '.claude', 'skills', name, 'SKILL.md')),
+        `Expected .claude/skills/${name}/SKILL.md (Claude)`,
+      );
+      assert.ok(
+        await fs.pathExists(path.join(projectDir, '.agents', 'skills', name, 'SKILL.md')),
+        `Expected .agents/skills/${name}/SKILL.md (Copilot)`,
+      );
+    }
+
+    // The old monolithic skill names must be gone.
+    for (const gone of ['ddd-step1-strategic-design', 'ddd-step1-refine']) {
+      assert.ok(
+        !(await fs.pathExists(path.join(projectDir, '.claude', 'skills', gone))),
+        `Old skill ${gone} must no longer be installed`,
+      );
+    }
+
+    // references/ travels with the authoring core (used by Fase 3 generation).
+    assert.ok(
+      await fs.pathExists(
+        path.join(projectDir, '.claude', 'skills', 'ddd-step1-authoring', 'references', 'system-yaml-guide.md'),
+      ),
+      'system-yaml-guide.md must live under ddd-step1-authoring/references/',
+    );
   });
 });
 
@@ -2191,9 +2270,9 @@ test('published event payload docs do not whitelist auth-context', async () => {
 
 test('agent instructions protect framework AGENTS.md from overwrite', async () => {
   const files = [
-    path.join(ROOT, 'src', 'agents', 'design-system.agent.md'),
-    path.join(ROOT, 'src', 'skills', 'ddd-step1-strategic-design', 'SKILL.md'),
-    path.join(ROOT, 'src', 'skills', 'ddd-step1-refine', 'SKILL.md'),
+    path.join(ROOT, 'src', 'skills', 'design-system', 'SKILL.md'),
+    path.join(ROOT, 'src', 'skills', 'ddd-step1-authoring', 'SKILL.md'),
+    path.join(ROOT, 'src', 'skills', 'ddd-design-validation', 'SKILL.md'),
     path.join(ROOT, 'AGENTS.md'),
   ];
 

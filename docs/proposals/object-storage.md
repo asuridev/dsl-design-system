@@ -333,7 +333,7 @@ correspondiente — corolario directo de INT-028.
 
 Cuando se apruebe formalizar la convención (no forma parte de esta propuesta):
 
-- `src/skills/ddd-step1-strategic-design/references/system-yaml-schema.md` y `system-yaml-guide.md`
+- `src/skills/ddd-step1-authoring/references/system-yaml-schema.md` y `system-yaml-guide.md`
   — documentar `infrastructure.objectStorage`.
 - `src/skills/ddd-step2-tactical-design/references/bc-yaml-schema.md`, `bc-yaml-guide.md`,
   `canonical-types.md`, `openapi-conventions.md` — documentar `StoredObject` y `storageCalls`.

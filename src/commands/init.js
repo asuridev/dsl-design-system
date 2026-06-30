@@ -23,6 +23,12 @@ const DSL_VALIDATE_SOURCES = [
   { src: ['openapi-usecase-validator.js'],        dest: ['src', 'utils', 'openapi-usecase-validator.js'], fromContract: true },
 ];
 
+// Entry-point orchestrators authored as skills under src/skills/<name>/SKILL.md. They are
+// routed differently from the DDD process skills: each becomes a Claude Code skill AND a
+// Copilot @agent (see installOrchestrators / installDddSkills). Everything else in
+// src/skills/ is a DDD process skill.
+const ORCHESTRATORS = ['design-system', 'design-bounded-context'];
+
 /**
  * Applies all Claude Code-specific rewrites to a markdown file's content.
  * Safe to call on both agent files and skill files.
@@ -43,9 +49,12 @@ const DSL_VALIDATE_SOURCES = [
  * and wait for the designer's answer before continuing.
  *
  * NOTE: `AskUserQuestion` only pauses when the flow runs in the MAIN conversation
- * thread. Subagents (Agent/Task) cannot use it. That is why init generates these
- * orchestrators as slash commands (.claude/commands/), not subagents — see
- * agentToCommand() / copyAgentsAsCommands().
+ * thread. Subagents (Agent/Task) cannot use it. The orchestrators must therefore run
+ * in the main thread. A Claude Code SKILL satisfies this exactly like a slash command
+ * (both execute in the main conversation), and skills are the mechanism Claude Code
+ * recommends — so init installs these orchestrators as skills (.claude/skills/), not
+ * subagents — see orchestratorToClaudeSkill() / installOrchestrators(). Read-only analysis
+ * WITHOUT human-in-the-loop may run as subagents (.claude/agents/) — see copyWorkersAsSubagents().
  *
  * Transformations applied (in order):
  *  1. tools: frontmatter — Copilot tool names → Claude Code names (incl. AskUserQuestion)
@@ -188,46 +197,96 @@ async function copyDirTransformed(srcDir, destDir) {
 }
 
 /**
- * Converts an orchestrator agent file (src/agents/*.agent.md) into a Claude Code
- * slash command body.
+ * Transforms an orchestrator skill SOURCE (src/skills/<name>/SKILL.md, authored in the
+ * Copilot-canonical style) into the Claude Code SKILL body.
  *
- * Why a command and not a subagent: these flows are human-in-the-loop and must
- * pause to ask the designer for decisions. AskUserQuestion is NOT available inside
- * subagents (Agent/Task) — they run autonomously and cannot block for user input.
- * Slash commands run in the MAIN conversation thread, where AskUserQuestion pauses
- * reliably in both the terminal and the IDE.
+ * Why a skill and not a subagent: these flows are human-in-the-loop and must pause to
+ * ask the designer for decisions. AskUserQuestion is NOT available inside subagents
+ * (Agent/Task) — they run autonomously and cannot block for user input. A skill runs
+ * in the MAIN conversation thread, where AskUserQuestion pauses reliably, and skills are
+ * the entry-point mechanism Claude Code recommends.
  *
- * Frontmatter is rewritten agent → command:
- *   - drop `name:`        (the command name comes from the file name)
- *   - `tools: [...]`     → `allowed-tools: ...` (already includes AskUserQuestion)
- *   - keep `description:` and `argument-hint:`
- * The designer's argument is injected right after the frontmatter via $ARGUMENTS.
+ * Frontmatter is normalized source → Claude skill:
+ *   - keep `name:` and `description:`  (skills require both; name drives /skill invocation
+ *                                       and description drives model auto-invocation)
+ *   - drop `tools:` and `argument-hint:` (carried by the source only to derive the Copilot
+ *                                         @agent; not part of the SKILL.md frontmatter schema)
+ * The designer's request arrives as the Skill tool's argument — a one-line note records
+ * this in the body instead of the command-only $ARGUMENTS token.
  */
-function agentToCommand(content) {
+function orchestratorToClaudeSkill(content) {
   // Body + frontmatter-value rewrites (paths, askQuestions → AskUserQuestion, @ → /).
   content = applyClaudeCodeTransforms(content);
 
-  // Drop the `name:` frontmatter line (command name derives from the file name).
-  content = content.replace(/^name:.*\r?\n/m, '');
+  // Drop `tools:` (already rewritten to a Claude tool array by transform 1) and
+  // `argument-hint:` — neither belongs in a SKILL.md frontmatter.
+  content = content.replace(/^tools:\s*\[[^\]]*\]\s*\r?\n/m, '');
+  content = content.replace(/^argument-hint:.*\r?\n/m, '');
 
-  // tools: [A, B, C] → allowed-tools: A, B, C
-  content = content.replace(/^tools:\s*\[([^\]]*)\]\s*$/m, 'allowed-tools: $1');
-
-  // Inject the designer's request right after the closing frontmatter delimiter.
+  // Record where the designer's request comes from (the Skill tool argument), in
+  // place of the slash-command-only $ARGUMENTS injection.
   content = content.replace(
     /^(---\r?\n[\s\S]*?\r?\n---\r?\n)/,
-    '$1\n> **Petición del diseñador:** $ARGUMENTS\n',
+    '$1\n> **Contexto del diseñador:** llega como argumento de esta skill (la petición que disparó la invocación).\n',
   );
 
   return content;
 }
 
 /**
- * Reads each orchestrator agent file in srcDir and writes it to destDir as a Claude
- * Code slash command (design-system.agent.md → design-system.md), so it runs in the
- * main thread where AskUserQuestion can pause. See agentToCommand() for the rationale.
+ * Installs the entry-point orchestrator skills for BOTH runtimes from their source
+ * (src/skills/<name>/SKILL.md):
+ *   - Claude Code: .claude/skills/<name>/SKILL.md  (orchestratorToClaudeSkill — main-thread
+ *     skill, AskUserQuestion available).
+ *   - Copilot:     .github/agents/<name>.agent.md  (verbatim — the source is already
+ *     Copilot-canonical: keeps vscode_askQuestions, @-refs, tools, argument-hint).
+ *
+ * `names` is the ORCHESTRATORS list; each must exist as src/skills/<name>/SKILL.md.
  */
-async function copyAgentsAsCommands(srcDir, destDir, label) {
+async function installOrchestrators(srcSkills, cwd, names, label) {
+  const claudeDirs = names.map((n) => path.join(cwd, '.claude', 'skills', n));
+  const anyExists = (await Promise.all(claudeDirs.map((d) => fs.pathExists(d)))).some(Boolean);
+  if (anyExists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exist. Overwrite?`,
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
+  }
+
+  const spinner = ora(`Copying ${label}...`).start();
+  for (const name of names) {
+    const srcFile = path.join(srcSkills, name, 'SKILL.md');
+    const content = await fs.readFile(srcFile, 'utf8');
+
+    // Claude Code skill (transformed, main thread).
+    const claudeFile = path.join(cwd, '.claude', 'skills', name, 'SKILL.md');
+    await fs.ensureDir(path.dirname(claudeFile));
+    await fs.writeFile(claudeFile, orchestratorToClaudeSkill(content), 'utf8');
+
+    // Copilot @agent (verbatim from the Copilot-canonical source).
+    const copilotFile = path.join(cwd, '.github', 'agents', `${name}.agent.md`);
+    await fs.ensureDir(path.dirname(copilotFile));
+    await fs.writeFile(copilotFile, content, 'utf8');
+  }
+
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
+
+/**
+ * Copies the DDD skills tree to destDir, applying applyClaudeCodeTransforms to every .md
+ * file so that vscode_askQuestions references are cleaned up before the skills land in
+ * .claude/skills/. Top-level subdirectories named in `skip` (the orchestrators) are not
+ * copied here — they are routed separately by installOrchestrators.
+ */
+async function copySkillsTransformed(srcDir, destDir, label, skip = []) {
   const exists = await fs.pathExists(destDir);
 
   if (exists) {
@@ -236,6 +295,55 @@ async function copyAgentsAsCommands(srcDir, destDir, label) {
         type: 'confirm',
         name: 'overwrite',
         message: `${chalk.yellow(label)} already exists. Overwrite?`,
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
+  }
+
+  const spinner = ora(`Copying ${label}...`).start();
+  const entries = await fs.readdir(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory() && skip.includes(entry.name)) continue;
+    const src = path.join(srcDir, entry.name);
+    const dest = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirTransformed(src, dest);
+    } else if (entry.name.endsWith('.md')) {
+      await fs.writeFile(dest, applyClaudeCodeTransforms(await fs.readFile(src, 'utf8')), 'utf8');
+    } else {
+      await fs.copy(src, dest, { overwrite: true });
+    }
+  }
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
+
+/**
+ * Copies the read-only worker subagent definitions (src/agents/*.md) to .claude/agents/,
+ * where Claude Code subagents live. Unlike the orchestrators (which are skills), the workers
+ * do NOT need the main thread: they perform read-only analysis and never call AskUserQuestion,
+ * so running as subagents (Agent/Task) is correct and unlocks parallel fan-out. They are
+ * authored directly for Claude Code (no vscode_askQuestions to rewrite) and copied verbatim.
+ *
+ * Copilot has no programmatic agent spawn, so no worker files are emitted for it — the
+ * @design-system agent keeps performing this analysis inline (status quo).
+ */
+async function copyWorkersAsSubagents(srcDir, destDir, label) {
+  if (!(await fs.pathExists(srcDir))) return;
+  const files = (await fs.readdir(srcDir)).filter((f) => f.endsWith('.md'));
+  if (files.length === 0) return;
+
+  const destFiles = files.map((f) => path.join(destDir, f));
+  const anyExists = (await Promise.all(destFiles.map((d) => fs.pathExists(d)))).some(Boolean);
+  if (anyExists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exist. Overwrite?`,
         default: false,
       },
     ]);
@@ -247,74 +355,48 @@ async function copyAgentsAsCommands(srcDir, destDir, label) {
 
   const spinner = ora(`Copying ${label}...`).start();
   await fs.ensureDir(destDir);
-
-  const files = await fs.readdir(srcDir);
   for (const file of files) {
-    const srcFile = path.join(srcDir, file);
-    const stat = await fs.stat(srcFile);
-    if (stat.isDirectory()) continue;
+    await fs.copy(path.join(srcDir, file), path.join(destDir, file), { overwrite: true });
+  }
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
 
-    // design-system.agent.md → design-system.md (slash command /design-system)
-    const commandFile = file.replace(/\.agent\.md$/, '.md');
-    const destFile = path.join(destDir, commandFile);
-    let content = await fs.readFile(srcFile, 'utf8');
-    content = agentToCommand(content);
-    await fs.writeFile(destFile, content, 'utf8');
+async function copyIfConfirmed(srcDir, destDir, label, filter) {
+  const exists = await fs.pathExists(destDir);
+
+  if (exists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exists. Overwrite?`,
+        default: false,
+      },
+    ]);
+
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
   }
 
+  const spinner = ora(`Copying ${label}...`).start();
+  await fs.copy(srcDir, destDir, filter ? { overwrite: true, filter } : { overwrite: true });
   spinner.succeed(chalk.green(`  OK    ${label}`));
 }
 
 /**
- * Copies the skills directory tree to destDir, applying applyClaudeCodeTransforms
- * to every .md file so that vscode_askQuestions references are cleaned up before
- * the skills land in .claude/skills/.
+ * Returns an fs.copy filter that skips top-level subdirectories of `rootDir` whose name
+ * is in `skip`. Used to keep the orchestrator skills out of the DDD-skills copies (they
+ * are routed separately by installOrchestrators).
  */
-async function copySkillsTransformed(srcDir, destDir, label) {
-  const exists = await fs.pathExists(destDir);
-
-  if (exists) {
-    const { overwrite } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'overwrite',
-        message: `${chalk.yellow(label)} already exists. Overwrite?`,
-        default: false,
-      },
-    ]);
-    if (!overwrite) {
-      console.log(chalk.yellow(`  SKIP  ${label}`));
-      return;
-    }
-  }
-
-  const spinner = ora(`Copying ${label}...`).start();
-  await copyDirTransformed(srcDir, destDir);
-  spinner.succeed(chalk.green(`  OK    ${label}`));
-}
-
-async function copyIfConfirmed(srcDir, destDir, label) {
-  const exists = await fs.pathExists(destDir);
-
-  if (exists) {
-    const { overwrite } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'overwrite',
-        message: `${chalk.yellow(label)} already exists. Overwrite?`,
-        default: false,
-      },
-    ]);
-
-    if (!overwrite) {
-      console.log(chalk.yellow(`  SKIP  ${label}`));
-      return;
-    }
-  }
-
-  const spinner = ora(`Copying ${label}...`).start();
-  await fs.copy(srcDir, destDir, { overwrite: true });
-  spinner.succeed(chalk.green(`  OK    ${label}`));
+function skipTopLevelDirs(rootDir, skip) {
+  return (src) => {
+    const rel = path.relative(rootDir, src);
+    if (!rel) return true; // the root itself
+    const top = rel.split(path.sep)[0];
+    return !skip.includes(top);
+  };
 }
 
 /**
@@ -402,24 +484,29 @@ function registerInit(program) {
       archSpinner.succeed(chalk.green('  OK    arch/'));
 
       // 2. Copy skills → .agents/skills/ (VSCode / GitHub Copilot, plain copy)
+      // 2. Copy DDD process skills (everything in src/skills except the orchestrators) to
+      //    both runtimes: Copilot .agents/skills/ (verbatim) and Claude .claude/skills/
+      //    (vscode_askQuestions rewritten). Orchestrators are skipped here and routed in 3.
       const srcSkills = path.join(__dirname, '../skills');
       const destSkills = path.join(cwd, '.agents', 'skills');
-      await copyIfConfirmed(srcSkills, destSkills, '.agents/skills');
+      await copyIfConfirmed(srcSkills, destSkills, '.agents/skills', skipTopLevelDirs(srcSkills, ORCHESTRATORS));
 
-      // 2b. Copy skills → .claude/skills/ (Claude Code CLI, vscode_askQuestions removed)
+      // 2b. Copy DDD skills → .claude/skills/ (Claude Code CLI, vscode_askQuestions removed)
       const destSkillsClaude = path.join(cwd, '.claude', 'skills');
-      await copySkillsTransformed(srcSkills, destSkillsClaude, '.claude/skills');
+      await copySkillsTransformed(srcSkills, destSkillsClaude, '.claude/skills', ORCHESTRATORS);
 
-      // 3. Copy agents → .github/agents/ (GitHub Copilot, plain copy, @-invoked)
+      // 3. Install the entry-point orchestrator skills for both runtimes from their source
+      //    (src/skills/<name>/SKILL.md): Claude skill (.claude/skills, main thread so
+      //    AskUserQuestion can pause) + Copilot @agent (.github/agents). Invoked as
+      //    /design-system, /design-bounded-context (Claude) or @design-system (Copilot).
+      await installOrchestrators(srcSkills, cwd, ORCHESTRATORS, 'orchestrators (skill + @agent)');
+
+      // 3b. Generate read-only workers as Claude Code subagents → .claude/agents/.
+      //     They never call AskUserQuestion (read-only analysis), so subagents are correct
+      //     and enable parallel fan-out. Copilot gets none (no programmatic spawn).
       const srcAgents = path.join(__dirname, '../agents');
-      const destAgents = path.join(cwd, '.github', 'agents');
-      await copyIfConfirmed(srcAgents, destAgents, '.github/agents');
-
-      // 3b. Generate orchestrators as Claude Code slash commands → .claude/commands/.
-      //     They run in the MAIN thread (not as subagents) so AskUserQuestion can
-      //     pause for designer decisions. Invoked as /design-system, /design-bounded-context.
-      const destCommandsClaude = path.join(cwd, '.claude', 'commands');
-      await copyAgentsAsCommands(srcAgents, destCommandsClaude, '.claude/commands');
+      const destAgentsClaude = path.join(cwd, '.claude', 'agents');
+      await copyWorkersAsSubagents(srcAgents, destAgentsClaude, '.claude/agents (workers)');
 
       // 4. Scaffold tools/dsl-validate/
       await scaffoldDslValidate(cwd);

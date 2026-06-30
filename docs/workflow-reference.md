@@ -4,8 +4,12 @@ Esta referencia resume secuencias operativas para usar el DSL Design System en F
 
 ## Proyecto nuevo
 
-1. Ejecuta `dsl init` en el workspace usuario para instalar `arch/`, agentes, skills y `tools/dsl-validate/`.
-2. Invoca `design-system` con el contexto de negocio.
+1. Ejecuta `dsl init` en el workspace usuario para instalar `arch/`, agentes, skills, workers y `tools/dsl-validate/`.
+2. Invoca `design-system` con el contexto de negocio. En Claude Code es la skill `/design-system`
+   (corre en el hilo principal); en Copilot es `@design-system`. El orquestador delega el analisis
+   de solo lectura a workers (`domain-analyst`, `integration-auditor`, `validator`)
+   pero retiene toda interaccion con el disenador y todas las escrituras — ver
+   [agent-decision-guide.md](agent-decision-guide.md#como-se-ejecuta-design-system-modelo-multi-agente-paso-1).
 3. Revisa los artefactos en `arch/system/` y el `AGENTS.md` generado del proyecto usuario.
 4. Ejecuta:
 

@@ -2546,7 +2546,7 @@ siempre en inglés PascalCase: `ProductActivated`, `OrderConfirmed`, `PaymentApp
 Este nombre se usa de forma idéntica en tres lugares: en `domainEvents` del `{bc-name}.yaml`,
 en el `name` del mensaje en `{bc-name}-async-api.yaml`, y en el campo `contracts[].name`
 de la integración correspondiente en `arch/system/system.yaml`. Si hay discrepancia entre
-estos tres lugares, es un gap que debe resolverse via `ddd-step1-refine`.
+estos tres lugares, es un gap que debe resolverse via `ddd-design-validation`.
 
 **Separación de audiencias en contratos REST:** Los endpoints consumidos por personas
 (Operador, Cliente) o sistemas externos van en `{bc-name}-open-api.yaml`. Los endpoints
@@ -2575,7 +2575,7 @@ Por cada entrada en `integrations.inbound` del `{bc-name}.yaml` de tipo `http`:
 Por cada entrada en `domainEvents` del `{bc-name}.yaml`:
 - [ ] Verificar que existe en `system.yaml` al menos una integración `from: {bc-name}, to: {consumer-bc}, pattern: event` que mencione este evento
 - [ ] Verificar que el `contracts[].name` en `system.yaml` coincide **exactamente** (case-sensitive, mismo idioma) con el nombre del evento en `domainEvents`. Ejemplo: si `domainEvents` declara `ProductActivated`, el `system.yaml` debe tener `name: ProductActivated`, no `name: ProductoActivado`.
-- [ ] Si hay mismatch de nombre → clasificar como **gap estratégico**: informar al usuario e indicar que debe ejecutar `ddd-step1-refine` para corregir `system.yaml`. No modificar `system.yaml` directamente.
+- [ ] Si hay mismatch de nombre → clasificar como **gap estratégico**: informar al usuario e indicar que debe ejecutar `ddd-design-validation` para corregir `system.yaml`. No modificar `system.yaml` directamente.
 - [ ] Si no existe consumidor declarado: evaluar si es un gap estratégico (otro BC debería consumirlo) o un evento reservado para uso futuro — documentar el hallazgo
 
 ### 11.3 Eventos consumidos
@@ -2589,10 +2589,10 @@ Por cada entrada en `integrations.inbound` del `{bc-name}.yaml` de tipo `event`:
 | Tipo de gap | Definición | Acción |
 |-------------|------------|--------|
 | **Táctico** | El artefacto del BC es inconsistente internamente | Corregir en el mismo Paso 2, ahora |
-| **Estratégico** | El `{bc-name}.yaml` revela una relación inter-BC ausente en `system.yaml` | Informar al usuario — NO modificar `arch/system/` directamente; sugerir ejecutar `ddd-step1-refine` |
+| **Estratégico** | El `{bc-name}.yaml` revela una relación inter-BC ausente en `system.yaml` | Informar al usuario — NO modificar `arch/system/` directamente; sugerir ejecutar `ddd-design-validation` |
 
 **Regla crítica:** `arch/system/` contiene artefactos generados por el Paso 1.
-Nunca se parchean manualmente — solo se regeneran a través del skill `ddd-step1-refine`.
+Nunca se parchean manualmente — solo se regeneran a través del skill `ddd-design-validation`.
 
 ### 11.5 Cobertura de `{bc-name}-flows.md` para UCs scaffold
 

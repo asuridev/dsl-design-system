@@ -35,6 +35,28 @@ Salidas esperadas:
 - `arch/system/system-diagram.mmd`
 - `AGENTS.md` del proyecto usuario, salvo que sea el `AGENTS.md` documental de este repositorio.
 
+### Como se ejecuta `design-system` (modelo multi-agente, Paso 1)
+
+`design-system` es el **orquestador** y corre en el **hilo principal**: es el unico que pregunta al
+disenador (`AskUserQuestion`), decide y escribe artefactos. Para el analisis pesado y de solo
+lectura se apoya en **workers** que devuelven hallazgos pero **nunca deciden ni escriben**:
+
+- `domain-analyst` — event storming, clasificacion de BCs y agregados.
+- `integration-auditor` — Auditoria de Integraciones A-H; devuelve las decisiones LRM vs HTTP
+  sin tomarlas.
+- `validator` — refinamiento (`ddd-design-validation`), `dsl validate` y VISION gate.
+
+Invocacion e instalacion (las materializa `dsl init`):
+
+- **Claude Code:** el orquestador es la **skill** `design-system` (`.claude/skills/design-system/`,
+  hilo principal, `AskUserQuestion` disponible); se invoca como `/design-system <descripcion>`. Los
+  workers son **subagentes** read-only en `.claude/agents/` y pueden correr en paralelo.
+- **Copilot:** el orquestador es el `@design-system` de `.github/agents/`; no hay spawn de
+  subagentes, asi que ejecuta las mismas secciones de los skills **inline**.
+
+Regla invariante: si un worker devuelve una decision pendiente (LRM vs HTTP, promover un agregado,
+mover fronteras de BC), la resuelve el orquestador con el disenador antes de actuar — nunca el worker.
+
 ## Usa `design-bounded-context` cuando
 
 - Ya existe `arch/system/system.yaml` y el BC objetivo esta declarado alli.

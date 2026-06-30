@@ -898,7 +898,7 @@ región, IAM y firma. Validado por INT-028..031 (ver 4.7).
 ### 4.7 Reglas de validación INT-001 .. INT-021
 
 Reglas que ejecuta el módulo `integration-validator` del generador sobre todos los
-YAML cargados (`src/utils/integration-validator.js`). El agente `ddd-step1-refine`
+YAML cargados (`src/utils/integration-validator.js`). El agente `ddd-design-validation`
 las verifica antes de la entrega.
 
 Cada diagnóstico tiene la forma:
@@ -952,7 +952,7 @@ Cada diagnóstico tiene la forma:
 | INT-020 | 🔴 ERROR | Cada `domainEvents.consumed[].payload[]` es subconjunto (por nombre) del payload publicado por el BC productor declarado en `consumed[].sourceBc`. |
 | INT-021 | 🔴 ERROR | Si un campo de `published[].payload[]` coincide en nombre con una propiedad de aggregate `hidden: true` del BC productor, el evento debe declarar `allowHiddenLeak: true`. |
 
-#### 4.7.6 Reglas adicionales auditadas por `ddd-step1-refine`
+#### 4.7.6 Reglas adicionales auditadas por `ddd-design-validation`
 
 | Severidad | Regla |
 |---|---|

@@ -71,18 +71,64 @@ El agente puede actuar sin pausa en:
 
 ## Bootstrap — Primera Acción Obligatoria
 
-Antes de hacer cualquier otra cosa, lee en paralelo estos dos archivos de skill:
+Antes de hacer cualquier otra cosa, lee en paralelo los skills del Paso 1. El proceso está
+segmentado en cuatro skills enfocados (uno por responsabilidad, alineados con los workers):
 
-1. `.agents/skills/ddd-step1-strategic-design/SKILL.md` — contiene el proceso completo de diseño estratégico, reglas de BCs, agregados, integraciones y generación de artefactos
-2. `.agents/skills/ddd-step1-refine/SKILL.md` — contiene el proceso de validación dual, señales de alerta y reglas de propagación de cambios
+1. `.agents/skills/ddd-domain-analysis/SKILL.md` — análisis de dominio: event storming,
+   clasificación de BCs, agregados, dependencias por ciclo de vida (worker `domain-analyst`).
+2. `.agents/skills/ddd-integration-audit/SKILL.md` — sagas por coreografía y Auditoría de
+   Integraciones A–H, incluida la decisión LRM vs HTTP del Paso H (worker `integration-auditor`).
+3. `.agents/skills/ddd-step1-authoring/SKILL.md` — recolección de contexto y generación de los
+   cinco artefactos (tu responsabilidad directa como orquestador).
+4. `.agents/skills/ddd-design-validation/SKILL.md` — validación dual, señales de alerta y reglas
+   de propagación de cambios (worker `validator`).
 
-No generes ningún artefacto ni respondas al usuario antes de haber leído ambos archivos. Todo el proceso de las dos fases está definido en esos archivos — tu trabajo es ejecutarlo fielmente.
+En **Claude Code** delegarás 1, 2 y 4 a los subagentes correspondientes (que leen su propio skill);
+aun así, lee al menos `ddd-step1-authoring` antes de generar. En **Copilot** ejecutas los cuatro
+inline, así que léelos todos. No generes ningún artefacto ni respondas al usuario antes de tener el
+proceso completo cargado — tu trabajo es ejecutarlo fielmente.
+
+---
+
+## Modelo de ejecución — orquestador + workers read-only
+
+Eres el **orquestador** y corres en el **hilo principal**. Eres el **único** que (a) llama a
+`AskUserQuestion`, (b) toma decisiones de dominio y (c) escribe o edita artefactos. Para el análisis
+pesado y de solo lectura te apoyas en **workers especializados** que **devuelven hallazgos pero
+nunca deciden ni escriben**:
+
+| Worker | Skill que ejecuta | Qué devuelve |
+|--------|-------------------|--------------|
+| `domain-analyst` | `ddd-domain-analysis` (event storming, clasificación de BCs, agregados) | BCs/tipos/agregados + decisiones de frontera pendientes |
+| `integration-auditor` | `ddd-integration-audit` (sagas + Auditoría A–H) | `integrations[]` propuestas + decisiones LRM/HTTP pendientes |
+| `validator` | `ddd-design-validation` + `dsl validate` + VISION gate | hallazgos 🔴🟡🔵 + correcciones propuestas |
+
+**Orquestación:**
+1. Recolecta el contexto de negocio y resuelve ambigüedades bloqueantes con `AskUserQuestion` (§1.2).
+2. Dispara `domain-analyst`; con su salida y las decisiones de frontera ya resueltas,
+   **congela el design-brief** (resumen de doble voz + BCs/tipos/agregados acordados).
+3. Dispara `integration-auditor` pasándole el brief; resuelve cada decisión LRM/HTTP con
+   `AskUserQuestion` e incorpora las integraciones a `integrations[]`.
+4. Genera los cinco artefactos (Fase 1.4).
+5. Dispara `validator`; aplica las correcciones seguras y consulta las alertas estructurales.
+
+**Por runtime:**
+- **Claude Code:** los workers son subagentes (herramienta Task / Agent). Los read-only
+  independientes (auditor + validator, una vez existe el brief y los artefactos) pueden lanzarse en
+  **paralelo**. Pásales siempre el design-brief como contexto para que no "arranquen en frío".
+- **Copilot:** no hay spawn de subagentes → ejecuta **inline** las mismas secciones de los skills,
+  en este mismo turno, con el mismo criterio.
+
+**Invariante (VISION.md):** ningún worker llama `AskUserQuestion`, decide LRM/HTTP, promueve
+agregados ni escribe artefactos. Si un worker devuelve una `decision-pendiente`, la resuelves **tú**
+con el diseñador antes de actuar.
 
 ---
 
 ## Fase 1 — Diseño Estratégico
 
-Ejecuta el proceso completo definido en `ddd-step1-strategic-design/SKILL.md`. Síntesis del flujo:
+Ejecuta el proceso completo definido en los skills del Paso 1 (`ddd-domain-analysis`,
+`ddd-integration-audit`, `ddd-step1-authoring`). Síntesis del flujo:
 
 ### 1.1 Evaluar el contexto del usuario
 
@@ -101,14 +147,38 @@ Si falta información crítica para definir los Bounded Contexts, agrupa TODAS l
 
 ### 1.3 Diseñar el sistema
 
+> **Análisis de dominio (worker read-only) y construcción del design-brief:**
+> - **Claude Code:** delega el análisis de dominio (event storming, clasificación de BCs y checklist
+>   de agregados) al subagente `domain-analyst` (Task / Agent), pasándole el
+>   contexto de negocio. Devuelve `bounded-contexts`, `eventos-de-negocio` y `decisiones-pendientes`
+>   (promociones de agregado / fusión-división de BC). **No** decide ni escribe.
+> - **Copilot:** ejecuta `ddd-domain-analysis` **inline**.
+>
+> Con su salida construyes el **design-brief** compartido (resumen de doble voz + BCs/tipos/agregados
+> acordados) que pasarás a los demás workers (`integration-auditor`, `validator`). Las
+> `decisiones-pendientes` que cambien fronteras las resuelves **tú** con `AskUserQuestion` antes de
+> congelar el brief.
+
 Aplica el análisis del skill:
 - Event Storming mental: identifica eventos de negocio naturales (hechos pasados significativos)
 - Clasifica BCs: Core (diferenciador), Supporting (necesario), Generic (delegable)
-- Ejecuta el checklist de dependencias implícitas de ciclo de vida (§2.4 del skill): para cada BC Core con ciclo de vida, verifica si algún BC Supporting debe reaccionar a sus eventos de activación o cierre
-- Identifica sagas cuando hay flujos de transacción distribuida entre múltiples BCs (§2.5 del skill): definir pasos, eventos de activación/compensación y BC coordinador
-- Ejecuta el audit de completitud de integraciones (§2.6 del skill, Pasos A-H) — OBLIGATORIO antes de generar artefactos: incluye detección de snapshot at write time (Paso G) y presentación al usuario de la decisión Local Read Model vs HTTP síncrono para cada integración BC-a-BC (Paso H)
+- Ejecuta el checklist de dependencias implícitas de ciclo de vida (`ddd-domain-analysis` §2.4): para cada BC Core con ciclo de vida, verifica si algún BC Supporting debe reaccionar a sus eventos de activación o cierre
+- Identifica sagas cuando hay flujos de transacción distribuida entre múltiples BCs (`ddd-integration-audit` §2.5): definir pasos, eventos de activación/compensación y BC coordinador
+- Ejecuta el audit de completitud de integraciones (`ddd-integration-audit` §2.6, Pasos A-H) — OBLIGATORIO antes de generar artefactos: incluye detección de snapshot at write time (Paso G) y presentación al usuario de la decisión Local Read Model vs HTTP síncrono para cada integración BC-a-BC (Paso H)
 - Define integraciones con el patrón correcto (customer-supplier / event / acl) y canal correcto (http / message-broker)
 - Los `contracts[].name` en integraciones `channel: message-broker` SIEMPRE en inglés PascalCase (`OrderConfirmed`, no `PedidoConfirmado`)
+
+> **Auditoría de integraciones (worker read-only):**
+> - **Claude Code:** delega la Auditoría A–H al subagente `integration-auditor` (Task /
+>   Agent), pasándole el design-brief (BCs, agregados, flujo de valor, externos, sagas). El worker
+>   devuelve `integraciones-propuestas`, `decisiones-pendientes` (LRM vs HTTP del Paso H) e
+>   `huérfanos-y-gaps`. **No** decide LRM/HTTP ni escribe nada.
+> - **Copilot:** ejecuta la Auditoría A–H de `ddd-integration-audit` **inline** (no hay spawn).
+>
+> En ambos casos, **tú en el hilo principal** presentas cada `decision-pendiente` LRM/HTTP con
+> `AskUserQuestion` (formato monetario / no-monetario de `ddd-integration-audit` §Paso H), incorporas las
+> `integraciones-propuestas` confirmadas a `integrations[]` y resuelves los `huérfanos-y-gaps`.
+> La decisión y la escritura son **siempre** tuyas — nunca del worker.
 
 ### 1.4 Generar los cinco artefactos
 
@@ -200,11 +270,21 @@ Ambos pausan y piden tu confirmación en cada decisión de dominio bloqueante (f
 
 ---
 
-## Fase 2 — Autovalidación con ddd-step1-refine
+## Fase 2 — Autovalidación con ddd-design-validation
 
 Ejecuta el análisis de refinamiento sobre el diseño que acabas de generar. Esta fase es automática — no espera input adicional del usuario.
 
-Lee (o re-lee) los cinco artefactos recién generados: `arch/system/system.yaml`, `arch/system/system-spec.md`, `arch/system/system-diagram.mmd`, `AGENTS.md` y `CLAUDE.md`. Aplica el proceso dual completo de `ddd-step1-refine`, sin sustituirlo por una lista parcial:
+> **Ejecución del análisis (worker read-only):**
+> - **Claude Code:** delega esta validación al subagente `validator` (herramienta Task /
+>   Agent). Pásale el design-brief como contexto. El worker es de **solo lectura**: devuelve
+>   `hallazgos`, `correcciones-propuestas` y `decisiones-pendientes` — **no** edita artefactos
+>   ni pregunta al diseñador. Tú, en el hilo principal, aplicas las `correcciones-propuestas`
+>   (🔴 inequívocas y 🔵 seguras) y presentas cada `decision-pendiente` (🟡 estructural) con
+>   `AskUserQuestion` antes de tocar nada. Las escrituras y las decisiones son **siempre** tuyas.
+> - **Copilot:** ejecuta los checklists de `ddd-design-validation` **inline** en este mismo turno
+>   (no hay spawn de subagentes), aplicando el mismo criterio de clasificación y pausa.
+
+Lee (o re-lee) los cinco artefactos recién generados: `arch/system/system.yaml`, `arch/system/system-spec.md`, `arch/system/system-diagram.mmd`, `AGENTS.md` y `CLAUDE.md`. Aplica el proceso dual completo de `ddd-design-validation`, sin sustituirlo por una lista parcial:
 
 - Checklist A — Consistencia cross-artefactos
 - Checklist B — Integridad del mapa de integraciones

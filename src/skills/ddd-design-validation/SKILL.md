@@ -1,5 +1,5 @@
 ---
-name: ddd-step1-refine
+name: ddd-design-validation
 description: >
   Refina, ajusta o corrige un diseño estratégico DDD ya existente (Paso 1) a partir de
   feedback humano, nuevas decisiones de negocio o cambios de contexto. También valida,
@@ -82,7 +82,7 @@ solo existe si el Paso 1 ya lo generó; si falta en un diseño ya creado, es una
 reportar, no un bloqueo.)
 
 Si necesitas validar estructura o convenciones del `system.yaml`, leer:
-→ `../ddd-step1-strategic-design/references/system-yaml-guide.md` — ejemplos anotados, señales de sobre/sub-diseño, árbol de decisión de integraciones y checklist de validación
+→ `../ddd-step1-authoring/references/system-yaml-guide.md` — ejemplos anotados, señales de sobre/sub-diseño, árbol de decisión de integraciones y checklist de validación
 
 ---
 
@@ -177,7 +177,7 @@ en todos los artefactos que le corresponden.
 
 **A7 — CLAUDE.md ↔ system.yaml / AGENTS.md**
 - `CLAUDE.md` es un artefacto derivado generado en el Paso 1 (ver sección 3.5 del skill
-  `ddd-step1-strategic-design`). Verificar su coherencia con la fuente de verdad:
+  `ddd-step1-authoring`). Verificar su coherencia con la fuente de verdad:
   - ¿La tabla `## Bounded Contexts` de CLAUDE.md lista exactamente los mismos BCs (y tipos
     Core/Supporting/Generic) que `boundedContexts[]` de system.yaml y que la tabla de
     AGENTS.md? — BC o tipo distinto → 🔵 SUGERENCIA (CLAUDE.md es derivado, actualizar)
@@ -225,7 +225,7 @@ en todos los artefactos que le corresponden.
     Read Model al diseñador. No evaluar internamente si "califica" — el agente nunca
     toma esta decisión unilateralmente, incluso para datos monetarios. El diseñador
     toma la decisión final y el agente no aplica el cambio hasta recibir confirmación
-    explícita. Ver formato de pregunta en §Paso H del skill `ddd-step1-strategic-design`,
+    explícita. Ver formato de pregunta en el Paso H del skill `ddd-integration-audit`,
     que incluye un formato diferenciado para datos monetarios con advertencia OWASP A04.
     - Si el diseñador elige LRM → aplicar el cambio en `system.yaml` y propagar al diagrama.
     - Si el diseñador elige mantener HTTP → registrar en `notes` de la integración

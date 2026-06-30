@@ -43,7 +43,7 @@ Ejecuta el proceso completo del Paso 1 + autovalidación:
 1. Analiza el contexto del negocio
 2. Identifica Bounded Contexts, Agregados e integraciones
 3. Genera los tres artefactos de diseño en `arch/system/` más el contexto raíz (`AGENTS.md`, `CLAUDE.md`)
-4. Ejecuta automáticamente `ddd-step1-refine` sobre el diseño producido
+4. Ejecuta automáticamente `ddd-design-validation` sobre el diseño producido
 
 Artefactos producidos:
 ```
@@ -86,17 +86,22 @@ arch/{bc-name}/
 
 | Skill | Propósito |
 |---|---|
-| `ddd-step1-strategic-design` | Proceso completo del Paso 1: análisis de negocio → BCs → artefactos |
-| `ddd-step1-refine` | Refinamiento y validación del diseño estratégico existente |
+| `ddd-domain-analysis` | Paso 1 — análisis de dominio: event storming, clasificación de BCs, agregados (worker `domain-analyst`) |
+| `ddd-integration-audit` | Paso 1 — sagas por coreografía + Auditoría de Integraciones A–H (worker `integration-auditor`) |
+| `ddd-step1-authoring` | Paso 1 — recolección de contexto + generación de los cinco artefactos |
+| `ddd-design-validation` | Paso 1 — refinamiento y validación del diseño estratégico (worker `validator`) |
 | `ddd-step2-tactical-design` | Proceso completo del Paso 2: anatomía del dominio → artefactos BC |
 | `ddd-step2-refine` | Refinamiento y validación del diseño táctico de un BC |
 
-Los skills residen en `src/skills/` y se copian a `.agents/skills/` al ejecutar `dsl init`
-en el proyecto del usuario.
+Los skills residen en `src/skills/`. Los skills de proceso DDD (`ddd-step1-*`, `ddd-step2-*`)
+se copian a `.agents/skills/` (Copilot) y `.claude/skills/` (Claude Code) al ejecutar `dsl init`.
+Los orquestadores de entrada (`design-system`, `design-bounded-context`) también son skills
+(`src/skills/<name>/SKILL.md`): se materializan como skill en `.claude/skills/` (Claude, hilo
+principal, `/`-invoke) y como `@`-agente en `.github/agents/` (Copilot, `@`-invoke).
 
-Los agentes residen en `src/agents/` y se copian a `.github/agents/` al ejecutar `dsl init`.
-Sus instrucciones referencian las skills en `.agents/skills/`, que es la ruta instalada en
-el workspace usuario.
+Los subagentes read-only (workers del Paso 1) residen en `src/agents/` y se copian a
+`.claude/agents/` (solo Claude Code; Copilot no tiene spawn de subagentes). Realizan análisis
+de solo lectura y devuelven hallazgos al orquestador — nunca preguntan al diseñador ni escriben.
 
 ---
 
@@ -131,18 +136,23 @@ dsl-design-system/
 ├── examples/
 │   └── canasta-familiar/          ← ejemplo curado de sistema + BCs tácticos
 ├── src/
-│   ├── agents/                   ← orquestadores: copia literal a .github/agents/ (Copilot, @-invoke)
-│   │   ├── design-system.agent.md  y transformados a .claude/commands/ (Claude Code, /-invoke)
-│   │   └── design-bounded-context.agent.md
+│   ├── agents/                   ← subagentes read-only (workers Paso 1) → .claude/agents/ (Claude)
+│   │   ├── domain-analyst.md
+│   │   ├── integration-auditor.md
+│   │   └── validator.md
 │   ├── commands/                 ← implementaciones de comandos CLI
 │   │   ├── init.js
 │   │   ├── preview.js
 │   │   └── validate.js
-│   └── skills/                   ← skills de diseño DDD (se copian a .agents/skills/)
-│       ├── ddd-step1-strategic-design/
-│       ├── ddd-step1-refine/
+│   └── skills/                   ← skills DDD + orquestadores de entrada
+│       ├── ddd-domain-analysis/        ← Paso 1: análisis de dominio (worker domain-analyst)
+│       ├── ddd-integration-audit/      ← Paso 1: sagas + auditoría A–H (worker integration-auditor)
+│       ├── ddd-step1-authoring/        ← Paso 1: contexto + generación de artefactos
+│       ├── ddd-design-validation/      ← Paso 1: validación (worker validator)
 │       ├── ddd-step2-tactical-design/
-│       └── ddd-step2-refine/
+│       ├── ddd-step2-refine/
+│       ├── design-system/            ← orquestador → .claude/skills/ (Claude) + .github/agents/ (Copilot)
+│       └── design-bounded-context/   ← orquestador → idem
 ├── AGENTS.md                     ← este archivo (contexto del framework para agentes)
 ├── CLAUDE.md                     ← contexto breve para Claude Code (importa AGENTS.md y VISION.md)
 ├── VISION.md                     ← filosofía y principios del sistema completo
