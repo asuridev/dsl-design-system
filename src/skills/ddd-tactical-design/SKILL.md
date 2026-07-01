@@ -1,5 +1,5 @@
 ---
-name: ddd-step2-tactical-design
+name: ddd-tactical-design
 description: >
   Ejecuta el Paso 2 del framework de diseño de sistemas con DDD: Diseño Táctico de un
   Bounded Context. Dado un BC ya definido en el Paso 1 (arch/system/system.yaml), genera
@@ -317,6 +317,12 @@ o pedir que el productor agregue la versión al payload del evento antes de usar
 ### 1.4 Guía de Decisión — Cuándo Aplicar Cada Característica
 
 Esta sección responde la pregunta "¿cuándo debo usar X?" para cada característica importante del generador. Aplicar activamente durante el diseño.
+
+> **Reparto orquestador / worker (Claude Code):** esta sección §1.4 (junto con §1.3) es el insumo
+> que el worker read-only `tactical-analyst` consume para **proponer** el modelo de dominio y **surfacear**
+> las decisiones (agregado-vs-entidad-vs-VO, LRM vs HTTP). La **autoría** de los seis artefactos
+> (Etapas A/B/C, más abajo) la ejecuta el orquestador `design-bounded-context` en el hilo principal,
+> nunca el worker. En Copilot ambas cosas corren inline.
 
 ---
 

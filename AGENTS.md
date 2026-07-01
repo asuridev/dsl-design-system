@@ -67,7 +67,7 @@ Ejecuta el proceso completo del Paso 2 + autovalidación:
 1. Valida que el BC exista en `system.yaml` antes de comenzar
 2. Resuelve decisiones de integración (Local Read Model vs HTTP síncrono)
 3. Genera los seis artefactos canónicos en `arch/{bc-name}/`
-4. Ejecuta automáticamente `ddd-step2-refine` sobre el diseño producido
+4. Ejecuta automáticamente `ddd-tactical-validation` sobre el diseño producido
 
 Artefactos producidos:
 ```
@@ -90,18 +90,24 @@ arch/{bc-name}/
 | `ddd-integration-audit` | Paso 1 — sagas por coreografía + Auditoría de Integraciones A–H (worker `integration-auditor`) |
 | `ddd-step1-authoring` | Paso 1 — recolección de contexto + generación de los cinco artefactos |
 | `ddd-design-validation` | Paso 1 — refinamiento y validación del diseño estratégico (worker `validator`) |
-| `ddd-step2-tactical-design` | Proceso completo del Paso 2: anatomía del dominio → artefactos BC |
-| `ddd-step2-refine` | Refinamiento y validación del diseño táctico de un BC |
+| `ddd-tactical-design` | Paso 2 — anatomía del dominio + autoría de artefactos BC; §1.3–1.4 las consume el worker `tactical-analyst` |
+| `ddd-tactical-validation` | Paso 2 — refinamiento y validación del diseño táctico de un BC (worker `tactical-validator`) |
 
-Los skills residen en `src/skills/`. Los skills de proceso DDD (`ddd-step1-*`, `ddd-step2-*`)
+Los skills residen en `src/skills/`. Los skills de proceso DDD (`ddd-step1-*`, `ddd-tactical-*`)
 se copian a `.agents/skills/` (Copilot) y `.claude/skills/` (Claude Code) al ejecutar `dsl init`.
 Los orquestadores de entrada (`design-system`, `design-bounded-context`) también son skills
 (`src/skills/<name>/SKILL.md`): se materializan como skill en `.claude/skills/` (Claude, hilo
 principal, `/`-invoke) y como `@`-agente en `.github/agents/` (Copilot, `@`-invoke).
 
-Los subagentes read-only (workers del Paso 1) residen en `src/agents/` y se copian a
+Los subagentes read-only (workers de los Pasos 1 y 2) residen en `src/agents/` y se copian a
 `.claude/agents/` (solo Claude Code; Copilot no tiene spawn de subagentes). Realizan análisis
 de solo lectura y devuelven hallazgos al orquestador — nunca preguntan al diseñador ni escriben.
+
+- **Paso 1:** `domain-analyst`, `integration-auditor`, `validator` (los invoca `design-system`).
+- **Paso 2:** `tactical-analyst` (análisis táctico de dominio + surfacing LRM/HTTP) y `tactical-validator`
+  (checklists de `ddd-tactical-validation` + `dsl validate --bc` + VISION gate); los invoca
+  `design-bounded-context`. El flujo del Paso 2 es secuencial (`tactical-analyst` → el orquestador escribe
+  los seis artefactos → `tactical-validator`).
 
 ---
 
@@ -136,10 +142,12 @@ dsl-design-system/
 ├── examples/
 │   └── canasta-familiar/          ← ejemplo curado de sistema + BCs tácticos
 ├── src/
-│   ├── agents/                   ← subagentes read-only (workers Paso 1) → .claude/agents/ (Claude)
-│   │   ├── domain-analyst.md
-│   │   ├── integration-auditor.md
-│   │   └── validator.md
+│   ├── agents/                   ← subagentes read-only (workers Pasos 1 y 2) → .claude/agents/ (Claude)
+│   │   ├── domain-analyst.md       ← Paso 1
+│   │   ├── integration-auditor.md  ← Paso 1
+│   │   ├── validator.md            ← Paso 1
+│   │   ├── tactical-analyst.md     ← Paso 2: análisis táctico de dominio + LRM/HTTP
+│   │   └── tactical-validator.md   ← Paso 2: checklists ddd-tactical-validation + dsl validate
 │   ├── commands/                 ← implementaciones de comandos CLI
 │   │   ├── init.js
 │   │   ├── preview.js
@@ -149,8 +157,8 @@ dsl-design-system/
 │       ├── ddd-integration-audit/      ← Paso 1: sagas + auditoría A–H (worker integration-auditor)
 │       ├── ddd-step1-authoring/        ← Paso 1: contexto + generación de artefactos
 │       ├── ddd-design-validation/      ← Paso 1: validación (worker validator)
-│       ├── ddd-step2-tactical-design/
-│       ├── ddd-step2-refine/
+│       ├── ddd-tactical-design/
+│       ├── ddd-tactical-validation/
 │       ├── design-system/            ← orquestador → .claude/skills/ (Claude) + .github/agents/ (Copilot)
 │       └── design-bounded-context/   ← orquestador → idem
 ├── AGENTS.md                     ← este archivo (contexto del framework para agentes)

@@ -250,9 +250,13 @@ de coordinación explícito.
 ## 10. Continuación: el Paso 2 (Diseño Táctico)
 
 Cuando el Paso 1 está validado, el diseño táctico de cada BC lo realiza el agente
-`design-bounded-context`, que lee `ddd-step2-tactical-design` + `ddd-step2-refine` + el
-`system.yaml`. **El Paso 2 es monolítico** (todavía sin workers): un solo orquestador produce los
-artefactos del BC (`{bc}.yaml`, contratos OpenAPI/AsyncAPI, flujos, diagramas) y se autovalida.
+`design-bounded-context`, que lee `ddd-tactical-design` + `ddd-tactical-validation` + el
+`system.yaml`. **El Paso 2 sigue el mismo modelo orquestador + workers read-only** que el Paso 1:
+el orquestador delega el análisis táctico previo al worker `tactical-analyst` y la validación al
+worker `tactical-validator` (en Claude Code), pero retiene toda la interacción con el diseñador y
+la escritura de los artefactos del BC (`{bc}.yaml`, contratos OpenAPI/AsyncAPI, flujos, diagramas).
+A diferencia del Paso 1, el flujo es secuencial (`tactical-analyst` → el orquestador escribe →
+`tactical-validator`). En Copilot el orquestador ejecuta análisis y validación inline.
 
 Sus artefactos alimentan la **Fase 2** (generación determinística de scaffolding) y la **Fase 3**
 (la IA completa la lógica de negocio en los `// TODO`). Ver [VISION.md](VISION.md) y

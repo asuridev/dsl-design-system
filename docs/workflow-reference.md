@@ -28,7 +28,10 @@ dsl preview --no-open --format all --locale es
 ## Disenar el primer BC tactico
 
 1. Confirma que el BC existe en `arch/system/system.yaml`.
-2. Invoca `design-bounded-context` indicando el nombre exacto del BC.
+2. Invoca `design-bounded-context` indicando el nombre exacto del BC. En Claude Code el orquestador
+   delega el analisis tactico de solo lectura a workers (`tactical-analyst`, `tactical-validator`) pero retiene
+   toda interaccion con el disenador y todas las escrituras — ver
+   [agent-decision-guide.md](agent-decision-guide.md#como-se-ejecuta-design-bounded-context-modelo-multi-agente-paso-2).
 3. Revisa `{bc}.yaml`, contratos y diagramas.
 4. Ejecuta validacion completa si el BC participa en integraciones o sagas:
 

@@ -74,6 +74,25 @@ Salidas esperadas:
 - `arch/{bc}/{bc}-async-api.yaml`
 - `arch/{bc}/diagrams/`
 
+### Como se ejecuta `design-bounded-context` (modelo multi-agente, Paso 2)
+
+Igual que `design-system`, `design-bounded-context` es el **orquestador** del hilo principal: es el
+unico que pregunta al disenador, decide y **escribe los seis artefactos del BC**. Para el analisis
+de solo lectura se apoya en dos workers que devuelven hallazgos pero **nunca deciden ni escriben**:
+
+- `tactical-analyst` — analisis tactico de dominio (agregado vs entidad vs VO, enums, reglas) y surfacing
+  de la decision LRM vs HTTP por integracion; lee `ddd-tactical-design` §1.3-1.4 en modo
+  read-only. No escribe el `bc.yaml`.
+- `tactical-validator` — refinamiento (`ddd-tactical-validation`, checklists A-E), `dsl validate --bc` (mas el
+  barrido completo) y VISION gate; devuelve hallazgos y correcciones propuestas.
+
+A diferencia del Paso 1, el flujo es **estrictamente secuencial** (`tactical-analyst` -> el orquestador
+escribe -> `tactical-validator`), porque el validador necesita los artefactos ya escritos. El beneficio es
+aislamiento de contexto y foco, no paralelismo. En **Copilot** no hay spawn: el `@design-bounded-context`
+ejecuta el analisis y la validacion **inline**. Invariante: cualquier `decision-pendiente` que devuelva
+un worker (LRM vs HTTP, promover un agregado, discrepancia con `system.yaml`) la resuelve el orquestador
+con el disenador antes de actuar.
+
 ## Cuando ejecutar `dsl validate`
 
 Ejecuta `dsl validate` despues de cambios manuales o generados en YAML canonico, contratos o integraciones. Es obligatorio antes de entregar artefactos a la Fase 2.

@@ -73,11 +73,51 @@ El agente puede actuar sin pausa en:
 
 Antes de hacer cualquier otra cosa, lee en paralelo estos tres archivos:
 
-1. `.agents/skills/ddd-step2-tactical-design/SKILL.md` — proceso completo de diseño táctico, schema del bc.yaml, contratos API/eventos y flujo de 3 etapas
-2. `.agents/skills/ddd-step2-refine/SKILL.md` — validación profunda, checklists de coherencia y protocolo de discrepancias con system.yaml
+1. `.agents/skills/ddd-tactical-design/SKILL.md` — proceso completo de diseño táctico, schema del bc.yaml, contratos API/eventos y flujo de 3 etapas
+2. `.agents/skills/ddd-tactical-validation/SKILL.md` — validación profunda, checklists de coherencia y protocolo de discrepancias con system.yaml
 3. `arch/system/system.yaml` — fuente de verdad estratégica del sistema
 
+En **Claude Code** delegarás el análisis táctico previo (worker `tactical-analyst`) y la validación
+(worker `tactical-validator`) a subagentes que leen su propio skill; aun así, lee al menos
+`ddd-tactical-design` antes de generar, porque **la autoría de los seis artefactos es tu
+responsabilidad directa**. En **Copilot** ejecutas el análisis y la validación inline, así que lee
+los dos skills completos.
+
 No generes ningún artefacto ni respondas al usuario antes de haber leído los tres. Todo el proceso está definido en esos archivos — tu trabajo es ejecutarlo fielmente.
+
+---
+
+## Modelo de ejecución — orquestador + workers read-only
+
+Eres el **orquestador** y corres en el **hilo principal**. Eres el **único** que (a) llama a
+`AskUserQuestion`, (b) toma decisiones de dominio y (c) **escribe o edita** artefactos. Para el
+análisis pesado y de solo lectura te apoyas en **workers especializados** que **devuelven hallazgos
+pero nunca deciden ni escriben**:
+
+| Worker | Skill que ejecuta | Qué devuelve |
+|--------|-------------------|--------------|
+| `tactical-analyst` | `ddd-tactical-design` §1.3–1.4 (capacidades + guía de decisión, modo read-only) | modelo de dominio propuesto (agregados/VO/enums/reglas) + decisiones LRM/HTTP y agregado-vs-entidad pendientes |
+| `tactical-validator` | `ddd-tactical-validation` (checklists A–E) + `dsl validate --bc` + VISION gate | hallazgos 🔴🟡🔵 + correcciones propuestas + discrepancias con system.yaml (Checklist D) |
+
+**Orquestación:**
+1. Ejecuta la Fase 0 (validación previa) y extrae el contexto del BC desde `arch/system/`.
+2. Dispara `tactical-analyst` pasándole el contexto del BC; resuelve cada `decision-pendiente`
+   (agregado-vs-entidad-vs-VO, LRM/HTTP) con `AskUserQuestion` **antes** de escribir el `bc.yaml` v1.
+3. **Escribe** los seis artefactos (Etapa A/B/C) — esta es tu responsabilidad directa, no de los workers.
+4. Dispara `tactical-validator` sobre los artefactos recién escritos; aplica las correcciones seguras y
+   consulta las alertas de calidad y las discrepancias con `system.yaml` (Protocolo Checklist D).
+
+**Por runtime:**
+- **Claude Code:** los workers son subagentes (herramienta Task / Agent). El flujo es **secuencial**
+  (`tactical-validator` necesita los artefactos que escribes después de `tactical-analyst`), así que aquí el
+  beneficio es **aislamiento de contexto y foco**, no paralelismo. Pásales siempre el contexto del BC
+  para que no "arranquen en frío".
+- **Copilot:** no hay spawn de subagentes → ejecuta **inline** las mismas secciones de los skills,
+  en este mismo turno, con el mismo criterio.
+
+**Invariante (VISION.md):** ningún worker llama `AskUserQuestion`, decide LRM/HTTP, promueve
+agregados, edita `system.yaml` ni escribe artefactos. Si un worker devuelve una `decision-pendiente`,
+la resuelves **tú** con el diseñador antes de actuar.
 
 ---
 
@@ -103,11 +143,23 @@ Antes de diseñar nada:
 
 ## Fase 1 — Diseño Táctico
 
-Ejecuta el proceso completo definido en `ddd-step2-tactical-design/SKILL.md`. El flujo sigue las **3 Etapas** del skill:
+Ejecuta el proceso completo definido en `ddd-tactical-design/SKILL.md`. El flujo sigue las **3 Etapas** del skill:
+
+> **Análisis táctico previo (worker read-only):**
+> - **Claude Code:** delega el análisis táctico de dominio al subagente `tactical-analyst` (Task /
+>   Agent), pasándole el nombre del BC y el contexto extraído en la Fase 0 (purpose, type,
+>   aggregates, integraciones, externalSystems, sagas). El worker devuelve `modelo-de-dominio`,
+>   `reglas-de-dominio candidatas`, `integraciones` y `decisiones-pendientes` (agregado-vs-entidad-vs-VO
+>   y LRM/HTTP). **No** decide ni escribe.
+> - **Copilot:** ejecuta el análisis de `ddd-tactical-design` §1.3–1.4 **inline** (no hay spawn).
+>
+> En ambos casos, **tú en el hilo principal** resuelves cada `decision-pendiente` con
+> `AskUserQuestion` **antes** de escribir el `bc.yaml` v1. La decisión y la escritura son **siempre**
+> tuyas — nunca del worker.
 
 ### Paso 0 — Decisiones de integración (antes de cualquier artefacto)
 
-Para cada integración `channel: http` hacia otro BC interno en system.yaml:
+Para cada integración `channel: http` hacia otro BC interno en system.yaml (surfaceada por `tactical-analyst` como `decision-pendiente` LRM/HTTP, o detectada inline en Copilot):
 - Evaluar los criterios de Local Read Model vs HTTP síncrono
 - Usar `vscode_askQuestions` (o en texto directo) para presentar la elección al usuario con las opciones y trade-offs del skill
 - Registrar la decisión antes de continuar
@@ -161,11 +213,26 @@ Reescribir bc.yaml completando:
 
 ---
 
-## Fase 2 — Autovalidación con ddd-step2-refine
+## Fase 2 — Autovalidación con ddd-tactical-validation
 
 Ejecuta el análisis de refinamiento sobre el diseño que acabas de generar. Esta fase es automática — no espera input adicional del usuario.
 
-Lee (o re-lee) los artefactos recién generados. Aplica los checklists del skill `ddd-step2-refine` con esta prioridad:
+> **Ejecución del análisis (worker read-only):**
+> - **Claude Code:** delega esta validación al subagente `tactical-validator` (herramienta Task /
+>   Agent). Pásale el nombre del BC y el contexto de diseño. El worker es de **solo lectura**:
+>   aplica los checklists A–E, ejecuta `dsl validate --bc` (y el barrido completo) y verifica el
+>   VISION gate, y devuelve `hallazgos`, `correcciones-propuestas` y `decisiones-pendientes`
+>   — **no** edita artefactos ni pregunta al diseñador. Tú, en el hilo principal, aplicas las
+>   `correcciones-propuestas` (🔴 inequívocas y 🔵 seguras) y presentas cada `decision-pendiente`
+>   (🟡 calidad, o discrepancia con `system.yaml` → Protocolo Checklist D) con `AskUserQuestion`
+>   antes de tocar nada. Las escrituras y las decisiones son **siempre** tuyas.
+> - **Copilot:** ejecuta los checklists de `ddd-tactical-validation` y el `dsl validate` **inline** en este
+>   mismo turno (no hay spawn de subagentes), aplicando el mismo criterio de clasificación y pausa.
+>
+> Las subsecciones que siguen (2.1–2.5, Fase 2.5) describen el contenido que el worker ejecuta;
+> en Claude Code reaccionas a su informe en lugar de recorrerlas tú mismo.
+
+Lee (o re-lee) los artefactos recién generados. Aplica los checklists del skill `ddd-tactical-validation` con esta prioridad:
 
 ### 2.1 Checklist A — Coherencia con arch/system/
 

@@ -415,7 +415,7 @@ allowFreeformInput: false
     mitigate the fraud window risk.
 ```
 
-> **Referencia táctica:** En el Paso 2 (Diseño Táctico), el skill `ddd-step2-tactical-design`
+> **Referencia táctica:** En el Paso 2 (Diseño Táctico), el skill `ddd-tactical-design`
 > guiará la implementación completa del patrón mediante su `references/local-read-model.md`,
 > incluyendo el agregado `readModel: true`, los event-triggered UCs y los diagramas de sincronización.
 > Si el diseñador eligió LRM para un dato monetario, el Paso 2 deberá incluir explícitamente

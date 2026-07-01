@@ -1,5 +1,5 @@
 ---
-name: ddd-step2-refine
+name: ddd-tactical-validation
 description: >
   Refina, ajusta o corrige los artefactos del diseño táctico DDD (Paso 2) de un
   Bounded Context ya diseñado. También valida a profundidad la coherencia interna del BC
@@ -23,6 +23,12 @@ description: >
 Este skill ajusta el diseño táctico de un Bounded Context de forma **quirúrgica y consistente**:
 solo toca lo que cambia, verifica coherencia con el Paso 1, y lo hace desde una perspectiva
 dual que detecta problemas que un prompt genérico no ve.
+
+> **Quién ejecuta esto (Claude Code):** dentro del flujo de `design-bounded-context`, los checklists
+> de este skill los aplica el worker read-only `tactical-validator` (Task / Agent), que **devuelve hallazgos
+> y correcciones propuestas** sin editar nada; el orquestador aplica las correcciones seguras y
+> consulta las decisiones en el hilo principal. En Copilot, o cuando el usuario invoca este skill
+> directamente para un refinamiento puntual, el proceso corre inline en el hilo actual.
 
 ---
 
@@ -84,7 +90,7 @@ Leer todos en paralelo. Si algún artefacto del BC no existe, notificarlo inmedi
 y preguntar si el usuario quiere ejecutar el Paso 2 primero o si el archivo fue omitido.
 
 Si necesitas validar estructura o convenciones del `{bc-name}.yaml`, leer:
-→ `../ddd-step2-tactical-design/references/bc-yaml-guide.md` — ejemplos anotados, distinción `condition` vs `rules`, flags de agregado, convenciones de naming y relación con los demás artefactos
+→ `../ddd-tactical-design/references/bc-yaml-guide.md` — ejemplos anotados, distinción `condition` vs `rules`, flags de agregado, convenciones de naming y relación con los demás artefactos
 
 ---
 
@@ -364,7 +370,7 @@ Este es el error más silencioso del diseño táctico: un tipo aparece como `typ
 propiedades o payloads pero nunca fue declarado en el YAML. El generador no puede
 resolver el tipo y falla en tiempo de generación de código.
 
-Recopilar todos los valores `type:` que NO sean tipos canónicos (ver `../ddd-step2-tactical-design/references/canonical-types.md`).
+Recopilar todos los valores `type:` que NO sean tipos canónicos (ver `../ddd-tactical-design/references/canonical-types.md`).
 Para cada uno verificar:
 
 | Lugar de referencia | Qué verificar |
@@ -491,7 +497,7 @@ Buscar en todo el YAML: `/<[A-Z]` (apertura de ángulo seguida de mayúscula). C
 **C2 — Primitivos candidatos a VO**
 - Para campos de tipo String/Decimal/Int con semántica de negocio específica:
   - Precio/monto → `Money`, email → `Email`, código postal → `PostalCode`, teléfono → `PhoneNumber`
-  - Si existe un tipo canónico en `../ddd-step2-tactical-design/references/canonical-types.md`
+  - Si existe un tipo canónico en `../ddd-tactical-design/references/canonical-types.md`
     y no se está usando → 🔵 SUGERENCIA
 
 **C3 — Transiciones con condition != none → RULE-ID existente**
@@ -577,7 +583,7 @@ incorrecto en runtime — son ERROR salvo indicación contraria.
 #### E2 — Aggregates: validaciones declarativas en `properties[].validations`
 
 Vocabulario válido (whitelist) — claves procesadas por el generador (ver
-`../ddd-step2-tactical-design/references/validation.md` para la referencia completa):
+`../ddd-tactical-design/references/validation.md` para la referencia completa):
 `notEmpty`, `minLength`, `pattern`, `min`, `max`, `positive`, `positiveOrZero`,
 `negative`, `negativeOrZero`, `future`, `futureOrPresent`, `past`, `pastOrPresent`,
 `minSize`, `maxSize`.

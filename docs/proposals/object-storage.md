@@ -335,7 +335,7 @@ Cuando se apruebe formalizar la convención (no forma parte de esta propuesta):
 
 - `src/skills/ddd-step1-authoring/references/system-yaml-schema.md` y `system-yaml-guide.md`
   — documentar `infrastructure.objectStorage`.
-- `src/skills/ddd-step2-tactical-design/references/bc-yaml-schema.md`, `bc-yaml-guide.md`,
+- `src/skills/ddd-tactical-design/references/bc-yaml-schema.md`, `bc-yaml-guide.md`,
   `canonical-types.md`, `openapi-conventions.md` — documentar `StoredObject` y `storageCalls`.
 - `src/utils/canonical-types.js` — registrar el tipo `StoredObject`.
 - `src/utils/integration-validator.js` — implementar INT-028..031.

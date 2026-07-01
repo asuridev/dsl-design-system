@@ -548,13 +548,16 @@ test('dsl init generates Claude Code orchestrators as main-thread skills', async
   });
 });
 
-test('dsl init generates Step 1 read-only workers as Claude Code subagents', async () => {
+test('dsl init generates read-only workers as Claude Code subagents', async () => {
   await withTempProject(async (projectDir) => {
     const result = runNode([CLI, 'init'], { cwd: projectDir });
     assert.strictEqual(result.status, 0, result.stderr || result.stdout);
 
-    // Every Step 1 worker must be read-only and must never pause for the designer.
-    const workers = ['validator', 'integration-auditor', 'domain-analyst'];
+    // Every worker (Step 1 + Step 2) must be read-only and must never pause for the designer.
+    const workers = [
+      'validator', 'integration-auditor', 'domain-analyst', // Step 1
+      'tactical-analyst', 'tactical-validator', // Step 2
+    ];
     for (const name of workers) {
       const workerPath = path.join(projectDir, '.claude', 'agents', `${name}.md`);
       assert.ok(await fs.pathExists(workerPath), `Expected .claude/agents/${name}.md`);
@@ -2252,7 +2255,7 @@ test('locale catalogs es.json and en.json have identical key sets', () => {
 test('published event payload docs do not whitelist auth-context', async () => {
   const files = [
     path.join(ROOT, 'README.md'),
-    path.join(ROOT, 'src', 'skills', 'ddd-step2-tactical-design', 'references', 'bc-yaml-guide.md'),
+    path.join(ROOT, 'src', 'skills', 'ddd-tactical-design', 'references', 'bc-yaml-guide.md'),
   ];
   const forbidden = [
     /source: auth-context, claim/,
@@ -2284,7 +2287,7 @@ test('agent instructions protect framework AGENTS.md from overwrite', async () =
 });
 
 test('tactical refine docs reject derived event payload source', async () => {
-  const file = path.join(ROOT, 'src', 'skills', 'ddd-step2-refine', 'SKILL.md');
+  const file = path.join(ROOT, 'src', 'skills', 'ddd-tactical-validation', 'SKILL.md');
   const text = await fs.readFile(file, 'utf8');
 
   assert.match(text, /BC-121/);
