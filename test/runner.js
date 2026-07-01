@@ -623,6 +623,41 @@ test('dsl init installs the segmented Step 1 skills to both runtimes', async () 
   });
 });
 
+test('dsl init assembles a self-contained tools/dsl-validate (no @dsl/contract require)', async () => {
+  await withTempProject(async (projectDir) => {
+    const result = runNode([CLI, 'init'], { cwd: projectDir });
+    assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+    const utilsDir = path.join(projectDir, 'tools', 'dsl-validate', 'src', 'utils');
+
+    // The contract validator that bc-yaml-validator.js consumes must be copied in.
+    assert.ok(
+      await fs.pathExists(path.join(utilsDir, 'input-anatomy-validator.js')),
+      'input-anatomy-validator.js must be copied into the deployed tool',
+    );
+
+    // The deployed tool is self-contained: no copied source may require '@dsl/contract'
+    // at runtime (it is not installed in the user workspace). Every such import must be
+    // rewritten to a local relative path during assembly.
+    const srcDir = path.join(projectDir, 'tools', 'dsl-validate', 'src');
+    const jsFiles = [];
+    for (const sub of ['commands', 'utils']) {
+      const dir = path.join(srcDir, sub);
+      if (!(await fs.pathExists(dir))) continue;
+      for (const f of await fs.readdir(dir)) {
+        if (f.endsWith('.js')) jsFiles.push(path.join(dir, f));
+      }
+    }
+    for (const file of jsFiles) {
+      const content = await fs.readFile(file, 'utf8');
+      assert.ok(
+        !content.includes("require('@dsl/contract')"),
+        `${path.relative(projectDir, file)} must not require('@dsl/contract') in the deployed tool`,
+      );
+    }
+  });
+});
+
 test('copied dsl-validate rejects unsupported useCase keys before generation', async () => {
   await assertTacticalValidationFails(`
 bc: catalog

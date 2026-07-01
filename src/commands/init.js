@@ -17,6 +17,7 @@ const DSL_VALIDATE_SOURCES = [
   { src: ['utils', 'arch-readers.js'],            dest: ['src', 'utils', 'arch-readers.js'] },
   { src: ['utils', 'canonical-types.js'],         dest: ['src', 'utils', 'canonical-types.js'] },
   { src: ['utils', 'bc-yaml-validator.js'],       dest: ['src', 'utils', 'bc-yaml-validator.js'] },
+  { src: ['input-anatomy-validator.js'],          dest: ['src', 'utils', 'input-anatomy-validator.js'], fromContract: true },
   { src: ['integration-validator.js'],            dest: ['src', 'utils', 'integration-validator.js'], fromContract: true },
   { src: ['utils', 'naming.js'],                  dest: ['src', 'utils', 'naming.js'] },
   { src: ['openapi-contract.js'],                 dest: ['src', 'utils', 'openapi-contract.js'], fromContract: true },
@@ -455,6 +456,16 @@ async function scaffoldDslValidate(cwd) {
     + "const { validateOpenApiUseCases } = require('../utils/openapi-usecase-validator');"
   );
   await fs.writeFile(deployedValidate, validateSrc);
+
+  // 2c. bc-yaml-validator.js también importa de '@dsl/contract' (validateUseCaseInputAnatomy).
+  //     Reescribir a la copia local (input-anatomy-validator.js, copiada a ../utils/ arriba).
+  const deployedBcValidator = path.join(destRoot, 'src', 'utils', 'bc-yaml-validator.js');
+  let bcValidatorSrc = await fs.readFile(deployedBcValidator, 'utf8');
+  bcValidatorSrc = bcValidatorSrc.replace(
+    /const \{ validateUseCaseInputAnatomy \} = require\('@dsl\/contract'\);/,
+    "const { validateUseCaseInputAnatomy } = require('./input-anatomy-validator');"
+  );
+  await fs.writeFile(deployedBcValidator, bcValidatorSrc);
 
   spinner.succeed(chalk.green('  OK    tools/dsl-validate/'));
 
