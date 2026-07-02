@@ -176,20 +176,21 @@ function applyClaudeCodeTransforms(content) {
 }
 
 /**
- * Recursively copies srcDir → destDir, applying applyClaudeCodeTransforms to
- * every .md file and doing a plain copy for all other file types.
+ * Recursively copies srcDir → destDir, applying `transformFn` to every .md file and
+ * doing a plain copy for all other file types. `transformFn` defaults to the Claude Code
+ * rewrites; the OpenCode install passes applyOpenCodeTransforms instead.
  */
-async function copyDirTransformed(srcDir, destDir) {
+async function copyDirTransformed(srcDir, destDir, transformFn = applyClaudeCodeTransforms) {
   await fs.ensureDir(destDir);
   const entries = await fs.readdir(srcDir, { withFileTypes: true });
   for (const entry of entries) {
     const srcPath = path.join(srcDir, entry.name);
     const destPath = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
-      await copyDirTransformed(srcPath, destPath);
+      await copyDirTransformed(srcPath, destPath, transformFn);
     } else if (entry.name.endsWith('.md')) {
       let content = await fs.readFile(srcPath, 'utf8');
-      content = applyClaudeCodeTransforms(content);
+      content = transformFn(content);
       await fs.writeFile(destPath, content, 'utf8');
     } else {
       await fs.copy(srcPath, destPath, { overwrite: true });
@@ -232,6 +233,152 @@ function orchestratorToClaudeSkill(content) {
   );
 
   return content;
+}
+
+/**
+ * Applies all OpenCode-specific rewrites to a markdown file's content.
+ *
+ * OpenCode reuses the SKILL.md / subagent conventions but differs from Claude Code in two
+ * ways this function normalizes:
+ *   - There is NO structured interactive tool like AskUserQuestion. Agents ask the user
+ *     conversationally (in prose) and wait for the answer. So every reference the Claude
+ *     rewrites concentrated into "AskUserQuestion" is retargeted to a plain-prose ask.
+ *   - The runtime directories are .opencode/skills/ and .opencode/agent/ (not .claude/*),
+ *     and the orchestrators are model-invoked skills, not slash commands.
+ *
+ * Strategy: run applyClaudeCodeTransforms first (it already normalizes the Copilot
+ * vscode_askQuestions protocol, option fields and paths into a single canonical vocabulary),
+ * then re-target that canonical output — "AskUserQuestion" → prose ask, .claude/* → .opencode/*,
+ * /design-* → bare skill name, "Claude Code" → "OpenCode".
+ */
+function applyOpenCodeTransforms(content) {
+  content = applyClaudeCodeTransforms(content);
+
+  // OpenCode has no AskUserQuestion tool — the agent asks the user directly, in prose.
+  // applyClaudeCodeTransforms concentrated every reference into a small, fixed vocabulary
+  // ("la herramienta `AskUserQuestion`" as a noun, plus verb phrases like "llama a"/"Invoca").
+  // A blind substitution would produce broken grammar ("Llama siempre a al usuario"), so the
+  // specific verb phrases are rewritten first, then the generic noun/standalone forms.
+
+  // (a) Verb phrases that frame the tool as something you "call/invoke" → prose asking.
+  content = content.replace(
+    /\*\*Llama siempre a la herramienta `AskUserQuestion`\*\*/g,
+    '**Pregunta siempre directamente al usuario (en prosa)**',
+  );
+  content = content.replace(
+    /Construye una llamada a la herramienta `AskUserQuestion` con los campos descritos abajo\./g,
+    'Formula las preguntas directamente al usuario con los campos descritos abajo.',
+  );
+  content = content.replace(
+    /en una sola llamada a la herramienta `AskUserQuestion` \(agrupar todas las preguntas\)/g,
+    'en una sola tanda de preguntas al usuario (agrupa todas las preguntas)',
+  );
+  content = content.replace(
+    /Llama a la herramienta `AskUserQuestion` con estos campos \(NO escribas esto como texto\):/g,
+    'Pregunta directamente al usuario con estos campos (NO escribas esto como texto):',
+  );
+  content = content.replace(
+    /llama a la herramienta `AskUserQuestion` usando estos `header` \/ `question` \/ `options`/g,
+    'pregunta directamente al usuario usando estos `header` / `question` / `options`',
+  );
+  content = content.replace(
+    /La herramienta siempre ofrece "Other" para texto libre\./g,
+    'El usuario siempre puede responder en texto libre.',
+  );
+  content = content.replace(
+    /Invoca `AskUserQuestion` ahora y espera la selección del diseñador antes de continuar\./g,
+    'Pregunta al usuario ahora y espera su selección antes de continuar.',
+  );
+  // "(ningún worker) llama [a] `AskUserQuestion`" → "pregunta al usuario".
+  content = content.replace(/llama (?:a )?`AskUserQuestion`/g, 'pregunta al usuario');
+
+  // (b) Section headers.
+  content = content.replace(
+    /### Cuándo pausar obligatoriamente con la herramienta `AskUserQuestion`/g,
+    '### Cuándo pausar obligatoriamente y preguntar al usuario',
+  );
+  content = content.replace(
+    /### Formato de la llamada a `AskUserQuestion`/g,
+    '### Formato de las preguntas al usuario',
+  );
+
+  // (c) The option-field comment injected for AskUserQuestion semantics.
+  content = content.replace(/# AskUserQuestion: /g, '# Pregunta al usuario: ');
+
+  // (d) Generic fallback: the tool as a noun ("la herramienta X [(pausa…)]") and standalone.
+  content = content.replace(
+    /la herramienta `AskUserQuestion`(?: \(pausa el turno y espera la respuesta del diseñador\))?/g,
+    'una pregunta directa al usuario',
+  );
+  content = content.replace(/`AskUserQuestion`/g, 'preguntas directas al usuario');
+  content = content.replace(/AskUserQuestion/g, 'preguntar al usuario');
+
+  // Runtime label used in the mandatory-ask warning injected by applyClaudeCodeTransforms.
+  content = content.replace(/Claude Code — obligatorio/g, 'OpenCode — obligatorio');
+  content = content.replace(/Claude Code/g, 'OpenCode');
+
+  // Retarget paths: applyClaudeCodeTransforms mapped .agents/skills/ → .claude/skills/.
+  content = content.replace(/\.claude\/skills\//g, '.opencode/skills/');
+  content = content.replace(/\.claude\/agents\//g, '.opencode/agent/');
+
+  // Orchestrators are OpenCode skills (model-invoked by description), not slash commands.
+  // Longer name first to avoid a partial /design-system match inside /design-bounded-context.
+  content = content.replace(/\/design-bounded-context/g, 'design-bounded-context');
+  content = content.replace(/\/design-system/g, 'design-system');
+
+  return content;
+}
+
+/**
+ * Transforms an orchestrator skill SOURCE into an OpenCode SKILL.md body. Mirrors
+ * orchestratorToClaudeSkill but uses the OpenCode rewrites. OpenCode discovers skills by
+ * their `name`/`description` frontmatter (model-invoked), so `tools:` and `argument-hint:`
+ * are dropped just like in the Claude variant.
+ */
+function orchestratorToOpenCodeSkill(content) {
+  content = applyOpenCodeTransforms(content);
+  content = content.replace(/^tools:\s*\[[^\]]*\]\s*\r?\n/m, '');
+  content = content.replace(/^argument-hint:.*\r?\n/m, '');
+  content = content.replace(
+    /^(---\r?\n[\s\S]*?\r?\n---\r?\n)/,
+    '$1\n> **Contexto del diseñador:** llega como la petición que disparó la invocación de esta skill.\n',
+  );
+  return content;
+}
+
+/**
+ * Transforms a read-only worker SOURCE (src/agents/<name>.md, authored for Claude Code with
+ * `name` + `description` + a Claude `tools: [...]` array) into an OpenCode subagent definition.
+ *
+ * OpenCode subagents live in .opencode/agent/<name>.md; the FILE NAME is the agent name, so
+ * `name:` is dropped. The frontmatter becomes: the source `description` block (preserved
+ * verbatim), `mode: subagent`, and a `tools:` MAP with lowercase OpenCode tool names. Only the
+ * two validators declare Bash in the source, so `bash:` is enabled only for them.
+ */
+function workerToOpenCodeAgent(content) {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!fmMatch) return applyOpenCodeTransforms(content); // no frontmatter — best effort
+  const front = fmMatch[1];
+  const body = applyOpenCodeTransforms(fmMatch[2]);
+
+  const hasBash = /^tools:\s*\[[^\]]*\bBash\b[^\]]*\]/m.test(front);
+
+  // Keep the description block; drop name: (filename is the agent name) and the Claude tools: line.
+  const desc = front
+    .replace(/^name:.*\r?\n?/m, '')
+    .replace(/^tools:\s*\[[^\]]*\]\s*\r?\n?/m, '')
+    .trim();
+
+  const tools = [
+    '  write: false',
+    '  edit: false',
+    '  read: true',
+    '  grep: true',
+    '  glob: true',
+    `  bash: ${hasBash}`,
+  ].join('\n');
+
+  return `---\n${desc}\nmode: subagent\ntools:\n${tools}\n---\n${body}`;
 }
 
 /**
@@ -287,7 +434,7 @@ async function installOrchestrators(srcSkills, cwd, names, label) {
  * .claude/skills/. Top-level subdirectories named in `skip` (the orchestrators) are not
  * copied here — they are routed separately by installOrchestrators.
  */
-async function copySkillsTransformed(srcDir, destDir, label, skip = []) {
+async function copySkillsTransformed(srcDir, destDir, label, skip = [], transformFn = applyClaudeCodeTransforms) {
   const exists = await fs.pathExists(destDir);
 
   if (exists) {
@@ -312,9 +459,9 @@ async function copySkillsTransformed(srcDir, destDir, label, skip = []) {
     const src = path.join(srcDir, entry.name);
     const dest = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
-      await copyDirTransformed(src, dest);
+      await copyDirTransformed(src, dest, transformFn);
     } else if (entry.name.endsWith('.md')) {
-      await fs.writeFile(dest, applyClaudeCodeTransforms(await fs.readFile(src, 'utf8')), 'utf8');
+      await fs.writeFile(dest, transformFn(await fs.readFile(src, 'utf8')), 'utf8');
     } else {
       await fs.copy(src, dest, { overwrite: true });
     }
@@ -358,6 +505,76 @@ async function copyWorkersAsSubagents(srcDir, destDir, label) {
   await fs.ensureDir(destDir);
   for (const file of files) {
     await fs.copy(path.join(srcDir, file), path.join(destDir, file), { overwrite: true });
+  }
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
+
+/**
+ * Installs the entry-point orchestrator skills for OpenCode from their source
+ * (src/skills/<name>/SKILL.md) → .opencode/skills/<name>/SKILL.md (orchestratorToOpenCodeSkill).
+ * The user chose to materialize orchestrators as OpenCode skills, mirroring the Claude layout.
+ */
+async function installOpenCodeOrchestrators(srcSkills, cwd, names, label) {
+  const destDirs = names.map((n) => path.join(cwd, '.opencode', 'skills', n));
+  const anyExists = (await Promise.all(destDirs.map((d) => fs.pathExists(d)))).some(Boolean);
+  if (anyExists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exist. Overwrite?`,
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
+  }
+
+  const spinner = ora(`Copying ${label}...`).start();
+  for (const name of names) {
+    const srcFile = path.join(srcSkills, name, 'SKILL.md');
+    const content = await fs.readFile(srcFile, 'utf8');
+    const destFile = path.join(cwd, '.opencode', 'skills', name, 'SKILL.md');
+    await fs.ensureDir(path.dirname(destFile));
+    await fs.writeFile(destFile, orchestratorToOpenCodeSkill(content), 'utf8');
+  }
+  spinner.succeed(chalk.green(`  OK    ${label}`));
+}
+
+/**
+ * Generates the read-only workers (src/agents/*.md) as OpenCode subagents → .opencode/agent/.
+ * Each file is rewritten by workerToOpenCodeAgent (mode: subagent + lowercase tools map).
+ */
+async function installOpenCodeWorkers(srcDir, cwd, label) {
+  if (!(await fs.pathExists(srcDir))) return;
+  const files = (await fs.readdir(srcDir)).filter((f) => f.endsWith('.md'));
+  if (files.length === 0) return;
+
+  const destDir = path.join(cwd, '.opencode', 'agent');
+  const destFiles = files.map((f) => path.join(destDir, f));
+  const anyExists = (await Promise.all(destFiles.map((d) => fs.pathExists(d)))).some(Boolean);
+  if (anyExists) {
+    const { overwrite } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'overwrite',
+        message: `${chalk.yellow(label)} already exist. Overwrite?`,
+        default: false,
+      },
+    ]);
+    if (!overwrite) {
+      console.log(chalk.yellow(`  SKIP  ${label}`));
+      return;
+    }
+  }
+
+  const spinner = ora(`Copying ${label}...`).start();
+  await fs.ensureDir(destDir);
+  for (const file of files) {
+    const content = await fs.readFile(path.join(srcDir, file), 'utf8');
+    await fs.writeFile(path.join(destDir, file), workerToOpenCodeAgent(content), 'utf8');
   }
   spinner.succeed(chalk.green(`  OK    ${label}`));
 }
@@ -518,6 +735,15 @@ function registerInit(program) {
       const srcAgents = path.join(__dirname, '../agents');
       const destAgentsClaude = path.join(cwd, '.claude', 'agents');
       await copyWorkersAsSubagents(srcAgents, destAgentsClaude, '.claude/agents (workers)');
+
+      // 3c. Materialize the same artifacts for the OpenCode runtime under .opencode/,
+      //     keeping it self-contained (works without .claude/ or .agents/). Skills mirror
+      //     the Claude layout — all eight land in .opencode/skills/ (orchestrators as skills,
+      //     per the chosen design) — and the read-only workers become .opencode/agent/ subagents.
+      const destSkillsOpenCode = path.join(cwd, '.opencode', 'skills');
+      await copySkillsTransformed(srcSkills, destSkillsOpenCode, '.opencode/skills', ORCHESTRATORS, applyOpenCodeTransforms);
+      await installOpenCodeOrchestrators(srcSkills, cwd, ORCHESTRATORS, '.opencode/skills (orchestrators)');
+      await installOpenCodeWorkers(srcAgents, cwd, '.opencode/agent (workers)');
 
       // 4. Scaffold tools/dsl-validate/
       await scaffoldDslValidate(cwd);
